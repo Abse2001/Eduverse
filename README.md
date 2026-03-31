@@ -14,7 +14,7 @@ First, run the development server:
 
 ```bash
 bun install
-bun run dev
+bun start
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
