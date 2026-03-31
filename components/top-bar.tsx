@@ -17,12 +17,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 const ROLE_COLOR: Record<string, string> = {
-  student:
-    "bg-brand-subtle text-brand",
+  student: "bg-brand-subtle text-brand",
   teacher:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  admin:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  admin: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
 };
 
 export function TopBar() {
@@ -91,12 +89,14 @@ export function TopBar() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{user.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user.email}
+                  </p>
                 </div>
                 <span
                   className={cn(
                     "text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none capitalize",
-                    ROLE_COLOR[user.role]
+                    ROLE_COLOR[user.role],
                   )}
                 >
                   {user.role}

@@ -14,9 +14,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <TopBar />
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
+          <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
     </AppProvider>

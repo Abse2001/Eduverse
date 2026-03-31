@@ -2,11 +2,13 @@
   "name": "my-project",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.2.12",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint ."
+    "start": "next dev",
+    "lint": "eslint .",
+    "format": "bunx prettier --write ."
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -70,7 +70,8 @@ export default function MaterialsPage({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
 
-  if (!cls) return <div className="p-6 text-muted-foreground">Class not found.</div>;
+  if (!cls)
+    return <div className="p-6 text-muted-foreground">Class not found.</div>;
 
   const filtered = allMaterials.filter((m) => {
     const matchesSearch =
@@ -136,12 +137,17 @@ export default function MaterialsPage({
                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                 filter === key
                   ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
+                  : "bg-background text-muted-foreground border-input hover:border-primary/50 hover:text-foreground",
               )}
             >
               {label}
               {filterCounts[key] > 0 && (
-                <span className={cn("ml-1", filter === key ? "opacity-70" : "opacity-50")}>
+                <span
+                  className={cn(
+                    "ml-1",
+                    filter === key ? "opacity-70" : "opacity-50",
+                  )}
+                >
                   {filterCounts[key]}
                 </span>
               )}
@@ -171,7 +177,7 @@ export default function MaterialsPage({
                     <div
                       className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                        cfg.bg
+                        cfg.bg,
                       )}
                     >
                       <Icon className={cn("w-5 h-5", cfg.color)} />

@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useApp } from "@/lib/store";
 import {
-  CLASSES, USERS, getAssignmentsByClass, getLeaderboardByClass,
+  CLASSES,
+  USERS,
+  getAssignmentsByClass,
+  getLeaderboardByClass,
   CLASS_BADGE_COLOR_MAP,
 } from "@/lib/mock-data";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,8 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  BookOpen, Users, Trophy, Clock, Video, MessageSquare,
-  FlaskConical, ArrowRight, PlusCircle, Star,
+  BookOpen,
+  Users,
+  Trophy,
+  Clock,
+  Video,
+  MessageSquare,
+  FlaskConical,
+  ArrowRight,
+  PlusCircle,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +41,8 @@ export default function ClassesPage() {
     currentUser.role === "student"
       ? CLASSES.filter((c) => c.studentIds.includes(currentUser.id))
       : currentUser.role === "teacher"
-      ? CLASSES.filter((c) => c.teacherId === currentUser.id)
-      : CLASSES;
+        ? CLASSES.filter((c) => c.teacherId === currentUser.id)
+        : CLASSES;
 
   const isTeacher = currentUser.role === "teacher";
   const isAdmin = currentUser.role === "admin";
@@ -41,10 +52,15 @@ export default function ClassesPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-foreground text-balance">
-            {isAdmin ? "All Classes" : isTeacher ? "My Classes" : "Enrolled Classes"}
+            {isAdmin
+              ? "All Classes"
+              : isTeacher
+                ? "My Classes"
+                : "Enrolled Classes"}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {myClasses.length} class{myClasses.length !== 1 ? "es" : ""} &middot; {currentUser.institution}
+            {myClasses.length} class{myClasses.length !== 1 ? "es" : ""}{" "}
+            &middot; {currentUser.institution}
           </p>
         </div>
         {(isTeacher || isAdmin) && (
@@ -59,22 +75,34 @@ export default function ClassesPage() {
         {myClasses.map((cls) => {
           const teacher = USERS.find((u) => u.id === cls.teacherId);
           const assignments = getAssignmentsByClass(cls.id);
-          const pending = assignments.filter((a) => a.status === "pending").length;
+          const pending = assignments.filter(
+            (a) => a.status === "pending",
+          ).length;
           const lb = getLeaderboardByClass(cls.id);
           const myRank = lb.find((e) => e.studentId === currentUser.id);
           const studentCount = cls.studentIds.length;
-          const completed = assignments.filter((a) => a.status !== "pending").length;
-          const progress = assignments.length > 0 ? Math.round((completed / assignments.length) * 100) : 0;
+          const completed = assignments.filter(
+            (a) => a.status !== "pending",
+          ).length;
+          const progress =
+            assignments.length > 0
+              ? Math.round((completed / assignments.length) * 100)
+              : 0;
 
           return (
-            <Card key={cls.id} className="group hover:shadow-lg transition-shadow flex flex-col">
+            <Card
+              key={cls.id}
+              className="group hover:shadow-lg transition-shadow flex flex-col"
+            >
               <CardContent className="p-5 flex flex-col flex-1 gap-4">
                 {/* Header */}
                 <div className="flex items-start gap-3">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
-                    CLASS_BG[cls.color] ?? "bg-primary"
-                  )}>
+                  <div
+                    className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
+                      CLASS_BG[cls.color] ?? "bg-primary",
+                    )}
+                  >
                     {cls.code.slice(0, 2)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -82,10 +110,18 @@ export default function ClassesPage() {
                       {cls.name}
                     </h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <Badge variant="secondary" className={cn("text-[10px] border-0", CLASS_BADGE_COLOR_MAP[cls.color])}>
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "text-[10px] border-0",
+                          CLASS_BADGE_COLOR_MAP[cls.color],
+                        )}
+                      >
                         {cls.code}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">{cls.semester}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {cls.semester}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -125,7 +161,9 @@ export default function ClassesPage() {
                         {teacher.avatar}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-xs text-muted-foreground">{teacher.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {teacher.name}
+                    </span>
                   </div>
                 )}
 
@@ -134,7 +172,9 @@ export default function ClassesPage() {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">Progress</span>
-                      <span className="font-medium text-foreground">{progress}%</span>
+                      <span className="font-medium text-foreground">
+                        {progress}%
+                      </span>
                     </div>
                     <Progress value={progress} className="h-1.5" />
                   </div>

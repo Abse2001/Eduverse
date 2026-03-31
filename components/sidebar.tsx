@@ -24,10 +24,19 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/store";
-import { CLASSES, getClassesByStudent, getClassesByTeacher } from "@/lib/mock-data";
+import {
+  CLASSES,
+  getClassesByStudent,
+  getClassesByTeacher,
+} from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const NAV_ITEMS_STUDENT = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -74,14 +83,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const userClasses = isStudent
     ? getClassesByStudent(currentUser.id)
     : isTeacher
-    ? getClassesByTeacher(currentUser.id)
-    : CLASSES;
+      ? getClassesByTeacher(currentUser.id)
+      : CLASSES;
 
   const mainNavItems = isAdmin
     ? NAV_ITEMS_ADMIN
     : isTeacher
-    ? NAV_ITEMS_TEACHER
-    : NAV_ITEMS_STUDENT;
+      ? NAV_ITEMS_TEACHER
+      : NAV_ITEMS_STUDENT;
 
   // Detect active class
   const activeClassMatch = pathname.match(/\/classes\/([^/]+)/);
@@ -97,8 +106,10 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
 
   const roleColor = {
     student: "bg-brand-subtle text-brand",
-    teacher: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-    admin: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    teacher:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+    admin:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   }[currentUser.role];
 
   return (
@@ -106,15 +117,12 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       <aside
         className={cn(
           "flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300 shrink-0",
-          collapsed ? "w-16" : "w-60"
+          collapsed ? "w-16" : "w-60",
         )}
       >
         {/* Logo */}
         <div className="flex items-center h-14 px-3 border-b border-sidebar-border">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 min-w-0"
-          >
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shrink-0">
               <GraduationCap className="w-4 h-4 text-primary-foreground" />
             </div>
@@ -140,7 +148,8 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         {/* Main nav */}
         <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
           {mainNavItems.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            const active =
+              pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <NavItem
                 key={item.href}
@@ -183,7 +192,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                               "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
                               activeSegment === sub.segment
                                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
                             )}
                           >
                             <sub.icon className="w-3.5 h-3.5 shrink-0" />
@@ -204,7 +213,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           <div
             className={cn(
               "flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
-              collapsed && "justify-center"
+              collapsed && "justify-center",
             )}
           >
             <Avatar className="w-7 h-7 shrink-0">
@@ -220,7 +229,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 <span
                   className={cn(
                     "inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none mt-0.5",
-                    roleColor
+                    roleColor,
                   )}
                 >
                   {roleBadge}
@@ -252,7 +261,14 @@ const DOT_COLOR_MAP: Record<string, string> = {
   sky: "bg-sky-500",
 };
 
-function NavItem({ label, icon: Icon, href, active, collapsed, colorDot }: NavItemProps) {
+function NavItem({
+  label,
+  icon: Icon,
+  href,
+  active,
+  collapsed,
+  colorDot,
+}: NavItemProps) {
   const content = (
     <Link
       href={href}
@@ -261,14 +277,14 @@ function NavItem({ label, icon: Icon, href, active, collapsed, colorDot }: NavIt
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
-        collapsed && "justify-center"
+        collapsed && "justify-center",
       )}
     >
       {colorDot ? (
         <span
           className={cn(
             "w-2 h-2 rounded-full shrink-0",
-            DOT_COLOR_MAP[colorDot] ?? "bg-muted-foreground"
+            DOT_COLOR_MAP[colorDot] ?? "bg-muted-foreground",
           )}
         />
       ) : (

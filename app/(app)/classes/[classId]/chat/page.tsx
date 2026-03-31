@@ -44,24 +44,38 @@ function MessageBubble({
         <Megaphone className="w-4 h-4 text-primary mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-primary">{msg.senderName}</span>
-            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0 py-0">
+            <span className="text-xs font-semibold text-primary">
+              {msg.senderName}
+            </span>
+            <Badge
+              variant="secondary"
+              className="text-[10px] bg-primary/10 text-primary border-0 py-0"
+            >
               Announcement
             </Badge>
-            <span className="text-[10px] text-muted-foreground ml-auto" suppressHydrationWarning>
+            <span
+              className="text-[10px] text-muted-foreground ml-auto"
+              suppressHydrationWarning
+            >
               {format(new Date(msg.timestamp), "MMM d, h:mm a")}
             </span>
           </div>
-          <p className="text-sm text-foreground leading-relaxed">{msg.content}</p>
+          <p className="text-sm text-foreground leading-relaxed">
+            {msg.content}
+          </p>
         </div>
-        {msg.pinned && <Pin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+        {msg.pinned && (
+          <Pin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        )}
       </div>
     );
   }
 
   if (msg.type === "file") {
     return (
-      <div className={cn("flex items-end gap-2 px-2", isOwn && "flex-row-reverse")}>
+      <div
+        className={cn("flex items-end gap-2 px-2", isOwn && "flex-row-reverse")}
+      >
         {!isOwn && (
           <Avatar className="w-7 h-7 mb-0.5">
             <AvatarFallback className="text-[9px] font-semibold bg-primary/10 text-primary">
@@ -71,27 +85,44 @@ function MessageBubble({
         )}
         <div className={cn("max-w-xs", isOwn && "items-end flex flex-col")}>
           {!isOwn && (
-            <p className="text-[11px] text-muted-foreground mb-1 px-1">{msg.senderName}</p>
+            <p className="text-[11px] text-muted-foreground mb-1 px-1">
+              {msg.senderName}
+            </p>
           )}
           <div
             className={cn(
               "flex items-center gap-2 p-3 rounded-xl border",
               isOwn
                 ? "bg-primary text-primary-foreground border-primary/80"
-                : "bg-card border-border"
+                : "bg-card border-border",
             )}
           >
             <File className="w-8 h-8 shrink-0 opacity-70" />
             <div className="min-w-0">
-              <p className={cn("text-sm font-medium truncate", isOwn ? "text-primary-foreground" : "text-foreground")}>
+              <p
+                className={cn(
+                  "text-sm font-medium truncate",
+                  isOwn ? "text-primary-foreground" : "text-foreground",
+                )}
+              >
                 {msg.fileName}
               </p>
-              <p className={cn("text-xs", isOwn ? "text-primary-foreground/70" : "text-muted-foreground")}>
+              <p
+                className={cn(
+                  "text-xs",
+                  isOwn
+                    ? "text-primary-foreground/70"
+                    : "text-muted-foreground",
+                )}
+              >
                 {msg.fileSize}
               </p>
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1 px-1" suppressHydrationWarning>
+          <p
+            className="text-[10px] text-muted-foreground mt-1 px-1"
+            suppressHydrationWarning
+          >
             {format(new Date(msg.timestamp), "h:mm a")}
           </p>
         </div>
@@ -100,7 +131,9 @@ function MessageBubble({
   }
 
   return (
-    <div className={cn("flex items-end gap-2 px-2", isOwn && "flex-row-reverse")}>
+    <div
+      className={cn("flex items-end gap-2 px-2", isOwn && "flex-row-reverse")}
+    >
       {!isOwn && (
         <Avatar className="w-7 h-7 mb-0.5">
           <AvatarFallback className="text-[9px] font-semibold bg-primary/10 text-primary">
@@ -110,19 +143,24 @@ function MessageBubble({
       )}
       <div className={cn("max-w-sm", isOwn && "items-end flex flex-col")}>
         {!isOwn && (
-          <p className="text-[11px] text-muted-foreground mb-1 px-1">{msg.senderName}</p>
+          <p className="text-[11px] text-muted-foreground mb-1 px-1">
+            {msg.senderName}
+          </p>
         )}
         <div
           className={cn(
             "px-3 py-2 rounded-2xl text-sm leading-relaxed",
             isOwn
               ? "bg-primary text-primary-foreground rounded-br-sm"
-              : "bg-muted text-foreground rounded-bl-sm"
+              : "bg-muted text-foreground rounded-bl-sm",
           )}
         >
           {msg.content}
         </div>
-        <p className="text-[10px] text-muted-foreground mt-1 px-1" suppressHydrationWarning>
+        <p
+          className="text-[10px] text-muted-foreground mt-1 px-1"
+          suppressHydrationWarning
+        >
           {format(new Date(msg.timestamp), "h:mm a")}
         </p>
       </div>
@@ -171,7 +209,8 @@ export default function ChatPage({
     setInput("");
   }
 
-  if (!cls) return <div className="p-6 text-muted-foreground">Class not found.</div>;
+  if (!cls)
+    return <div className="p-6 text-muted-foreground">Class not found.</div>;
 
   const pinned = enriched.filter((m) => m.pinned);
 
@@ -182,14 +221,16 @@ export default function ChatPage({
         <div
           className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0",
-            CLASS_HEADER[cls.color] ?? "bg-primary"
+            CLASS_HEADER[cls.color] ?? "bg-primary",
           )}
         >
           {cls.code.slice(0, 2)}
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-foreground">{cls.name}</p>
-          <p className="text-xs text-muted-foreground">{cls.code} &middot; {messages.length} messages</p>
+          <p className="text-xs text-muted-foreground">
+            {cls.code} &middot; {messages.length} messages
+          </p>
         </div>
         <Button variant="ghost" size="icon" className="shrink-0">
           <Search className="w-4 h-4" />

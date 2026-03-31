@@ -34,13 +34,11 @@ export function TeacherDashboard() {
   const { currentUser } = useApp();
   const myClasses = getClassesByTeacher(currentUser.id);
 
-  const totalStudents = new Set(
-    myClasses.flatMap((c) => c.studentIds)
-  ).size;
+  const totalStudents = new Set(myClasses.flatMap((c) => c.studentIds)).size;
 
   const totalAssignments = myClasses.reduce(
     (sum, c) => sum + getAssignmentsByClass(c.id).length,
-    0
+    0,
   );
 
   const pendingGrades = myClasses
@@ -66,10 +64,30 @@ export function TeacherDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Active Classes" value={String(myClasses.length)} icon={BookOpen} color="indigo" />
-        <StatCard label="Total Students" value={String(totalStudents)} icon={Users} color="emerald" />
-        <StatCard label="Assignments" value={String(totalAssignments)} icon={FileText} color="violet" />
-        <StatCard label="Pending Grades" value={String(pendingGrades)} icon={TrendingUp} color="amber" />
+        <StatCard
+          label="Active Classes"
+          value={String(myClasses.length)}
+          icon={BookOpen}
+          color="indigo"
+        />
+        <StatCard
+          label="Total Students"
+          value={String(totalStudents)}
+          icon={Users}
+          color="emerald"
+        />
+        <StatCard
+          label="Assignments"
+          value={String(totalAssignments)}
+          icon={FileText}
+          color="violet"
+        />
+        <StatCard
+          label="Pending Grades"
+          value={String(pendingGrades)}
+          icon={TrendingUp}
+          color="amber"
+        />
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
@@ -86,7 +104,9 @@ export function TeacherDashboard() {
           {myClasses.map((cls) => {
             const students = getStudentsInClass(cls.id);
             const assignments = getAssignmentsByClass(cls.id);
-            const submitted = assignments.filter((a) => a.status === "submitted").length;
+            const submitted = assignments.filter(
+              (a) => a.status === "submitted",
+            ).length;
             return (
               <Card key={cls.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
@@ -94,21 +114,30 @@ export function TeacherDashboard() {
                     <div
                       className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
-                        CLASS_BG[cls.color] ?? "bg-primary"
+                        CLASS_BG[cls.color] ?? "bg-primary",
                       )}
                     >
                       {cls.code.slice(0, 2)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-sm text-foreground">{cls.name}</p>
-                        <span className="text-xs text-muted-foreground shrink-0">{cls.schedule}</span>
+                        <p className="font-semibold text-sm text-foreground">
+                          {cls.name}
+                        </p>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {cls.schedule}
+                        </span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{cls.code} &middot; {cls.room}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {cls.code} &middot; {cls.room}
+                      </p>
                       <div className="flex items-center gap-4 mt-3">
                         <div className="flex -space-x-1.5">
                           {students.slice(0, 4).map((s) => (
-                            <Avatar key={s.id} className="w-6 h-6 ring-2 ring-card">
+                            <Avatar
+                              key={s.id}
+                              className="w-6 h-6 ring-2 ring-card"
+                            >
                               <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
                                 {s.avatar}
                               </AvatarFallback>
@@ -120,7 +149,9 @@ export function TeacherDashboard() {
                             </div>
                           )}
                         </div>
-                        <span className="text-xs text-muted-foreground">{students.length} students</span>
+                        <span className="text-xs text-muted-foreground">
+                          {students.length} students
+                        </span>
                         {submitted > 0 && (
                           <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
                             {submitted} to grade
@@ -131,11 +162,18 @@ export function TeacherDashboard() {
                   </div>
                   <div className="flex gap-2 mt-3 pt-3 border-t border-border">
                     <Link href={`/classes/${cls.id}/home`} className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full text-xs gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
                         <BookOpen className="w-3 h-3" /> Class Home
                       </Button>
                     </Link>
-                    <Link href={`/classes/${cls.id}/session`} className="flex-1">
+                    <Link
+                      href={`/classes/${cls.id}/session`}
+                      className="flex-1"
+                    >
                       <Button size="sm" className="w-full text-xs gap-1.5">
                         <Video className="w-3 h-3" /> Start Session
                       </Button>
@@ -153,16 +191,34 @@ export function TeacherDashboard() {
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: "Start Session", icon: Video, href: `/classes/${myClasses[0]?.id}/session` },
-                { label: "New Material", icon: FileText, href: `/classes/${myClasses[0]?.id}/materials` },
-                { label: "Schedule Exam", icon: Calendar, href: `/classes/${myClasses[0]?.id}/assignments` },
-                { label: "View Chat", icon: Users, href: `/classes/${myClasses[0]?.id}/chat` },
+                {
+                  label: "Start Session",
+                  icon: Video,
+                  href: `/classes/${myClasses[0]?.id}/session`,
+                },
+                {
+                  label: "New Material",
+                  icon: FileText,
+                  href: `/classes/${myClasses[0]?.id}/materials`,
+                },
+                {
+                  label: "Schedule Exam",
+                  icon: Calendar,
+                  href: `/classes/${myClasses[0]?.id}/assignments`,
+                },
+                {
+                  label: "View Chat",
+                  icon: Users,
+                  href: `/classes/${myClasses[0]?.id}/chat`,
+                },
               ].map((action) => (
                 <Link key={action.label} href={action.href ?? "#"}>
                   <Card className="hover:shadow-md transition-shadow cursor-pointer group">
                     <CardContent className="p-3 flex flex-col items-center gap-1.5 text-center">
                       <action.icon className="w-5 h-5 text-primary" />
-                      <span className="text-xs font-medium text-foreground">{action.label}</span>
+                      <span className="text-xs font-medium text-foreground">
+                        {action.label}
+                      </span>
                     </CardContent>
                   </Card>
                 </Link>
@@ -172,19 +228,25 @@ export function TeacherDashboard() {
 
           {/* Today's schedule */}
           <div className="space-y-2">
-            <h2 className="font-semibold text-foreground">Today&apos;s Schedule</h2>
+            <h2 className="font-semibold text-foreground">
+              Today&apos;s Schedule
+            </h2>
             {myClasses.slice(0, 3).map((cls) => (
               <Card key={cls.id}>
                 <CardContent className="p-3 flex items-center gap-3">
                   <div
                     className={cn(
                       "w-2 h-10 rounded-full shrink-0",
-                      CLASS_BG[cls.color] ?? "bg-primary"
+                      CLASS_BG[cls.color] ?? "bg-primary",
                     )}
                   />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{cls.name}</p>
-                    <p className="text-xs text-muted-foreground">{cls.schedule}</p>
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {cls.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {cls.schedule}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -208,15 +270,24 @@ function StatCard({
   color: string;
 }) {
   const colorMap: Record<string, string> = {
-    indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
-    amber: "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
-    emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
-    violet: "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400",
+    indigo:
+      "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
+    amber:
+      "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
+    emerald:
+      "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
+    violet:
+      "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400",
   };
   return (
     <Card>
       <CardContent className="p-4 flex items-center gap-3">
-        <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0", colorMap[color])}>
+        <div
+          className={cn(
+            "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+            colorMap[color],
+          )}
+        >
           <Icon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
