@@ -1,12 +1,12 @@
-"use client";
+"use client"
 
-import { use, useState } from "react";
-import { getClassById, getMaterialsByClass, Material } from "@/lib/mock-data";
-import { useApp } from "@/lib/store";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { use, useState } from "react"
+import { getClassById, getMaterialsByClass, Material } from "@/lib/mock-data"
+import { useApp } from "@/lib/store"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   FileText,
   Video,
@@ -16,11 +16,11 @@ import {
   Search,
   PlusCircle,
   Layers,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 
-type FilterType = "all" | Material["type"];
+type FilterType = "all" | Material["type"]
 
 const TYPE_CONFIG: Record<
   Material["type"],
@@ -56,29 +56,30 @@ const TYPE_CONFIG: Record<
     color: "text-amber-600 dark:text-amber-400",
     bg: "bg-amber-50 dark:bg-amber-900/30",
   },
-};
+}
 
 export default function MaterialsPage({
   params,
 }: {
-  params: Promise<{ classId: string }>;
+  params: Promise<{ classId: string }>
 }) {
-  const { classId } = use(params);
-  const { currentUser } = useApp();
-  const cls = getClassById(classId);
-  const allMaterials = getMaterialsByClass(classId);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterType>("all");
+  const { classId } = use(params)
+  const { currentUser } = useApp()
+  const cls = getClassById(classId)
+  const allMaterials = getMaterialsByClass(classId)
+  const [search, setSearch] = useState("")
+  const [filter, setFilter] = useState<FilterType>("all")
 
-  if (!cls) return <div className="p-6 text-muted-foreground">Class not found.</div>;
+  if (!cls)
+    return <div className="p-6 text-muted-foreground">Class not found.</div>
 
   const filtered = allMaterials.filter((m) => {
     const matchesSearch =
       m.title.toLowerCase().includes(search.toLowerCase()) ||
-      (m.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
-    const matchesFilter = filter === "all" || m.type === filter;
-    return matchesSearch && matchesFilter;
-  });
+      (m.description?.toLowerCase().includes(search.toLowerCase()) ?? false)
+    const matchesFilter = filter === "all" || m.type === filter
+    return matchesSearch && matchesFilter
+  })
 
   const filterCounts: Record<FilterType, number> = {
     all: allMaterials.length,
@@ -87,7 +88,7 @@ export default function MaterialsPage({
     link: allMaterials.filter((m) => m.type === "link").length,
     code: allMaterials.filter((m) => m.type === "code").length,
     slide: allMaterials.filter((m) => m.type === "slide").length,
-  };
+  }
 
   const filterLabels: { key: FilterType; label: string }[] = [
     { key: "all", label: "All" },
@@ -96,7 +97,7 @@ export default function MaterialsPage({
     { key: "video", label: "Videos" },
     { key: "code", label: "Code" },
     { key: "link", label: "Links" },
-  ];
+  ]
 
   return (
     <div className="p-6 space-y-5 max-w-5xl mx-auto">
@@ -136,12 +137,17 @@ export default function MaterialsPage({
                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",
                 filter === key
                   ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-input hover:border-primary/50 hover:text-foreground"
+                  : "bg-background text-muted-foreground border-input hover:border-primary/50 hover:text-foreground",
               )}
             >
               {label}
               {filterCounts[key] > 0 && (
-                <span className={cn("ml-1", filter === key ? "opacity-70" : "opacity-50")}>
+                <span
+                  className={cn(
+                    "ml-1",
+                    filter === key ? "opacity-70" : "opacity-50",
+                  )}
+                >
                   {filterCounts[key]}
                 </span>
               )}
@@ -159,8 +165,8 @@ export default function MaterialsPage({
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((mat) => {
-            const cfg = TYPE_CONFIG[mat.type];
-            const Icon = cfg.icon;
+            const cfg = TYPE_CONFIG[mat.type]
+            const Icon = cfg.icon
             return (
               <Card
                 key={mat.id}
@@ -171,7 +177,7 @@ export default function MaterialsPage({
                     <div
                       className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                        cfg.bg
+                        cfg.bg,
                       )}
                     >
                       <Icon className={cn("w-5 h-5", cfg.color)} />
@@ -209,10 +215,10 @@ export default function MaterialsPage({
                   </div>
                 </CardContent>
               </Card>
-            );
+            )
           })}
         </div>
       )}
     </div>
-  );
+  )
 }

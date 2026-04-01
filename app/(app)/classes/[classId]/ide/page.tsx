@@ -1,31 +1,48 @@
-"use client";
+"use client"
 
-import { use, useState, useRef } from "react";
-import { getClassById } from "@/lib/mock-data";
-import dynamic from "next/dynamic";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import { use, useState, useRef } from "react"
+import { getClassById } from "@/lib/mock-data"
+import dynamic from "next/dynamic"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+} from "@/components/ui/select"
 import {
-  Play, Trash2, Copy, Download, RotateCcw, Settings2,
-  ChevronDown, ChevronUp, Terminal, Code2, BookOpen, Loader2,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  Play,
+  Trash2,
+  Copy,
+  Download,
+  RotateCcw,
+  Settings2,
+  ChevronDown,
+  ChevronUp,
+  Terminal,
+  Code2,
+  BookOpen,
+  Loader2,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
+  ssr: false,
+})
 
 interface Language {
-  id: string;
-  label: string;
-  monacoId: string;
-  defaultCode: string;
+  id: string
+  label: string
+  monacoId: string
+  defaultCode: string
 }
 
 const LANGUAGES: Language[] = [
@@ -144,66 +161,80 @@ int main() {
 }
 `,
   },
-];
+]
 
 // Simulated execution outputs
 const MOCK_OUTPUT: Record<string, (code: string) => string> = {
-  python: () => `Hello, World!\nSquares: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]\n\nProcess finished with exit code 0`,
-  javascript: () => `Hello, World!\nDoubled: [\n  2, 4, 6, 8, 10\n]\n\nProcess exited with code 0`,
-  typescript: () => `Hello, World!\nTime: ${new Date().toISOString()}\n\nProcess exited with code 0`,
-  java: () => `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
-  cpp: () => `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
-};
+  python: () =>
+    `Hello, World!\nSquares: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]\n\nProcess finished with exit code 0`,
+  javascript: () =>
+    `Hello, World!\nDoubled: [\n  2, 4, 6, 8, 10\n]\n\nProcess exited with code 0`,
+  typescript: () =>
+    `Hello, World!\nTime: ${new Date().toISOString()}\n\nProcess exited with code 0`,
+  java: () =>
+    `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
+  cpp: () =>
+    `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
+}
 
-export default function IdePage({ params }: { params: Promise<{ classId: string }> }) {
-  const { classId } = use(params);
-  const cls = getClassById(classId);
+export default function IdePage({
+  params,
+}: {
+  params: Promise<{ classId: string }>
+}) {
+  const { classId } = use(params)
+  const cls = getClassById(classId)
 
-  const [lang, setLang] = useState<Language>(LANGUAGES[0]);
-  const [code, setCode] = useState(LANGUAGES[0].defaultCode);
-  const [output, setOutput] = useState("");
-  const [running, setRunning] = useState(false);
-  const [outputOpen, setOutputOpen] = useState(true);
-  const [theme, setTheme] = useState<"vs-dark" | "light">("vs-dark");
-  const [fontSize, setFontSize] = useState(14);
-  const runCount = useRef(0);
+  const [lang, setLang] = useState<Language>(LANGUAGES[0])
+  const [code, setCode] = useState(LANGUAGES[0].defaultCode)
+  const [output, setOutput] = useState("")
+  const [running, setRunning] = useState(false)
+  const [outputOpen, setOutputOpen] = useState(true)
+  const [theme, setTheme] = useState<"vs-dark" | "light">("vs-dark")
+  const [fontSize, setFontSize] = useState(14)
+  const runCount = useRef(0)
 
   const handleLangChange = (id: string) => {
-    const l = LANGUAGES.find((l) => l.id === id)!;
-    setLang(l);
-    setCode(l.defaultCode);
-    setOutput("");
-  };
+    const l = LANGUAGES.find((l) => l.id === id)!
+    setLang(l)
+    setCode(l.defaultCode)
+    setOutput("")
+  }
 
   const handleRun = () => {
-    setRunning(true);
-    setOutputOpen(true);
-    setOutput("");
-    runCount.current++;
-    const count = runCount.current;
+    setRunning(true)
+    setOutputOpen(true)
+    setOutput("")
+    runCount.current++
+    const count = runCount.current
 
     // Simulate execution delay
-    const lines = (MOCK_OUTPUT[lang.id]?.(code) ?? "Process exited with code 0").split("\n");
-    let i = 0;
+    const lines = (
+      MOCK_OUTPUT[lang.id]?.(code) ?? "Process exited with code 0"
+    ).split("\n")
+    let i = 0
     const interval = setInterval(() => {
-      if (count !== runCount.current) { clearInterval(interval); return; }
-      i++;
-      setOutput(lines.slice(0, i).join("\n"));
-      if (i >= lines.length) {
-        clearInterval(interval);
-        setRunning(false);
+      if (count !== runCount.current) {
+        clearInterval(interval)
+        return
       }
-    }, 80);
-  };
+      i++
+      setOutput(lines.slice(0, i).join("\n"))
+      if (i >= lines.length) {
+        clearInterval(interval)
+        setRunning(false)
+      }
+    }, 80)
+  }
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-  };
+    navigator.clipboard.writeText(code)
+  }
 
   const handleClear = () => {
-    setCode(lang.defaultCode);
-    setOutput("");
-  };
+    setCode(lang.defaultCode)
+    setOutput("")
+  }
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -216,9 +247,7 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
             <span className="text-sm font-semibold text-white">
               {cls?.name ?? "IDE"}
             </span>
-            {cls && (
-              <span className="text-xs text-zinc-400">{cls.code}</span>
-            )}
+            {cls && <span className="text-xs text-zinc-400">{cls.code}</span>}
           </div>
 
           <Separator orientation="vertical" className="h-5 bg-[#3e3e3e]" />
@@ -230,7 +259,11 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
             </SelectTrigger>
             <SelectContent className="bg-[#2d2d2d] border-[#3e3e3e]">
               {LANGUAGES.map((l) => (
-                <SelectItem key={l.id} value={l.id} className="text-white text-xs focus:bg-[#3e3e3e] focus:text-white">
+                <SelectItem
+                  key={l.id}
+                  value={l.id}
+                  className="text-white text-xs focus:bg-[#3e3e3e] focus:text-white"
+                >
                   {l.label}
                 </SelectItem>
               ))}
@@ -254,7 +287,9 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
           </div>
 
           <button
-            onClick={() => setTheme((t) => (t === "vs-dark" ? "light" : "vs-dark"))}
+            onClick={() =>
+              setTheme((t) => (t === "vs-dark" ? "light" : "vs-dark"))
+            }
             className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-[#3e3e3e] transition-colors"
           >
             {theme === "vs-dark" ? "Light" : "Dark"}
@@ -263,7 +298,10 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
           <div className="ml-auto flex items-center gap-1.5">
             <Tooltip>
               <TooltipTrigger asChild>
-                <button onClick={handleCopy} className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors">
+                <button
+                  onClick={handleCopy}
+                  className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors"
+                >
                   <Copy className="w-3.5 h-3.5" />
                 </button>
               </TooltipTrigger>
@@ -271,7 +309,10 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button onClick={handleClear} className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors">
+                <button
+                  onClick={handleClear}
+                  className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors"
+                >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               </TooltipTrigger>
@@ -296,7 +337,12 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
         {/* Editor + Output */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Monaco Editor */}
-          <div className={cn("flex-1 overflow-hidden transition-all", !outputOpen && "flex-1")}>
+          <div
+            className={cn(
+              "flex-1 overflow-hidden transition-all",
+              !outputOpen && "flex-1",
+            )}
+          >
             <MonacoEditor
               height="100%"
               language={lang.monacoId}
@@ -310,7 +356,8 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
                 lineNumbers: "on",
                 wordWrap: "off",
                 padding: { top: 16, bottom: 16 },
-                fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+                fontFamily:
+                  "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
                 fontLigatures: true,
                 smoothScrolling: true,
                 cursorBlinking: "smooth",
@@ -322,10 +369,12 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
           </div>
 
           {/* Output terminal */}
-          <div className={cn(
-            "bg-[#1a1a1a] border-t border-[#3e3e3e] flex flex-col transition-all",
-            outputOpen ? "h-52" : "h-9"
-          )}>
+          <div
+            className={cn(
+              "bg-[#1a1a1a] border-t border-[#3e3e3e] flex flex-col transition-all",
+              outputOpen ? "h-52" : "h-9",
+            )}
+          >
             <button
               onClick={() => setOutputOpen(!outputOpen)}
               className="flex items-center gap-2 px-3 h-9 text-xs text-zinc-400 hover:text-white transition-colors w-full shrink-0 border-b border-[#2a2a2a]"
@@ -339,16 +388,24 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
                 </span>
               )}
               <span className="ml-auto">
-                {outputOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                {outputOpen ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                )}
               </span>
             </button>
             {outputOpen && (
               <div className="flex-1 overflow-y-auto p-4">
                 {output ? (
-                  <pre className="text-xs font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap">{output}</pre>
+                  <pre className="text-xs font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                    {output}
+                  </pre>
                 ) : (
                   <p className="text-xs text-zinc-500">
-                    {running ? "Executing..." : "Click Run to execute your code."}
+                    {running
+                      ? "Executing..."
+                      : "Click Run to execute your code."}
                   </p>
                 )}
               </div>
@@ -357,5 +414,5 @@ export default function IdePage({ params }: { params: Promise<{ classId: string 
         </div>
       </div>
     </TooltipProvider>
-  );
+  )
 }

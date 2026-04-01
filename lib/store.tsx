@@ -1,33 +1,33 @@
-"use client";
+"use client"
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
-import { User, USERS } from "@/lib/mock-data";
+import React, { createContext, useContext, useState, ReactNode } from "react"
+import { User, USERS } from "@/lib/mock-data"
 
 interface AppContextValue {
-  currentUser: User;
-  setCurrentUser: (user: User) => void;
-  allUsers: User[];
-  isDarkMode: boolean;
-  toggleDarkMode: () => void;
+  currentUser: User
+  setCurrentUser: (user: User) => void
+  allUsers: User[]
+  isDarkMode: boolean
+  toggleDarkMode: () => void
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   // Default to student view
-  const [currentUser, setCurrentUser] = useState<User>(USERS[0]);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User>(USERS[0])
+  const [isDarkMode, setIsDarkMode] = useState(false)
 
   function toggleDarkMode() {
     setIsDarkMode((prev) => {
-      const next = !prev;
+      const next = !prev
       if (next) {
-        document.documentElement.classList.add("dark");
+        document.documentElement.classList.add("dark")
       } else {
-        document.documentElement.classList.remove("dark");
+        document.documentElement.classList.remove("dark")
       }
-      return next;
-    });
+      return next
+    })
   }
 
   return (
@@ -42,11 +42,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </AppContext.Provider>
-  );
+  )
 }
 
 export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useApp must be used within AppProvider");
-  return ctx;
+  const ctx = useContext(AppContext)
+  if (!ctx) throw new Error("useApp must be used within AppProvider")
+  return ctx
 }

@@ -1,170 +1,254 @@
-"use client";
+"use client"
 
-import { use, useState, useRef, useEffect, useCallback } from "react";
-import { getClassById, getUserById, getStudentsInClass } from "@/lib/mock-data";
-import { useApp } from "@/lib/store";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { use, useState, useRef, useEffect, useCallback } from "react"
+import { getClassById, getUserById, getStudentsInClass } from "@/lib/mock-data"
+import { useApp } from "@/lib/store"
+import { Button } from "@/components/ui/button"
 import {
-  Mic, MicOff, Video, VideoOff, MonitorUp, Phone,
-  Pen, Eraser, Square, Circle, Minus, Undo2, Redo2,
-  Trash2, Download, ChevronRight, Users, MessageSquare,
-  ZoomIn, ZoomOut, Maximize2, Hand, MousePointer2,
-  SlidersHorizontal, ArrowUpRight,
-} from "lucide-react";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  Phone,
+  Pen,
+  Eraser,
+  Square,
+  Circle,
+  Minus,
+  Undo2,
+  Redo2,
+  Trash2,
+  Download,
+  ChevronRight,
+  Users,
+  MessageSquare,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Hand,
+  MousePointer2,
+  SlidersHorizontal,
+  ArrowUpRight,
+} from "lucide-react"
 
-type Tool = "pen" | "eraser" | "line" | "rect" | "circle" | "pointer";
-type DrawAction = { tool: Tool; color: string; width: number; points: [number, number][] };
+type Tool = "pen" | "eraser" | "line" | "rect" | "circle" | "pointer"
+type DrawAction = {
+  tool: Tool
+  color: string
+  width: number
+  points: [number, number][]
+}
 
-const COLORS = ["#1e1e1e", "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#ffffff"];
+const COLORS = [
+  "#1e1e1e",
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#3b82f6",
+  "#a855f7",
+  "#ffffff",
+]
 
 const MOCK_PARTICIPANTS = [
-  { id: "t1", name: "Dr. Priya Nair", avatar: "PN", role: "teacher", muted: false, videoOff: false, speaking: true },
-  { id: "u1", name: "Alex Rivera", avatar: "AR", role: "student", muted: true, videoOff: false, speaking: false },
-  { id: "u2", name: "Jordan Kim", avatar: "JK", role: "student", muted: false, videoOff: true, speaking: false },
-  { id: "u3", name: "Sam Chen", avatar: "SC", role: "student", muted: true, videoOff: false, speaking: false },
-];
+  {
+    id: "t1",
+    name: "Dr. Priya Nair",
+    avatar: "PN",
+    role: "teacher",
+    muted: false,
+    videoOff: false,
+    speaking: true,
+  },
+  {
+    id: "u1",
+    name: "Alex Rivera",
+    avatar: "AR",
+    role: "student",
+    muted: true,
+    videoOff: false,
+    speaking: false,
+  },
+  {
+    id: "u2",
+    name: "Jordan Kim",
+    avatar: "JK",
+    role: "student",
+    muted: false,
+    videoOff: true,
+    speaking: false,
+  },
+  {
+    id: "u3",
+    name: "Sam Chen",
+    avatar: "SC",
+    role: "student",
+    muted: true,
+    videoOff: false,
+    speaking: false,
+  },
+]
 
-export default function SessionPage({ params }: { params: Promise<{ classId: string }> }) {
-  const { classId } = use(params);
-  const { currentUser } = useApp();
-  const cls = getClassById(classId);
+export default function SessionPage({
+  params,
+}: {
+  params: Promise<{ classId: string }>
+}) {
+  const { classId } = use(params)
+  const { currentUser } = useApp()
+  const cls = getClassById(classId)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [activeTool, setActiveTool] = useState<Tool>("pen");
-  const [color, setColor] = useState("#6366f1");
-  const [brushSize, setBrushSize] = useState(3);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [history, setHistory] = useState<ImageData[]>([]);
-  const [redoStack, setRedoStack] = useState<ImageData[]>([]);
-  const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [activeTool, setActiveTool] = useState<Tool>("pen")
+  const [color, setColor] = useState("#6366f1")
+  const [brushSize, setBrushSize] = useState(3)
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [history, setHistory] = useState<ImageData[]>([])
+  const [redoStack, setRedoStack] = useState<ImageData[]>([])
+  const lastPos = useRef<{ x: number; y: number } | null>(null)
 
-  const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);
-  const [screenSharing, setScreenSharing] = useState(false);
-  const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>("participants");
-  const [sessionActive, setSessionActive] = useState(true);
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [micOn, setMicOn] = useState(true)
+  const [camOn, setCamOn] = useState(true)
+  const [screenSharing, setScreenSharing] = useState(false)
+  const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
+    "participants",
+  )
+  const [sessionActive, setSessionActive] = useState(true)
+  const [showColorPicker, setShowColorPicker] = useState(false)
 
-  const isTeacher = currentUser.role === "teacher";
+  const isTeacher = currentUser.role === "teacher"
 
   const getPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const canvas = canvasRef.current!
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
     return {
       x: (e.clientX - rect.left) * scaleX,
       y: (e.clientY - rect.top) * scaleY,
-    };
-  };
+    }
+  }
 
   const saveHistory = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    setHistory((prev) => [...prev.slice(-30), snapshot]);
-    setRedoStack([]);
-  }, []);
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    setHistory((prev) => [...prev.slice(-30), snapshot])
+    setRedoStack([])
+  }, [])
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isTeacher) return;
-    saveHistory();
-    setIsDrawing(true);
-    const pos = getPos(e);
-    lastPos.current = { x: pos.x, y: pos.y };
+    if (!isTeacher) return
+    saveHistory()
+    setIsDrawing(true)
+    const pos = getPos(e)
+    lastPos.current = { x: pos.x, y: pos.y }
 
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-  };
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext("2d")!
+    ctx.beginPath()
+    ctx.moveTo(pos.x, pos.y)
+  }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !lastPos.current || !isTeacher) return;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    const pos = getPos(e);
+    if (!isDrawing || !lastPos.current || !isTeacher) return
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext("2d")!
+    const pos = getPos(e)
 
-    ctx.globalCompositeOperation = activeTool === "eraser" ? "destination-out" : "source-over";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = activeTool === "eraser" ? brushSize * 4 : brushSize;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.globalCompositeOperation =
+      activeTool === "eraser" ? "destination-out" : "source-over"
+    ctx.strokeStyle = color
+    ctx.lineWidth = activeTool === "eraser" ? brushSize * 4 : brushSize
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
 
     if (activeTool === "pen") {
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
+      ctx.lineTo(pos.x, pos.y)
+      ctx.stroke()
     }
-    lastPos.current = { x: pos.x, y: pos.y };
-  };
+    lastPos.current = { x: pos.x, y: pos.y }
+  }
 
   const handleMouseUp = () => {
-    setIsDrawing(false);
-    lastPos.current = null;
-    const canvas = canvasRef.current!;
+    setIsDrawing(false)
+    lastPos.current = null
+    const canvas = canvasRef.current!
     if (canvas) {
-      const ctx = canvas.getContext("2d")!;
-      ctx.globalCompositeOperation = "source-over";
+      const ctx = canvas.getContext("2d")!
+      ctx.globalCompositeOperation = "source-over"
     }
-  };
+  }
 
   const handleUndo = () => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext("2d")!
     if (history.length === 0) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      return
     }
-    const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    setRedoStack((prev) => [...prev, current]);
-    const prev = history[history.length - 1];
-    ctx.putImageData(prev, 0, 0);
-    setHistory((h) => h.slice(0, -1));
-  };
+    const current = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    setRedoStack((prev) => [...prev, current])
+    const prev = history[history.length - 1]
+    ctx.putImageData(prev, 0, 0)
+    setHistory((h) => h.slice(0, -1))
+  }
 
   const handleRedo = () => {
-    if (redoStack.length === 0) return;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    setHistory((prev) => [...prev, current]);
-    const next = redoStack[redoStack.length - 1];
-    ctx.putImageData(next, 0, 0);
-    setRedoStack((r) => r.slice(0, -1));
-  };
+    if (redoStack.length === 0) return
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext("2d")!
+    const current = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    setHistory((prev) => [...prev, current])
+    const next = redoStack[redoStack.length - 1]
+    ctx.putImageData(next, 0, 0)
+    setRedoStack((r) => r.slice(0, -1))
+  }
 
   const handleClear = () => {
-    saveHistory();
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
+    saveHistory()
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext("2d")!
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
 
   // Initialize canvas
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width = 1400;
-    canvas.height = 900;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#fafafa";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.width = 1400
+    canvas.height = 900
+    const ctx = canvas.getContext("2d")!
+    ctx.fillStyle = "#fafafa"
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
     // Draw subtle grid
-    ctx.strokeStyle = "#e5e7eb";
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = "#e5e7eb"
+    ctx.lineWidth = 0.5
     for (let x = 0; x <= canvas.width; x += 40) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, canvas.height)
+      ctx.stroke()
     }
     for (let y = 0; y <= canvas.height; y += 40) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(canvas.width, y)
+      ctx.stroke()
     }
-  }, []);
+  }, [])
 
   const TOOLS: { id: Tool; icon: React.ElementType; label: string }[] = [
     { id: "pointer", icon: MousePointer2, label: "Select" },
@@ -173,9 +257,10 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
     { id: "line", icon: Minus, label: "Line" },
     { id: "rect", icon: Square, label: "Rectangle" },
     { id: "circle", icon: Circle, label: "Circle" },
-  ];
+  ]
 
-  if (!cls) return <div className="p-6 text-muted-foreground">Class not found.</div>;
+  if (!cls)
+    return <div className="p-6 text-muted-foreground">Class not found.</div>
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -188,8 +273,12 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
               Live Session
             </span>
             <Separator orientation="vertical" className="h-4" />
-            <span className="text-sm font-semibold text-foreground truncate">{cls.name}</span>
-            <span className="text-xs text-muted-foreground hidden md:block">{cls.code}</span>
+            <span className="text-sm font-semibold text-foreground truncate">
+              {cls.name}
+            </span>
+            <span className="text-xs text-muted-foreground hidden md:block">
+              {cls.code}
+            </span>
           </div>
 
           {/* Video controls */}
@@ -235,7 +324,11 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
               variant={rightPanel === "participants" ? "secondary" : "ghost"}
               size="icon"
               className="h-8 w-8"
-              onClick={() => setRightPanel(rightPanel === "participants" ? null : "participants")}
+              onClick={() =>
+                setRightPanel(
+                  rightPanel === "participants" ? null : "participants",
+                )
+              }
             >
               <Users className="w-4 h-4" />
             </Button>
@@ -243,7 +336,9 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
               variant={rightPanel === "chat" ? "secondary" : "ghost"}
               size="icon"
               className="h-8 w-8"
-              onClick={() => setRightPanel(rightPanel === "chat" ? null : "chat")}
+              onClick={() =>
+                setRightPanel(rightPanel === "chat" ? null : "chat")
+              }
             >
               <MessageSquare className="w-4 h-4" />
             </Button>
@@ -265,7 +360,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                       activeTool === t.id
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-accent",
-                      !isTeacher && "opacity-40 cursor-not-allowed"
+                      !isTeacher && "opacity-40 cursor-not-allowed",
                     )}
                   >
                     <t.icon className="w-4 h-4" />
@@ -339,7 +434,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                     disabled={!isTeacher}
                     className={cn(
                       "flex items-center justify-center w-8 h-8 rounded-lg transition-colors disabled:opacity-40",
-                      brushSize === s ? "bg-accent" : "hover:bg-accent"
+                      brushSize === s ? "bg-accent" : "hover:bg-accent",
                     )}
                   >
                     <span
@@ -361,10 +456,15 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                 {COLORS.map((c) => (
                   <button
                     key={c}
-                    onClick={() => { setColor(c); setShowColorPicker(false); }}
+                    onClick={() => {
+                      setColor(c)
+                      setShowColorPicker(false)
+                    }}
                     className={cn(
                       "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110",
-                      color === c ? "border-primary scale-110" : "border-border"
+                      color === c
+                        ? "border-primary scale-110"
+                        : "border-border",
                     )}
                     style={{ backgroundColor: c }}
                   />
@@ -376,9 +476,17 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
             {screenSharing && (
               <div className="absolute inset-0 z-10 bg-background/90 flex flex-col items-center justify-center gap-3">
                 <MonitorUp className="w-12 h-12 text-primary" />
-                <p className="text-lg font-semibold text-foreground">Screen sharing active</p>
-                <p className="text-sm text-muted-foreground">Your screen is being shared with all participants</p>
-                <Button variant="destructive" size="sm" onClick={() => setScreenSharing(false)}>
+                <p className="text-lg font-semibold text-foreground">
+                  Screen sharing active
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Your screen is being shared with all participants
+                </p>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setScreenSharing(false)}
+                >
                   Stop sharing
                 </Button>
               </div>
@@ -398,7 +506,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                 isTeacher && activeTool === "pen" ? "cursor-crosshair" : "",
                 isTeacher && activeTool === "eraser" ? "cursor-cell" : "",
                 isTeacher && activeTool === "pointer" ? "cursor-default" : "",
-                !isTeacher ? "cursor-not-allowed" : ""
+                !isTeacher ? "cursor-not-allowed" : "",
               )}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
@@ -417,7 +525,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                     "text-sm font-medium pb-0.5 transition-colors",
                     rightPanel === "participants"
                       ? "text-primary border-b-2 border-primary"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   People ({MOCK_PARTICIPANTS.length})
@@ -428,7 +536,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
                     "text-sm font-medium pb-0.5 transition-colors",
                     rightPanel === "chat"
                       ? "text-primary border-b-2 border-primary"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   Chat
@@ -458,7 +566,7 @@ export default function SessionPage({ params }: { params: Promise<{ classId: str
         </div>
       </div>
     </TooltipProvider>
-  );
+  )
 }
 
 function ControlBtn({
@@ -469,12 +577,12 @@ function ControlBtn({
   destructive,
   highlight,
 }: {
-  active?: boolean;
-  onClick: () => void;
-  icon: React.ElementType;
-  label: string;
-  destructive?: boolean;
-  highlight?: boolean;
+  active?: boolean
+  onClick: () => void
+  icon: React.ElementType
+  label: string
+  destructive?: boolean
+  highlight?: boolean
 }) {
   return (
     <Tooltip>
@@ -486,8 +594,8 @@ function ControlBtn({
             destructive
               ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
               : highlight
-              ? "bg-primary/10 text-primary hover:bg-primary/20"
-              : "bg-accent/50 text-muted-foreground hover:text-foreground hover:bg-accent"
+                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                : "bg-accent/50 text-muted-foreground hover:text-foreground hover:bg-accent",
           )}
         >
           <Icon className="w-4 h-4" />
@@ -495,15 +603,21 @@ function ControlBtn({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
+  )
 }
 
-function VideoTile({ participant: p }: { participant: typeof MOCK_PARTICIPANTS[0] }) {
+function VideoTile({
+  participant: p,
+}: {
+  participant: (typeof MOCK_PARTICIPANTS)[0]
+}) {
   return (
-    <div className={cn(
-      "relative w-28 h-20 rounded-xl overflow-hidden shrink-0 border-2 transition-all",
-      p.speaking ? "border-primary" : "border-transparent"
-    )}>
+    <div
+      className={cn(
+        "relative w-28 h-20 rounded-xl overflow-hidden shrink-0 border-2 transition-all",
+        p.speaking ? "border-primary" : "border-transparent",
+      )}
+    >
       <div className="w-full h-full bg-muted flex items-center justify-center">
         {p.videoOff ? (
           <Avatar className="w-10 h-10">
@@ -533,32 +647,62 @@ function VideoTile({ participant: p }: { participant: typeof MOCK_PARTICIPANTS[0
         </span>
       </div>
     </div>
-  );
+  )
 }
 
 const MOCK_CHAT = [
-  { id: "1", sender: "Jordan Kim", avatar: "JK", msg: "Can you zoom into the tree traversal diagram?", time: "10:14" },
-  { id: "2", sender: "Dr. Priya Nair", avatar: "PN", msg: "Sure, let me highlight that section now.", time: "10:15" },
-  { id: "3", sender: "Sam Chen", avatar: "SC", msg: "Will the BFS part be on the midterm?", time: "10:17" },
-  { id: "4", sender: "Alex Rivera", avatar: "AR", msg: "Thanks for the walkthrough, very clear!", time: "10:20" },
-];
+  {
+    id: "1",
+    sender: "Jordan Kim",
+    avatar: "JK",
+    msg: "Can you zoom into the tree traversal diagram?",
+    time: "10:14",
+  },
+  {
+    id: "2",
+    sender: "Dr. Priya Nair",
+    avatar: "PN",
+    msg: "Sure, let me highlight that section now.",
+    time: "10:15",
+  },
+  {
+    id: "3",
+    sender: "Sam Chen",
+    avatar: "SC",
+    msg: "Will the BFS part be on the midterm?",
+    time: "10:17",
+  },
+  {
+    id: "4",
+    sender: "Alex Rivera",
+    avatar: "AR",
+    msg: "Thanks for the walkthrough, very clear!",
+    time: "10:20",
+  },
+]
 
 function SessionChat() {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState(MOCK_CHAT);
-  const { currentUser } = useApp();
+  const [input, setInput] = useState("")
+  const [messages, setMessages] = useState(MOCK_CHAT)
+  const { currentUser } = useApp()
 
   const send = () => {
-    if (!input.trim()) return;
-    setMessages((prev) => [...prev, {
-      id: String(Date.now()),
-      sender: currentUser.name.split(" ")[0],
-      avatar: currentUser.avatar,
-      msg: input.trim(),
-      time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-    }]);
-    setInput("");
-  };
+    if (!input.trim()) return
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: String(Date.now()),
+        sender: currentUser.name.split(" ")[0],
+        avatar: currentUser.avatar,
+        msg: input.trim(),
+        time: new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ])
+    setInput("")
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -572,10 +716,16 @@ function SessionChat() {
             </Avatar>
             <div>
               <div className="flex items-baseline gap-2">
-                <span className="text-xs font-semibold text-foreground">{m.sender}</span>
-                <span className="text-[10px] text-muted-foreground">{m.time}</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {m.sender}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {m.time}
+                </span>
               </div>
-              <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{m.msg}</p>
+              <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">
+                {m.msg}
+              </p>
             </div>
           </div>
         ))}
@@ -588,24 +738,31 @@ function SessionChat() {
           placeholder="Send a message..."
           className="flex-1 text-xs px-3 py-2 rounded-lg border border-input bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
         />
-        <Button size="sm" className="h-8 px-3 text-xs" onClick={send}>Send</Button>
+        <Button size="sm" className="h-8 px-3 text-xs" onClick={send}>
+          Send
+        </Button>
       </div>
     </div>
-  );
+  )
 }
 
 function ParticipantsPanel() {
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-1">
       {MOCK_PARTICIPANTS.map((p) => (
-        <div key={p.id} className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
+        <div
+          key={p.id}
+          className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors"
+        >
           <Avatar className="w-8 h-8 shrink-0">
             <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
               {p.avatar}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+            <p className="text-sm font-medium text-foreground truncate">
+              {p.name}
+            </p>
             <p className="text-xs text-muted-foreground capitalize">{p.role}</p>
           </div>
           <div className="flex items-center gap-1">
@@ -623,5 +780,5 @@ function ParticipantsPanel() {
         </div>
       ))}
     </div>
-  );
+  )
 }
