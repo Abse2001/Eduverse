@@ -1,10 +1,10 @@
-"use client";
+"use client"
 
-import { Bell, Moon, Sun, Search, ChevronDown } from "lucide-react";
-import { useApp } from "@/lib/store";
-import { USERS } from "@/lib/mock-data";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { Bell, Moon, Sun, Search, ChevronDown } from "lucide-react"
+import { useApp } from "@/lib/store"
+import { USERS } from "@/lib/mock-data"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,21 +12,19 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+} from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 const ROLE_COLOR: Record<string, string> = {
-  student:
-    "bg-brand-subtle text-brand",
+  student: "bg-brand-subtle text-brand",
   teacher:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  admin:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-};
+  admin: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+}
 
 export function TopBar() {
-  const { currentUser, setCurrentUser, isDarkMode, toggleDarkMode } = useApp();
+  const { currentUser, setCurrentUser, isDarkMode, toggleDarkMode } = useApp()
 
   return (
     <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-card/80 backdrop-blur-sm">
@@ -91,12 +89,14 @@ export function TopBar() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{user.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user.email}
+                  </p>
                 </div>
                 <span
                   className={cn(
                     "text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none capitalize",
-                    ROLE_COLOR[user.role]
+                    ROLE_COLOR[user.role],
                   )}
                 >
                   {user.role}
@@ -110,5 +110,5 @@ export function TopBar() {
         </DropdownMenu>
       </div>
     </header>
-  );
+  )
 }
