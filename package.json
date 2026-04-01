@@ -5,7 +5,8 @@
 		"dev": "next dev",
 		"build": "next build",
 		"start": "next start",
-		"format": "biome format --write ."
+		"format": "biome format --write .",
+		"format:check": "biome format ."
 	},
 	"dependencies": {
 		"@biomejs/biome": "^2.4.10",
