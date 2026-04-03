@@ -51,6 +51,6 @@ export function appendStoredClassMessage(classId: string, message: Message) {
       JSON.stringify(next),
     )
   } catch {
-    // Ignore storage errors in demo mode.
+    console.error("Failed to append class message to localStorage")
   }
 }
