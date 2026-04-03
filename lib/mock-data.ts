@@ -38,6 +38,8 @@ export interface Message {
   type: "text" | "image" | "file" | "announcement"
   fileName?: string
   fileSize?: string
+  mediaUrl?: string
+  mimeType?: string
   pinned?: boolean
 }
 
