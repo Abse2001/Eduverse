@@ -1,49 +1,41 @@
 "use client"
 
 import Link from "next/link"
-import { useApp } from "@/lib/store"
 import {
+  ArrowRight,
+  BookOpen,
+  Calendar,
+  FileText,
+  PlusCircle,
+  TrendingUp,
+  Users,
+  Video,
+} from "lucide-react"
+import { StatCard } from "@/components/shared/stat-card"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import {
+  getAssignmentsByClass,
   getClassesByTeacher,
   getStudentsInClass,
-  getAssignmentsByClass,
-  USERS,
-  Class,
 } from "@/lib/mock-data"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  BookOpen,
-  Users,
-  FileText,
-  TrendingUp,
-  ArrowRight,
-  Video,
-  PlusCircle,
-  Calendar,
-} from "lucide-react"
+import { getAssignmentProgress } from "@/lib/education/selectors"
+import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
-
-const CLASS_BG: Record<string, string> = {
-  indigo: "bg-indigo-500",
-  emerald: "bg-emerald-500",
-  violet: "bg-violet-500",
-}
+import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function TeacherDashboard() {
   const { currentUser } = useApp()
   const myClasses = getClassesByTeacher(currentUser.id)
-
-  const totalStudents = new Set(myClasses.flatMap((c) => c.studentIds)).size
-
+  const totalStudents = new Set(myClasses.flatMap((cls) => cls.studentIds)).size
   const totalAssignments = myClasses.reduce(
-    (sum, c) => sum + getAssignmentsByClass(c.id).length,
+    (sum, cls) => sum + getAssignmentsByClass(cls.id).length,
     0,
   )
-
   const pendingGrades = myClasses
-    .flatMap((c) => getAssignmentsByClass(c.id))
-    .filter((a) => a.status === "submitted").length
+    .flatMap((cls) => getAssignmentsByClass(cls.id))
+    .filter((assignment) => assignment.status === "submitted").length
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -62,7 +54,6 @@ export function TeacherDashboard() {
         </Button>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Active Classes"
@@ -91,7 +82,6 @@ export function TeacherDashboard() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
-        {/* Classes */}
         <div className="md:col-span-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-foreground">Your Classes</h2>
@@ -101,12 +91,15 @@ export function TeacherDashboard() {
               </Button>
             </Link>
           </div>
+
           {myClasses.map((cls) => {
             const students = getStudentsInClass(cls.id)
             const assignments = getAssignmentsByClass(cls.id)
-            const submitted = assignments.filter(
-              (a) => a.status === "submitted",
+            const submittedAssignments = assignments.filter(
+              (assignment) => assignment.status === "submitted",
             ).length
+            const { progress } = getAssignmentProgress(assignments)
+
             return (
               <Card key={cls.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
@@ -114,7 +107,7 @@ export function TeacherDashboard() {
                     <div
                       className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
-                        CLASS_BG[cls.color] ?? "bg-primary",
+                        CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
                       )}
                     >
                       {cls.code.slice(0, 2)}
@@ -131,32 +124,48 @@ export function TeacherDashboard() {
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {cls.code} &middot; {cls.room}
                       </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          Completion
+                        </span>
+                        <div className="flex-1">
+                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {progress}%
+                        </span>
+                      </div>
                       <div className="flex items-center gap-4 mt-3">
                         <div className="flex -space-x-1.5">
-                          {students.slice(0, 4).map((s) => (
+                          {students.slice(0, 4).map((student) => (
                             <Avatar
-                              key={s.id}
+                              key={student.id}
                               className="w-6 h-6 ring-2 ring-card"
                             >
                               <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-                                {s.avatar}
+                                {student.avatar}
                               </AvatarFallback>
                             </Avatar>
                           ))}
-                          {students.length > 4 && (
+                          {students.length > 4 ? (
                             <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[9px] text-muted-foreground font-medium">
                               +{students.length - 4}
                             </div>
-                          )}
+                          ) : null}
                         </div>
                         <span className="text-xs text-muted-foreground">
                           {students.length} students
                         </span>
-                        {submitted > 0 && (
+                        {submittedAssignments > 0 ? (
                           <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                            {submitted} to grade
+                            {submittedAssignments} to grade
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -185,7 +194,6 @@ export function TeacherDashboard() {
           })}
         </div>
 
-        {/* Quick Actions & Schedule */}
         <div className="space-y-4">
           <div className="space-y-2">
             <h2 className="font-semibold text-foreground">Quick Actions</h2>
@@ -226,7 +234,6 @@ export function TeacherDashboard() {
             </div>
           </div>
 
-          {/* Today's schedule */}
           <div className="space-y-2">
             <h2 className="font-semibold text-foreground">
               Today&apos;s Schedule
@@ -237,7 +244,7 @@ export function TeacherDashboard() {
                   <div
                     className={cn(
                       "w-2 h-10 rounded-full shrink-0",
-                      CLASS_BG[cls.color] ?? "bg-primary",
+                      CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
                     )}
                   />
                   <div className="min-w-0">
@@ -255,46 +262,5 @@ export function TeacherDashboard() {
         </div>
       </div>
     </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-}: {
-  label: string
-  value: string
-  icon: React.ElementType
-  color: string
-}) {
-  const colorMap: Record<string, string> = {
-    indigo:
-      "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
-    amber:
-      "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
-    emerald:
-      "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
-    violet:
-      "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400",
-  }
-  return (
-    <Card>
-      <CardContent className="p-4 flex items-center gap-3">
-        <div
-          className={cn(
-            "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-            colorMap[color],
-          )}
-        >
-          <Icon className="w-4 h-4" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground leading-none">{label}</p>
-          <p className="text-xl font-bold text-foreground mt-0.5">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
   )
 }
