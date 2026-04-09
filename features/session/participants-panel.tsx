@@ -1,8 +1,8 @@
 "use client"
 
-import { Mic, MicOff, Video, VideoOff } from "lucide-react"
+import { Mic, MicOff, MonitorUp, Video, VideoOff } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import type { SessionParticipant } from "./session-data"
+import type { SessionParticipant } from "./live-session-types"
 
 export function ParticipantsPanel({
   participants,
@@ -24,12 +24,16 @@ export function ParticipantsPanel({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
               {participant.name}
+              {participant.isLocal ? " (You)" : ""}
             </p>
             <p className="text-xs text-muted-foreground capitalize">
               {participant.role}
             </p>
           </div>
           <div className="flex items-center gap-1">
+            {participant.isPresenting ? (
+              <MonitorUp className="w-3.5 h-3.5 text-primary" />
+            ) : null}
             {participant.muted ? (
               <MicOff className="w-3.5 h-3.5 text-muted-foreground" />
             ) : (

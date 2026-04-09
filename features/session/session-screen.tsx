@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   MessageSquare,
+  Monitor,
   Mic,
   MicOff,
   MonitorUp,
@@ -16,7 +17,7 @@ import {
   Video,
   VideoOff,
 } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ConnectionState } from "livekit-client"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -30,20 +31,16 @@ import { cn } from "@/lib/utils"
 import type { Class } from "@/lib/mock-data"
 import { ControlButton } from "./control-button"
 import { ParticipantsPanel } from "./participants-panel"
-import {
-  MOCK_SESSION_PARTICIPANTS,
-  SESSION_COLORS,
-  SESSION_TOOLS,
-} from "./session-data"
+import { SessionAudioRenderer } from "./session-audio-renderer"
+import { SESSION_COLORS, SESSION_TOOLS } from "./session-data"
 import { SessionChat } from "./session-chat"
+import { VideoTrackView } from "./track-media"
+import { useLiveSession } from "./use-live-session"
 import { useWhiteboard } from "./use-whiteboard"
 import { VideoTile } from "./video-tile"
 
 export function SessionScreen({ cls }: { cls: Class }) {
   const { currentUser } = useApp()
-  const [micOn, setMicOn] = useState(true)
-  const [camOn, setCamOn] = useState(true)
-  const [screenSharing, setScreenSharing] = useState(false)
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
@@ -51,6 +48,17 @@ export function SessionScreen({ cls }: { cls: Class }) {
 
   const isTeacher = currentUser.role === "teacher"
   const whiteboard = useWhiteboard(isTeacher)
+  const liveSession = useLiveSession({
+    classId: cls.id,
+    currentUser,
+    enabled: sessionActive,
+  })
+  const participantCount = liveSession.participants.length
+  const liveBadgeLabel = liveSession.isConnecting
+    ? "Connecting"
+    : liveSession.connectionState === ConnectionState.Connected
+      ? "Live Session"
+      : "Offline"
 
   if (!sessionActive) {
     return (
@@ -70,11 +78,21 @@ export function SessionScreen({ cls }: { cls: Class }) {
   return (
     <TooltipProvider delayDuration={0}>
       <div className="flex h-full flex-col bg-background overflow-hidden">
+        <SessionAudioRenderer participants={liveSession.participants} />
         <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card shrink-0">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Session
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  liveSession.connectionState === ConnectionState.Connected
+                    ? "bg-emerald-500 animate-pulse"
+                    : liveSession.isConnecting
+                      ? "bg-amber-500 animate-pulse"
+                      : "bg-muted-foreground",
+                )}
+              />
+              {liveBadgeLabel}
             </span>
             <Separator orientation="vertical" className="h-4" />
             <span className="text-sm font-semibold text-foreground truncate">
@@ -87,23 +105,28 @@ export function SessionScreen({ cls }: { cls: Class }) {
 
           <div className="flex items-center gap-1.5">
             <ControlButton
-              icon={micOn ? Mic : MicOff}
-              label={micOn ? "Mute" : "Unmute"}
-              onClick={() => setMicOn((prev) => !prev)}
-              destructive={!micOn}
+              icon={liveSession.micOn ? Mic : MicOff}
+              label={liveSession.micOn ? "Mute" : "Unmute"}
+              onClick={() => void liveSession.toggleMic()}
+              destructive={!liveSession.micOn}
+              disabled={liveSession.isConnecting}
             />
             <ControlButton
-              icon={camOn ? Video : VideoOff}
-              label={camOn ? "Stop camera" : "Start camera"}
-              onClick={() => setCamOn((prev) => !prev)}
-              destructive={!camOn}
+              icon={liveSession.camOn ? Video : VideoOff}
+              label={liveSession.camOn ? "Stop camera" : "Start camera"}
+              onClick={() => void liveSession.toggleCamera()}
+              destructive={!liveSession.camOn}
+              disabled={liveSession.isConnecting}
             />
             {isTeacher ? (
               <ControlButton
                 icon={MonitorUp}
-                label={screenSharing ? "Stop sharing" : "Share screen"}
-                onClick={() => setScreenSharing((prev) => !prev)}
-                highlight={screenSharing}
+                label={
+                  liveSession.screenSharing ? "Stop sharing" : "Share screen"
+                }
+                onClick={() => void liveSession.toggleScreenShare()}
+                highlight={liveSession.screenSharing}
+                disabled={liveSession.isConnecting}
               />
             ) : null}
             <Separator orientation="vertical" className="h-6 mx-1" />
@@ -111,7 +134,10 @@ export function SessionScreen({ cls }: { cls: Class }) {
               size="sm"
               variant="destructive"
               className="gap-1.5 text-xs h-8"
-              onClick={() => setSessionActive(false)}
+              onClick={() => {
+                liveSession.disconnect()
+                setSessionActive(false)
+              }}
             >
               <Phone className="w-3.5 h-3.5" />
               Leave
@@ -268,28 +294,47 @@ export function SessionScreen({ cls }: { cls: Class }) {
               </div>
             ) : null}
 
-            {screenSharing ? (
-              <div className="absolute inset-0 z-10 bg-background/90 flex flex-col items-center justify-center gap-3">
-                <MonitorUp className="w-12 h-12 text-primary" />
-                <p className="text-lg font-semibold text-foreground">
-                  Screen sharing active
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Your screen is being shared with all participants
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setScreenSharing(false)}
-                >
-                  Stop sharing
-                </Button>
+            {liveSession.presentation ? (
+              <div className="absolute inset-0 z-10 bg-black">
+                <VideoTrackView
+                  publication={liveSession.presentation.publication}
+                  muted={liveSession.presentation.participant.isLocal}
+                  className="object-contain"
+                />
+                <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
+                  <Monitor className="w-3.5 h-3.5" />
+                  {liveSession.presentation.participant.isLocal
+                    ? "You are presenting"
+                    : `${liveSession.presentation.participant.name} is presenting`}
+                </div>
+                {liveSession.screenSharing ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="absolute top-3 right-3 z-20"
+                    onClick={() => void liveSession.toggleScreenShare()}
+                  >
+                    Stop sharing
+                  </Button>
+                ) : null}
               </div>
             ) : null}
 
-            {!isTeacher && !screenSharing ? (
+            {!isTeacher && !liveSession.presentation ? (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-muted/90 backdrop-blur-sm text-xs text-muted-foreground font-medium border border-border">
-                View-only - teacher is presenting
+                View-only whiteboard
+              </div>
+            ) : null}
+
+            {liveSession.error ? (
+              <div className="absolute bottom-3 left-3 z-20 max-w-md rounded-xl border border-destructive/30 bg-background/95 px-3 py-2 text-xs text-destructive shadow-lg">
+                {liveSession.error}
+              </div>
+            ) : null}
+
+            {liveSession.isConnecting ? (
+              <div className="absolute right-3 top-3 z-20 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+                Joining room...
               </div>
             ) : null}
 
@@ -327,7 +372,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  People ({MOCK_SESSION_PARTICIPANTS.length})
+                  People ({participantCount})
                 </button>
                 <button
                   onClick={() => setRightPanel("chat")}
@@ -349,7 +394,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
               </div>
 
               {rightPanel === "participants" ? (
-                <ParticipantsPanel participants={MOCK_SESSION_PARTICIPANTS} />
+                <ParticipantsPanel participants={liveSession.participants} />
               ) : (
                 <SessionChat />
               )}
@@ -358,12 +403,14 @@ export function SessionScreen({ cls }: { cls: Class }) {
         </div>
 
         <div className="flex items-center gap-2 p-2 border-t border-border bg-card shrink-0 overflow-x-auto">
-          {MOCK_SESSION_PARTICIPANTS.map((participant) => (
+          {liveSession.participants.map((participant) => (
             <VideoTile key={participant.id} participant={participant} />
           ))}
           <div className="ml-auto hidden md:flex items-center gap-2 text-xs text-muted-foreground pr-2">
             <ArrowUpRight className="w-3.5 h-3.5" />
-            Whiteboard synced live
+            {liveSession.presentation
+              ? "Presentation synced live"
+              : "Whiteboard synced live"}
           </div>
         </div>
       </div>

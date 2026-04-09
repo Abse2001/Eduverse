@@ -51,6 +51,8 @@
 		"embla-carousel-react": "8.6.0",
 		"input-otp": "1.4.2",
 		"lucide-react": "^0.564.0",
+		"livekit-client": "^2.15.6",
+		"livekit-server-sdk": "^2.13.1",
 		"next": "16.2.0",
 		"next-themes": "^0.4.6",
 		"react": "19.2.4",

@@ -2,16 +2,6 @@ import { Circle, Eraser, Minus, MousePointer2, Pen, Square } from "lucide-react"
 
 export type Tool = "pen" | "eraser" | "line" | "rect" | "circle" | "pointer"
 
-export interface SessionParticipant {
-  id: string
-  name: string
-  avatar: string
-  role: "teacher" | "student"
-  muted: boolean
-  videoOff: boolean
-  speaking: boolean
-}
-
 export const SESSION_COLORS = [
   "#1e1e1e",
   "#6366f1",
@@ -34,45 +24,6 @@ export const SESSION_TOOLS: Array<{
   { id: "line", icon: Minus, label: "Line" },
   { id: "rect", icon: Square, label: "Rectangle" },
   { id: "circle", icon: Circle, label: "Circle" },
-]
-
-export const MOCK_SESSION_PARTICIPANTS: SessionParticipant[] = [
-  {
-    id: "t1",
-    name: "Dr. Priya Nair",
-    avatar: "PN",
-    role: "teacher",
-    muted: false,
-    videoOff: false,
-    speaking: true,
-  },
-  {
-    id: "u1",
-    name: "Alex Rivera",
-    avatar: "AR",
-    role: "student",
-    muted: true,
-    videoOff: false,
-    speaking: false,
-  },
-  {
-    id: "u2",
-    name: "Jordan Kim",
-    avatar: "JK",
-    role: "student",
-    muted: false,
-    videoOff: true,
-    speaking: false,
-  },
-  {
-    id: "u3",
-    name: "Sam Chen",
-    avatar: "SC",
-    role: "student",
-    muted: true,
-    videoOff: false,
-    speaking: false,
-  },
 ]
 
 export const MOCK_SESSION_CHAT = [
