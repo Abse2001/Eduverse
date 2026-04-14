@@ -1,7 +1,7 @@
 "use client"
 
 import { useApp } from "@/lib/store"
-import { ASSIGNMENTS, CLASSES, USERS } from "@/lib/mock-data"
+import { CLASSES, USERS } from "@/lib/mock-data"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ShieldCheck, Activity, BookOpen, Users } from "lucide-react"
 import { ActivityTab } from "@/features/admin/activity-tab"
@@ -10,7 +10,7 @@ import { ClassesTab } from "@/features/admin/classes-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 
 export default function AdminPage() {
-  const { currentUser } = useApp()
+  const { currentUser, assignments } = useApp()
 
   if (currentUser.role !== "admin") {
     return (
@@ -28,7 +28,7 @@ export default function AdminPage() {
 
   const students = USERS.filter((u) => u.role === "student")
   const teachers = USERS.filter((u) => u.role === "teacher")
-  const totalAssignments = ASSIGNMENTS.length
+  const totalAssignments = assignments.length
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">

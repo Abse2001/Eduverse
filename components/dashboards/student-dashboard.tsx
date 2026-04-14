@@ -33,11 +33,13 @@ import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function StudentDashboard() {
-  const { currentUser } = useApp()
+  const { currentUser, assignments } = useApp()
   const myClasses = getClassesByStudent(currentUser.id)
+  const assignmentsByClass = (classId: string) =>
+    getAssignmentsByClass(classId, currentUser, assignments)
   const allAssignments = getAssignmentsWithClassInfo(
     myClasses,
-    getAssignmentsByClass,
+    assignmentsByClass,
   )
   const pendingAssignments = allAssignments.filter(
     (assignment) => assignment.status === "pending",
@@ -100,7 +102,7 @@ export function StudentDashboard() {
           </div>
 
           {myClasses.map((cls) => {
-            const assignments = getAssignmentsByClass(cls.id)
+            const assignments = assignmentsByClass(cls.id)
             const { progress } = getAssignmentProgress(assignments)
             const rankInfo = classRanks.find((rank) => rank.cls.id === cls.id)
 

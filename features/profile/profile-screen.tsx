@@ -41,7 +41,7 @@ import {
 } from "@/lib/view-config"
 
 export function ProfileScreen() {
-  const { currentUser } = useApp()
+  const { currentUser, assignments } = useApp()
   const isStudent = currentUser.role === "student"
   const isTeacher = currentUser.role === "teacher"
   const myClasses = isStudent
@@ -49,9 +49,9 @@ export function ProfileScreen() {
     : isTeacher
       ? getClassesByTeacher(currentUser.id)
       : CLASSES
-  const allAssignments = myClasses.flatMap((cls) =>
-    getAssignmentsByClass(cls.id),
-  )
+  const assignmentsByClass = (classId: string) =>
+    getAssignmentsByClass(classId, currentUser, assignments)
+  const allAssignments = myClasses.flatMap((cls) => assignmentsByClass(cls.id))
   const gradedAssignments = allAssignments.filter(
     (assignment) =>
       assignment.status === "graded" && assignment.score !== undefined,
@@ -153,9 +153,7 @@ export function ProfileScreen() {
           ) : null}
         </div>
         {myClasses.map((cls) => {
-          const { progress } = getAssignmentProgress(
-            getAssignmentsByClass(cls.id),
-          )
+          const { progress } = getAssignmentProgress(assignmentsByClass(cls.id))
           const rankInfo = classRanks.find((rank) => rank.cls.id === cls.id)
 
           return (
@@ -237,7 +235,7 @@ export function ProfileScreen() {
             <CardContent className="p-0 divide-y divide-border">
               {gradedAssignments.slice(0, 5).map((assignment) => {
                 const cls = myClasses.find((candidate) =>
-                  getAssignmentsByClass(candidate.id).some(
+                  assignmentsByClass(candidate.id).some(
                     (current) => current.id === assignment.id,
                   ),
                 )

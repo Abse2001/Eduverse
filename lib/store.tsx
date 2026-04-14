@@ -1,12 +1,14 @@
 "use client"
 
 import React, { createContext, useContext, useState, ReactNode } from "react"
-import { User, USERS } from "@/lib/mock-data"
+import { type Assignment, type User, USERS } from "@/lib/mock-data"
 
 interface AppContextValue {
   currentUser: User
   setCurrentUser: (user: User) => void
   allUsers: User[]
+  assignments: Assignment[]
+  addAssignment: (assignment: Assignment) => void
   isDarkMode: boolean
   toggleDarkMode: () => void
 }
@@ -16,7 +18,12 @@ const AppContext = createContext<AppContextValue | null>(null)
 export function AppProvider({ children }: { children: ReactNode }) {
   // Default to student view
   const [currentUser, setCurrentUser] = useState<User>(USERS[0])
+  const [assignments, setAssignments] = useState<Assignment[]>([])
   const [isDarkMode, setIsDarkMode] = useState(false)
+
+  function addAssignment(assignment: Assignment) {
+    setAssignments((current) => [assignment, ...current])
+  }
 
   function toggleDarkMode() {
     setIsDarkMode((prev) => {
@@ -36,6 +43,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUser,
         setCurrentUser,
         allUsers: USERS,
+        assignments,
+        addAssignment,
         isDarkMode,
         toggleDarkMode,
       }}

@@ -71,10 +71,10 @@ const STATUS_ICON = {
 }
 
 export function ClassHomeScreen({ cls }: { cls: Class }) {
-  const { currentUser } = useApp()
+  const { currentUser, assignments: allAssignments } = useApp()
   const teacher = getUserById(cls.teacherId)
   const students = getStudentsInClass(cls.id)
-  const assignments = getAssignmentsByClass(cls.id)
+  const assignments = getAssignmentsByClass(cls.id, currentUser, allAssignments)
   const materials = getMaterialsByClass(cls.id)
   const { completedCount, progress } = getAssignmentProgress(assignments)
 

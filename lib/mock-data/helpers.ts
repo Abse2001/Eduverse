@@ -1,4 +1,3 @@
-import { ASSIGNMENTS } from "./assignments"
 import { CLASSES } from "./classes"
 import { LEADERBOARD } from "./leaderboard"
 import { MATERIALS } from "./materials"
@@ -44,8 +43,34 @@ export function getMaterialsByClass(classId: string): Material[] {
   return MATERIALS.filter((material) => material.classId === classId)
 }
 
-export function getAssignmentsByClass(classId: string): Assignment[] {
-  return ASSIGNMENTS.filter((assignment) => assignment.classId === classId)
+export function isAssignmentVisibleToUserInClass(
+  assignment: Assignment,
+  classId: string,
+  user?: User,
+): boolean {
+  if (!assignment.classIds.includes(classId)) return false
+
+  if (!user) return true
+
+  if (user.role === "teacher") {
+    return assignment.teacherId === user.id
+  }
+
+  if (user.role === "student") {
+    return user.enrolledClassIds?.includes(classId) ?? false
+  }
+
+  return true
+}
+
+export function getAssignmentsByClass(
+  classId: string,
+  user?: User,
+  assignments: Assignment[] = [],
+): Assignment[] {
+  return assignments.filter((assignment) =>
+    isAssignmentVisibleToUserInClass(assignment, classId, user),
+  )
 }
 
 export function getLeaderboardByClass(classId: string): LeaderboardEntry[] {

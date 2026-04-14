@@ -11,6 +11,8 @@ describe("getAssignmentProgress", () => {
       {
         id: "a1",
         classId: "c1",
+        classIds: ["c1"],
+        teacherId: "t1",
         title: "One",
         description: "",
         dueDate: "2026-04-01T00:00:00Z",
@@ -21,6 +23,8 @@ describe("getAssignmentProgress", () => {
       {
         id: "a2",
         classId: "c1",
+        classIds: ["c1"],
+        teacherId: "t1",
         title: "Two",
         description: "",
         dueDate: "2026-04-02T00:00:00Z",
@@ -31,6 +35,8 @@ describe("getAssignmentProgress", () => {
       {
         id: "a3",
         classId: "c1",
+        classIds: ["c1"],
+        teacherId: "t1",
         title: "Three",
         description: "",
         dueDate: "2026-04-03T00:00:00Z",

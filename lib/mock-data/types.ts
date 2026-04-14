@@ -56,6 +56,8 @@ export interface Material {
 export interface Assignment {
   id: string
   classId: string
+  classIds: string[]
+  teacherId: string
   title: string
   description: string
   dueDate: string
@@ -64,6 +66,7 @@ export interface Assignment {
   status?: "pending" | "submitted" | "graded"
   score?: number
   hasIde?: boolean
+  attachmentFileName?: string
 }
 
 export interface Submission {

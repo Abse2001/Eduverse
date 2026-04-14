@@ -26,15 +26,17 @@ import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function TeacherDashboard() {
-  const { currentUser } = useApp()
+  const { currentUser, assignments } = useApp()
   const myClasses = getClassesByTeacher(currentUser.id)
+  const assignmentsByClass = (classId: string) =>
+    getAssignmentsByClass(classId, currentUser, assignments)
   const totalStudents = new Set(myClasses.flatMap((cls) => cls.studentIds)).size
   const totalAssignments = myClasses.reduce(
-    (sum, cls) => sum + getAssignmentsByClass(cls.id).length,
+    (sum, cls) => sum + assignmentsByClass(cls.id).length,
     0,
   )
   const pendingGrades = myClasses
-    .flatMap((cls) => getAssignmentsByClass(cls.id))
+    .flatMap((cls) => assignmentsByClass(cls.id))
     .filter((assignment) => assignment.status === "submitted").length
 
   return (
@@ -94,7 +96,7 @@ export function TeacherDashboard() {
 
           {myClasses.map((cls) => {
             const students = getStudentsInClass(cls.id)
-            const assignments = getAssignmentsByClass(cls.id)
+            const assignments = assignmentsByClass(cls.id)
             const submittedAssignments = assignments.filter(
               (assignment) => assignment.status === "submitted",
             ).length

@@ -1,30 +1,37 @@
 "use client"
 
-import { use } from "react"
+import { use, useEffect, useState } from "react"
 import Link from "next/link"
+import { addDays, format, isPast } from "date-fns"
 import {
-  getClassById,
   getAssignmentsByClass,
-  Assignment,
+  getClassById,
+  getClassesByTeacher,
+  type Assignment,
 } from "@/lib/mock-data"
+import {
+  CreateAssignmentDialog,
+  type CreateAssignmentValues,
+} from "@/features/assignments/create-assignment-dialog"
 import { useApp } from "@/lib/store"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   CheckCircle2,
   AlertCircle,
   CircleDot,
   Clock,
   Code2,
-  PlusCircle,
+  FileText,
   BookOpen,
+  ClipboardCheck,
   FlaskConical,
   ClipboardList,
   Brain,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { format, isPast } from "date-fns"
 
 const STATUS_CONFIG = {
   graded: {
@@ -80,9 +87,32 @@ export default function AssignmentsPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const { currentUser } = useApp()
+  const { currentUser, assignments: allAssignments, addAssignment } = useApp()
+  const isTeacher = currentUser.role === "teacher"
+  const [successMessage, setSuccessMessage] = useState("")
   const cls = getClassById(classId)
-  const assignments = getAssignmentsByClass(classId)
+  const canCreateAssignment = isTeacher && cls?.teacherId === currentUser.id
+  const teacherClasses = isTeacher ? getClassesByTeacher(currentUser.id) : []
+  const assignments = getAssignmentsByClass(
+    classId,
+    currentUser,
+    allAssignments,
+  )
+
+  useEffect(() => {
+    if (!successMessage) return
+
+    if (!canCreateAssignment) {
+      setSuccessMessage("")
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSuccessMessage("")
+    }, 4000)
+
+    return () => window.clearTimeout(timeout)
+  }, [canCreateAssignment, successMessage])
 
   if (!cls)
     return <div className="p-6 text-muted-foreground">Class not found.</div>
@@ -101,6 +131,30 @@ export default function AssignmentsPage({
     { label: "Graded", items: graded, emptyText: "No graded work yet" },
   ]
 
+  function handleCreateAssignment(values: CreateAssignmentValues) {
+    if (!canCreateAssignment) return
+
+    const classIds = values.classIds.includes(classId)
+      ? values.classIds
+      : [classId, ...values.classIds]
+    const assignment: Assignment = {
+      id: `created-${Date.now()}`,
+      classId: classIds[0],
+      classIds,
+      teacherId: currentUser.id,
+      title: values.title,
+      description: values.description,
+      dueDate: addDays(new Date(), 7).toISOString(),
+      maxScore: 100,
+      type: "assignment",
+      status: "pending",
+      attachmentFileName: values.attachmentFileName,
+    }
+
+    addAssignment(assignment)
+    setSuccessMessage(`"${values.title}" was created successfully.`)
+  }
+
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -110,13 +164,24 @@ export default function AssignmentsPage({
             {cls.code} &middot; {assignments.length} assignments
           </p>
         </div>
-        {currentUser.role === "teacher" && (
-          <Button size="sm" className="gap-2">
-            <PlusCircle className="w-4 h-4" />
-            New Assignment
-          </Button>
+        {canCreateAssignment && (
+          <CreateAssignmentDialog
+            classes={teacherClasses}
+            currentClassId={classId}
+            onCreate={handleCreateAssignment}
+          />
         )}
       </div>
+
+      {canCreateAssignment && successMessage ? (
+        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-100">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+          <AlertTitle>Assignment created</AlertTitle>
+          <AlertDescription className="text-emerald-700 dark:text-emerald-200">
+            {successMessage}
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-3">
@@ -147,31 +212,42 @@ export default function AssignmentsPage({
         ))}
       </div>
 
-      {/* Sections */}
-      {sections.map((section) => (
-        <div key={section.label} className="space-y-3">
-          <h2 className="font-semibold text-sm text-foreground flex items-center gap-2">
-            {section.label}
-            <span className="text-xs font-normal text-muted-foreground">
-              ({section.items.length})
-            </span>
-          </h2>
-          {section.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground pl-1">
-              {section.emptyText}
+      {assignments.length === 0 ? (
+        <Card>
+          <CardContent className="py-14 text-center">
+            <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="font-medium text-foreground">No assignments yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Assignments for this class will appear here.
             </p>
-          ) : (
-            section.items.map((a) => (
-              <AssignmentCard
-                key={a.id}
-                assignment={a}
-                classId={classId}
-                isTeacher={currentUser.role === "teacher"}
-              />
-            ))
-          )}
-        </div>
-      ))}
+          </CardContent>
+        </Card>
+      ) : (
+        sections.map((section) => (
+          <div key={section.label} className="space-y-3">
+            <h2 className="font-semibold text-sm text-foreground flex items-center gap-2">
+              {section.label}
+              <span className="text-xs font-normal text-muted-foreground">
+                ({section.items.length})
+              </span>
+            </h2>
+            {section.items.length === 0 ? (
+              <p className="text-sm text-muted-foreground pl-1">
+                {section.emptyText}
+              </p>
+            ) : (
+              section.items.map((a) => (
+                <AssignmentCard
+                  key={a.id}
+                  assignment={a}
+                  classId={classId}
+                  isTeacher={isTeacher}
+                />
+              ))
+            )}
+          </div>
+        ))
+      )}
     </div>
   )
 }
@@ -227,7 +303,7 @@ function AssignmentCard({
               )}
             >
               <Clock className="w-3 h-3" />
-              {overdue ? "Overdue · " : "Due "}
+              {overdue ? "Overdue - " : "Due "}
               {format(due, "MMM d, h:mm a")}
             </span>
             <span className="text-xs text-muted-foreground">
@@ -236,6 +312,12 @@ function AssignmentCard({
             {a.score !== undefined && (
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                 Score: {a.score}/{a.maxScore}
+              </span>
+            )}
+            {a.attachmentFileName && (
+              <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <FileText className="w-3 h-3 shrink-0" />
+                <span className="truncate">{a.attachmentFileName}</span>
               </span>
             )}
             {a.hasIde && (

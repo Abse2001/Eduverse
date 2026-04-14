@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 import { CLASS_BADGE_COLOR_MAP, CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function ClassesScreen() {
-  const { currentUser } = useApp()
+  const { currentUser, assignments: allAssignments } = useApp()
 
   const myClasses =
     currentUser.role === "student"
@@ -67,7 +67,11 @@ export function ClassesScreen() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {myClasses.map((cls) => {
           const teacher = USERS.find((user) => user.id === cls.teacherId)
-          const assignments = getAssignmentsByClass(cls.id)
+          const assignments = getAssignmentsByClass(
+            cls.id,
+            currentUser,
+            allAssignments,
+          )
           const pendingCount = assignments.filter(
             (assignment) => assignment.status === "pending",
           ).length
