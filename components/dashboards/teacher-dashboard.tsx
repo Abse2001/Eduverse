@@ -49,7 +49,6 @@ export function TeacherDashboard() {
             {currentUser.institution} &middot; Spring 2026
           </p>
         </div>
-
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
