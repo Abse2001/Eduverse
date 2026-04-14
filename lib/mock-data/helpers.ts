@@ -1,4 +1,5 @@
 import { CLASSES } from "./classes"
+import { addDays } from "date-fns"
 import { LEADERBOARD } from "./leaderboard"
 import { MATERIALS } from "./materials"
 import { MESSAGES } from "./messages"
@@ -11,6 +12,13 @@ import type {
   User,
 } from "./types"
 import { USERS } from "./users"
+
+interface CreateAssignmentInput {
+  title: string
+  description: string
+  classIds: string[]
+  attachmentFileName?: string
+}
 
 export function getUserById(id: string): User | undefined {
   return USERS.find((user) => user.id === id)
@@ -71,6 +79,30 @@ export function getAssignmentsByClass(
   return assignments.filter((assignment) =>
     isAssignmentVisibleToUserInClass(assignment, classId, user),
   )
+}
+
+export function createAssignment(
+  values: CreateAssignmentInput,
+  currentUser: User,
+  classId: string,
+): Assignment {
+  const classIds = values.classIds.includes(classId)
+    ? values.classIds
+    : [classId, ...values.classIds]
+
+  return {
+    id: `created-${Date.now()}`,
+    classId: classIds[0],
+    classIds,
+    teacherId: currentUser.id,
+    title: values.title,
+    description: values.description,
+    dueDate: addDays(new Date(), 7).toISOString(),
+    maxScore: 100,
+    type: "assignment",
+    status: "pending",
+    attachmentFileName: values.attachmentFileName,
+  }
 }
 
 export function getLeaderboardByClass(classId: string): LeaderboardEntry[] {

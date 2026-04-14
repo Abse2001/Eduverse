@@ -2,13 +2,15 @@
 
 import { use, useEffect, useState } from "react"
 import Link from "next/link"
-import { addDays, format, isPast } from "date-fns"
+import { format, isPast } from "date-fns"
 import {
+  createAssignment,
   getAssignmentsByClass,
   getClassById,
   getClassesByTeacher,
   type Assignment,
 } from "@/lib/mock-data"
+import { getAssignmentsByStatus } from "@/lib/education/selectors"
 import {
   CreateAssignmentDialog,
   type CreateAssignmentValues,
@@ -117,9 +119,7 @@ export default function AssignmentsPage({
   if (!cls)
     return <div className="p-6 text-muted-foreground">Class not found.</div>
 
-  const pending = assignments.filter((a) => a.status === "pending")
-  const submitted = assignments.filter((a) => a.status === "submitted")
-  const graded = assignments.filter((a) => a.status === "graded")
+  const { pending, submitted, graded } = getAssignmentsByStatus(assignments)
 
   const sections = [
     { label: "Pending", items: pending, emptyText: "No pending assignments" },
@@ -134,22 +134,7 @@ export default function AssignmentsPage({
   function handleCreateAssignment(values: CreateAssignmentValues) {
     if (!canCreateAssignment) return
 
-    const classIds = values.classIds.includes(classId)
-      ? values.classIds
-      : [classId, ...values.classIds]
-    const assignment: Assignment = {
-      id: `created-${Date.now()}`,
-      classId: classIds[0],
-      classIds,
-      teacherId: currentUser.id,
-      title: values.title,
-      description: values.description,
-      dueDate: addDays(new Date(), 7).toISOString(),
-      maxScore: 100,
-      type: "assignment",
-      status: "pending",
-      attachmentFileName: values.attachmentFileName,
-    }
+    const assignment = createAssignment(values, currentUser, classId)
 
     addAssignment(assignment)
     setSuccessMessage(`"${values.title}" was created successfully.`)

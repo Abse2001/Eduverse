@@ -1,54 +1,63 @@
 import { describe, expect, test } from "bun:test"
 import {
-  mergeMessagesById,
   getAssignmentProgress,
+  getAssignmentsByStatus,
+  mergeMessagesById,
 } from "@/lib/education/selectors"
 import type { Assignment, Message } from "@/lib/mock-data"
 
 describe("getAssignmentProgress", () => {
-  test("returns completed count and rounded percentage", () => {
-    const assignments: Assignment[] = [
-      {
-        id: "a1",
-        classId: "c1",
-        classIds: ["c1"],
-        teacherId: "t1",
-        title: "One",
-        description: "",
-        dueDate: "2026-04-01T00:00:00Z",
-        maxScore: 100,
-        type: "assignment",
-        status: "graded",
-      },
-      {
-        id: "a2",
-        classId: "c1",
-        classIds: ["c1"],
-        teacherId: "t1",
-        title: "Two",
-        description: "",
-        dueDate: "2026-04-02T00:00:00Z",
-        maxScore: 100,
-        type: "assignment",
-        status: "pending",
-      },
-      {
-        id: "a3",
-        classId: "c1",
-        classIds: ["c1"],
-        teacherId: "t1",
-        title: "Three",
-        description: "",
-        dueDate: "2026-04-03T00:00:00Z",
-        maxScore: 100,
-        type: "assignment",
-        status: "submitted",
-      },
-    ]
+  const assignments: Assignment[] = [
+    {
+      id: "a1",
+      classId: "c1",
+      classIds: ["c1"],
+      teacherId: "t1",
+      title: "One",
+      description: "",
+      dueDate: "2026-04-01T00:00:00Z",
+      maxScore: 100,
+      type: "assignment",
+      status: "graded",
+    },
+    {
+      id: "a2",
+      classId: "c1",
+      classIds: ["c1"],
+      teacherId: "t1",
+      title: "Two",
+      description: "",
+      dueDate: "2026-04-02T00:00:00Z",
+      maxScore: 100,
+      type: "assignment",
+      status: "pending",
+    },
+    {
+      id: "a3",
+      classId: "c1",
+      classIds: ["c1"],
+      teacherId: "t1",
+      title: "Three",
+      description: "",
+      dueDate: "2026-04-03T00:00:00Z",
+      maxScore: 100,
+      type: "assignment",
+      status: "submitted",
+    },
+  ]
 
+  test("returns completed count and rounded percentage", () => {
     expect(getAssignmentProgress(assignments)).toEqual({
       completedCount: 2,
       progress: 67,
+    })
+  })
+
+  test("groups assignments by status", () => {
+    expect(getAssignmentsByStatus(assignments)).toEqual({
+      pending: [assignments[1]],
+      submitted: [assignments[2]],
+      graded: [assignments[0]],
     })
   })
 })

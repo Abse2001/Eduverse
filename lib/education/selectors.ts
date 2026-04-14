@@ -8,6 +8,18 @@ import type {
 
 export type AssignmentWithClassInfo = Assignment & { classInfo: Class }
 
+export function getAssignmentsByStatus(assignments: Assignment[]) {
+  return {
+    pending: assignments.filter(
+      (assignment) => assignment.status === "pending",
+    ),
+    submitted: assignments.filter(
+      (assignment) => assignment.status === "submitted",
+    ),
+    graded: assignments.filter((assignment) => assignment.status === "graded"),
+  }
+}
+
 export function getAssignmentProgress(assignments: Assignment[]) {
   const completedCount = assignments.filter(
     (assignment) => assignment.status !== "pending",
