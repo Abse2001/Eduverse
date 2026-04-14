@@ -6,7 +6,6 @@ import {
   BookOpen,
   Calendar,
   FileText,
-  PlusCircle,
   TrendingUp,
   Users,
   Video,
@@ -50,10 +49,7 @@ export function TeacherDashboard() {
             {currentUser.institution} &middot; Spring 2026
           </p>
         </div>
-        <Button size="sm" className="gap-2 shrink-0">
-          <PlusCircle className="w-4 h-4" />
-          New Assignment
-        </Button>
+
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
