@@ -300,7 +300,7 @@ export function useWhiteboard({
           strokeId: activeStrokeId.current,
           point: normalizePoint(pos, context.canvas),
         },
-        { reliable: false },
+        { reliable: true },
       )
     }
 

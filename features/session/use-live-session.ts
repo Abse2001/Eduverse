@@ -598,7 +598,11 @@ export function useLiveSession({
       [
         RoomEvent.DataReceived,
         (payload, _participant, _kind, topic) => {
-          if (!(payload instanceof Uint8Array) || topic !== WHITEBOARD_TOPIC) {
+          if (!(payload instanceof Uint8Array)) {
+            return
+          }
+
+          if (topic && topic !== WHITEBOARD_TOPIC) {
             return
           }
 
