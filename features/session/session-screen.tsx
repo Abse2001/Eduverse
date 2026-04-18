@@ -2,8 +2,11 @@
 
 import { useState } from "react"
 import {
+  AlertTriangle,
   ArrowUpRight,
   ChevronRight,
+  CheckCircle2,
+  Info,
   MessageSquare,
   Monitor,
   Mic,
@@ -16,6 +19,8 @@ import {
   Users,
   Video,
   VideoOff,
+  X,
+  XCircle,
 } from "lucide-react"
 import { ConnectionState } from "livekit-client"
 import { Button } from "@/components/ui/button"
@@ -30,6 +35,7 @@ import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type { Class } from "@/lib/mock-data"
 import { ControlButton } from "./control-button"
+import type { LiveSessionNotice } from "./live-session-types"
 import { ParticipantsPanel } from "./participants-panel"
 import { SessionAudioRenderer } from "./session-audio-renderer"
 import { SESSION_COLORS, SESSION_TOOLS } from "./session-data"
@@ -38,6 +44,91 @@ import { VideoTrackView } from "./track-media"
 import { useLiveSession } from "./use-live-session"
 import { useWhiteboard } from "./use-whiteboard"
 import { VideoTile } from "./video-tile"
+
+const NOTICE_STYLES = {
+  error: {
+    icon: XCircle,
+    className: "border-destructive/30 bg-background text-foreground",
+    iconClassName: "text-destructive",
+  },
+  warning: {
+    icon: AlertTriangle,
+    className: "border-amber-500/40 bg-background text-foreground",
+    iconClassName: "text-amber-500",
+  },
+  success: {
+    icon: CheckCircle2,
+    className: "border-emerald-500/40 bg-background text-foreground",
+    iconClassName: "text-emerald-500",
+  },
+  info: {
+    icon: Info,
+    className: "border-border bg-background text-foreground",
+    iconClassName: "text-muted-foreground",
+  },
+} as const
+
+function isBusyMediaState(state: string) {
+  return state === "starting" || state === "stopping"
+}
+
+function SessionNoticeStack({
+  notices,
+  onDismiss,
+}: {
+  notices: LiveSessionNotice[]
+  onDismiss: (noticeId: string) => void
+}) {
+  if (notices.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="absolute bottom-3 left-3 z-20 flex w-[min(28rem,calc(100%-1.5rem))] flex-col gap-2">
+      {notices.map((notice) => {
+        const style = NOTICE_STYLES[notice.severity]
+        const Icon = style.icon
+
+        return (
+          <div
+            key={notice.id}
+            className={cn(
+              "rounded-lg border px-3 py-2 text-xs shadow-lg",
+              style.className,
+            )}
+          >
+            <div className="flex items-start gap-2">
+              <Icon
+                className={cn("mt-0.5 h-4 w-4 shrink-0", style.iconClassName)}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{notice.title}</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {notice.description}
+                </p>
+                {notice.nextStep ? (
+                  <p className="mt-1 text-muted-foreground">
+                    {notice.nextStep}
+                  </p>
+                ) : null}
+              </div>
+              {notice.dismissible ? (
+                <button
+                  type="button"
+                  aria-label={`Dismiss ${notice.title}`}
+                  onClick={() => onDismiss(notice.id)}
+                  className="rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export function SessionScreen({ cls }: { cls: Class }) {
   const { currentUser } = useApp()
@@ -59,6 +150,25 @@ export function SessionScreen({ cls }: { cls: Class }) {
     : liveSession.connectionState === ConnectionState.Connected
       ? "Live Session"
       : "Offline"
+  const connected = liveSession.connectionState === ConnectionState.Connected
+  const micBusy = isBusyMediaState(liveSession.media.microphone.state)
+  const cameraBusy = isBusyMediaState(liveSession.media.camera.state)
+  const screenBusy = isBusyMediaState(liveSession.media.screen.state)
+  const micControlLabel = micBusy
+    ? liveSession.media.microphone.label
+    : liveSession.micOn
+      ? "Mute"
+      : "Unmute"
+  const cameraControlLabel = cameraBusy
+    ? liveSession.media.camera.label
+    : liveSession.camOn
+      ? "Stop camera"
+      : "Start camera"
+  const screenControlLabel = screenBusy
+    ? liveSession.media.screen.label
+    : liveSession.screenSharing
+      ? "Stop sharing"
+      : "Share screen"
 
   if (!sessionActive) {
     return (
@@ -106,27 +216,25 @@ export function SessionScreen({ cls }: { cls: Class }) {
           <div className="flex items-center gap-1.5">
             <ControlButton
               icon={liveSession.micOn ? Mic : MicOff}
-              label={liveSession.micOn ? "Mute" : "Unmute"}
+              label={micControlLabel}
               onClick={() => void liveSession.toggleMic()}
               destructive={!liveSession.micOn}
-              disabled={liveSession.isConnecting}
+              disabled={!connected || micBusy}
             />
             <ControlButton
               icon={liveSession.camOn ? Video : VideoOff}
-              label={liveSession.camOn ? "Stop camera" : "Start camera"}
+              label={cameraControlLabel}
               onClick={() => void liveSession.toggleCamera()}
               destructive={!liveSession.camOn}
-              disabled={liveSession.isConnecting}
+              disabled={!connected || cameraBusy}
             />
             {isTeacher ? (
               <ControlButton
                 icon={MonitorUp}
-                label={
-                  liveSession.screenSharing ? "Stop sharing" : "Share screen"
-                }
+                label={screenControlLabel}
                 onClick={() => void liveSession.toggleScreenShare()}
                 highlight={liveSession.screenSharing}
-                disabled={liveSession.isConnecting}
+                disabled={!connected || screenBusy}
               />
             ) : null}
             <Separator orientation="vertical" className="h-6 mx-1" />
@@ -326,11 +434,10 @@ export function SessionScreen({ cls }: { cls: Class }) {
               </div>
             ) : null}
 
-            {liveSession.error ? (
-              <div className="absolute bottom-3 left-3 z-20 max-w-md rounded-xl border border-destructive/30 bg-background/95 px-3 py-2 text-xs text-destructive shadow-lg">
-                {liveSession.error}
-              </div>
-            ) : null}
+            <SessionNoticeStack
+              notices={liveSession.notices}
+              onDismiss={liveSession.dismissNotice}
+            />
 
             {liveSession.isConnecting ? (
               <div className="absolute right-3 top-3 z-20 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">

@@ -14,6 +14,9 @@ import {
 import type { User } from "@/lib/mock-data"
 import { getUserById } from "@/lib/mock-data"
 import type {
+  LiveMediaDeviceStatus,
+  LiveMediaStatus,
+  LiveSessionNotice,
   LiveSessionState,
   SessionParticipant,
   SessionPresentation,
@@ -26,6 +29,230 @@ const ROOM_OPTIONS: RoomOptions = {
 
 const ROOM_CONNECT_OPTIONS: RoomConnectOptions = {
   autoSubscribe: true,
+}
+
+type MediaDeviceKind = "microphone" | "camera" | "screen"
+
+const INITIAL_MEDIA_STATUS: LiveMediaStatus = {
+  microphone: {
+    state: "off",
+    label: "Microphone is off",
+  },
+  camera: {
+    state: "off",
+    label: "Camera is off",
+  },
+  screen: {
+    state: "off",
+    label: "Screen sharing is off",
+  },
+}
+
+const MEDIA_LABELS: Record<MediaDeviceKind, string> = {
+  microphone: "Microphone",
+  camera: "Camera",
+  screen: "Screen sharing",
+}
+
+function getErrorName(error: unknown) {
+  if (error && typeof error === "object" && "name" in error) {
+    const name = (error as { name?: unknown }).name
+    if (typeof name === "string") {
+      return name
+    }
+  }
+
+  return undefined
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  if (typeof error === "string" && error) {
+    return error
+  }
+
+  return "An unexpected error occurred."
+}
+
+function canDeriveMediaStatus(status: LiveMediaDeviceStatus) {
+  return !["blocked", "unavailable", "error", "starting", "stopping"].includes(
+    status.state,
+  )
+}
+
+function createConnectionNotice(error: unknown): LiveSessionNotice {
+  const message = getErrorMessage(error)
+
+  if (message.includes("Live session env vars are missing")) {
+    return {
+      id: "session",
+      scope: "session",
+      severity: "error",
+      title: "Live sessions are not configured",
+      description:
+        "The classroom call service is missing its LiveKit configuration.",
+      nextStep:
+        "Ask an administrator to set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and NEXT_PUBLIC_LIVEKIT_URL, then try again.",
+    }
+  }
+
+  if (
+    message.toLowerCase().includes("failed to fetch") ||
+    message.toLowerCase().includes("network")
+  ) {
+    return {
+      id: "session",
+      scope: "session",
+      severity: "error",
+      title: "Could not reach the live session",
+      description:
+        "The connection to the classroom call service did not complete.",
+      nextStep:
+        "Check your internet connection or VPN, then leave and rejoin the session.",
+    }
+  }
+
+  return {
+    id: "session",
+    scope: "session",
+    severity: "error",
+    title: "Could not join the live session",
+    description: message,
+    nextStep:
+      "Leave and rejoin the session. If it keeps failing, contact support.",
+  }
+}
+
+function createMediaNotice(
+  device: MediaDeviceKind,
+  error: unknown,
+): LiveSessionNotice & { status: LiveMediaDeviceStatus } {
+  const name = getErrorName(error)
+  const message = getErrorMessage(error)
+  const label = MEDIA_LABELS[device]
+  const isScreen = device === "screen"
+
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    if (isScreen) {
+      return {
+        id: device,
+        scope: device,
+        severity: "warning",
+        title: "Screen sharing did not start",
+        description: "No screen, window, or tab was shared with the session.",
+        nextStep:
+          "Click Share screen again and choose what to share. If you cancelled on purpose, no action is needed.",
+        status: {
+          state: "off",
+          label: "Screen sharing was cancelled",
+          detail: "Nothing is being shared.",
+        },
+      }
+    }
+
+    return {
+      id: device,
+      scope: device,
+      severity: "error",
+      title: `${label} permission is blocked`,
+      description: `EduFlow could not access your ${device}.`,
+      nextStep: `Allow ${device} access in your browser site settings, then try again.`,
+      status: {
+        state: "blocked",
+        label: `${label} blocked`,
+        detail: "Permission is blocked in the browser.",
+      },
+    }
+  }
+
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return {
+      id: device,
+      scope: device,
+      severity: "error",
+      title: `${label} not found`,
+      description: `No ${device} was detected on this device.`,
+      nextStep: `Connect or enable a ${device}, then try again.`,
+      status: {
+        state: "unavailable",
+        label: `${label} not found`,
+        detail: "No matching device was detected.",
+      },
+    }
+  }
+
+  if (
+    name === "NotReadableError" ||
+    name === "TrackStartError" ||
+    name === "AbortError"
+  ) {
+    return {
+      id: device,
+      scope: device,
+      severity: "error",
+      title: `${label} is unavailable`,
+      description: `The browser found your ${device}, but could not start it.`,
+      nextStep: `Close other apps using the ${device}, check system privacy settings, then try again.`,
+      status: {
+        state: "error",
+        label: `${label} could not start`,
+        detail: "Another app or system setting may be blocking it.",
+      },
+    }
+  }
+
+  if (
+    name === "OverconstrainedError" ||
+    name === "ConstraintNotSatisfiedError"
+  ) {
+    return {
+      id: device,
+      scope: device,
+      severity: "error",
+      title: `${label} does not support the requested settings`,
+      description: `The selected ${device} cannot be used with the current browser settings.`,
+      nextStep: `Choose another ${device} in browser settings or reconnect the device, then try again.`,
+      status: {
+        state: "unavailable",
+        label: `${label} settings are not supported`,
+        detail: "The selected device cannot meet the requested settings.",
+      },
+    }
+  }
+
+  if (name === "SecurityError") {
+    return {
+      id: device,
+      scope: device,
+      severity: "error",
+      title: `${label} access was blocked`,
+      description: "The browser blocked media access for this page.",
+      nextStep:
+        "Open the app over HTTPS or update browser privacy settings, then try again.",
+      status: {
+        state: "blocked",
+        label: `${label} blocked`,
+        detail: "Browser security settings blocked access.",
+      },
+    }
+  }
+
+  return {
+    id: device,
+    scope: device,
+    severity: "error",
+    title: `${label} could not be updated`,
+    description: message,
+    nextStep: "Check browser and system permissions, then try again.",
+    status: {
+      state: "error",
+      label: `${label} error`,
+      detail: message,
+    },
+  }
 }
 
 function findPublication(participant: Participant, source: Track.Source) {
@@ -167,6 +394,31 @@ export function useLiveSession({
   )
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notices, setNotices] = useState<LiveSessionNotice[]>([])
+  const [media, setMedia] = useState<LiveMediaStatus>(INITIAL_MEDIA_STATUS)
+
+  const upsertNotice = useCallback((notice: LiveSessionNotice) => {
+    setNotices((prev) =>
+      [
+        { dismissible: true, ...notice },
+        ...prev.filter((current) => current.id !== notice.id),
+      ].slice(0, 4),
+    )
+  }, [])
+
+  const dismissNotice = useCallback((noticeId: string) => {
+    setNotices((prev) => prev.filter((notice) => notice.id !== noticeId))
+  }, [])
+
+  const updateMediaDevice = useCallback(
+    (device: MediaDeviceKind, status: LiveMediaDeviceStatus) => {
+      setMedia((prev) => ({
+        ...prev,
+        [device]: status,
+      }))
+    },
+    [],
+  )
 
   const syncParticipants = useCallback(() => {
     const room = roomRef.current
@@ -183,9 +435,43 @@ export function useLiveSession({
         mapParticipant(participant, room.localParticipant.sid),
       ),
     ])
+    const localParticipant = nextParticipants.find(
+      (participant) => participant.isLocal,
+    )
 
     setParticipants(nextParticipants)
     setConnectionState(room.state)
+    setMedia((prev) => ({
+      microphone: canDeriveMediaStatus(prev.microphone)
+        ? {
+            state: localParticipant && !localParticipant.muted ? "on" : "off",
+            label:
+              localParticipant && !localParticipant.muted
+                ? "Microphone is on"
+                : "Microphone is muted",
+          }
+        : prev.microphone,
+      camera: canDeriveMediaStatus(prev.camera)
+        ? {
+            state:
+              localParticipant && !localParticipant.videoOff ? "on" : "off",
+            label:
+              localParticipant && !localParticipant.videoOff
+                ? "Camera is on"
+                : "Camera is off",
+          }
+        : prev.camera,
+      screen: canDeriveMediaStatus(prev.screen)
+        ? {
+            state:
+              localParticipant && localParticipant.isPresenting ? "on" : "off",
+            label:
+              localParticipant && localParticipant.isPresenting
+                ? "Screen sharing is on"
+                : "Screen sharing is off",
+          }
+        : prev.screen,
+    }))
   }, [])
 
   useEffect(() => {
@@ -196,6 +482,8 @@ export function useLiveSession({
       setConnectionState(ConnectionState.Disconnected)
       setIsConnecting(false)
       setError(null)
+      setNotices([])
+      setMedia(INITIAL_MEDIA_STATUS)
       return
     }
 
@@ -205,6 +493,18 @@ export function useLiveSession({
     setConnectionState(room.state)
     setIsConnecting(true)
     setError(null)
+    setNotices([])
+    setMedia({
+      microphone: {
+        state: "starting",
+        label: "Starting microphone...",
+      },
+      camera: {
+        state: "starting",
+        label: "Starting camera...",
+      },
+      screen: INITIAL_MEDIA_STATUS.screen,
+    })
 
     const handleSync = () => {
       syncParticipants()
@@ -236,11 +536,21 @@ export function useLiveSession({
       [
         RoomEvent.MediaDevicesError,
         (nextError) => {
-          setError(
+          const description =
             nextError instanceof Error
               ? nextError.message
-              : "A media device error occurred.",
-          )
+              : "A media device error occurred."
+
+          setError(description)
+          upsertNotice({
+            id: "media-device",
+            scope: "session",
+            severity: "error",
+            title: "Media device problem",
+            description,
+            nextStep:
+              "Check browser and system camera or microphone permissions, then try again.",
+          })
           setIsConnecting(false)
         },
       ],
@@ -264,10 +574,47 @@ export function useLiveSession({
         }
 
         await room.connect(serverUrl, participantToken, ROOM_CONNECT_OPTIONS)
-        await Promise.allSettled([
+
+        const mediaResults = await Promise.allSettled([
           room.localParticipant.setMicrophoneEnabled(true),
           room.localParticipant.setCameraEnabled(true),
         ])
+
+        const [microphoneResult, cameraResult] = mediaResults
+
+        if (isCancelled) {
+          return
+        }
+
+        if (microphoneResult.status === "fulfilled") {
+          updateMediaDevice("microphone", {
+            state: "on",
+            label: "Microphone is on",
+          })
+        } else {
+          const { status, ...notice } = createMediaNotice(
+            "microphone",
+            microphoneResult.reason,
+          )
+          updateMediaDevice("microphone", status)
+          upsertNotice(notice)
+          setError(notice.description)
+        }
+
+        if (cameraResult.status === "fulfilled") {
+          updateMediaDevice("camera", {
+            state: "on",
+            label: "Camera is on",
+          })
+        } else {
+          const { status, ...notice } = createMediaNotice(
+            "camera",
+            cameraResult.reason,
+          )
+          updateMediaDevice("camera", status)
+          upsertNotice(notice)
+          setError(notice.description)
+        }
 
         if (isCancelled) {
           return
@@ -285,9 +632,12 @@ export function useLiveSession({
             ? nextError.message
             : "Unable to join the live session."
 
+        const notice = createConnectionNotice(nextError)
         setError(message)
+        upsertNotice(notice)
         setIsConnecting(false)
         setConnectionState(ConnectionState.Disconnected)
+        setMedia(INITIAL_MEDIA_STATUS)
         room.disconnect()
       }
     }
@@ -304,7 +654,14 @@ export function useLiveSession({
         roomRef.current = null
       }
     }
-  }, [classId, currentUser, enabled, syncParticipants])
+  }, [
+    classId,
+    currentUser,
+    enabled,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current
@@ -317,21 +674,36 @@ export function useLiveSession({
       room.localParticipant,
       Track.Source.Microphone,
     )
+    const shouldEnable = current?.isMuted ?? !current?.track
     setError(null)
+    updateMediaDevice("microphone", {
+      state: shouldEnable ? "starting" : "stopping",
+      label: shouldEnable ? "Starting microphone..." : "Muting microphone...",
+    })
 
     try {
-      await room.localParticipant.setMicrophoneEnabled(
-        current?.isMuted ?? !current?.track,
-      )
+      await room.localParticipant.setMicrophoneEnabled(shouldEnable)
+      updateMediaDevice("microphone", {
+        state: shouldEnable ? "on" : "off",
+        label: shouldEnable ? "Microphone is on" : "Microphone is muted",
+      })
+      upsertNotice({
+        id: "microphone",
+        scope: "microphone",
+        severity: shouldEnable ? "success" : "info",
+        title: shouldEnable ? "Microphone is on" : "Microphone muted",
+        description: shouldEnable
+          ? "People in the session can hear you now."
+          : "People in the session cannot hear you until you unmute.",
+      })
       syncParticipants()
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update microphone access.",
-      )
+      const { status, ...notice } = createMediaNotice("microphone", nextError)
+      updateMediaDevice("microphone", status)
+      upsertNotice(notice)
+      setError(notice.description)
     }
-  }, [syncParticipants])
+  }, [syncParticipants, updateMediaDevice, upsertNotice])
 
   const toggleCamera = useCallback(async () => {
     const room = roomRef.current
@@ -341,21 +713,36 @@ export function useLiveSession({
     }
 
     const current = findPublication(room.localParticipant, Track.Source.Camera)
+    const shouldEnable = current?.isMuted ?? !current?.track
     setError(null)
+    updateMediaDevice("camera", {
+      state: shouldEnable ? "starting" : "stopping",
+      label: shouldEnable ? "Starting camera..." : "Stopping camera...",
+    })
 
     try {
-      await room.localParticipant.setCameraEnabled(
-        current?.isMuted ?? !current?.track,
-      )
+      await room.localParticipant.setCameraEnabled(shouldEnable)
+      updateMediaDevice("camera", {
+        state: shouldEnable ? "on" : "off",
+        label: shouldEnable ? "Camera is on" : "Camera is off",
+      })
+      upsertNotice({
+        id: "camera",
+        scope: "camera",
+        severity: shouldEnable ? "success" : "info",
+        title: shouldEnable ? "Camera is on" : "Camera stopped",
+        description: shouldEnable
+          ? "People in the session can see your video now."
+          : "People in the session will see your avatar until you start the camera again.",
+      })
       syncParticipants()
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update camera access.",
-      )
+      const { status, ...notice } = createMediaNotice("camera", nextError)
+      updateMediaDevice("camera", status)
+      upsertNotice(notice)
+      setError(notice.description)
     }
-  }, [syncParticipants])
+  }, [syncParticipants, updateMediaDevice, upsertNotice])
 
   const toggleScreenShare = useCallback(async () => {
     const room = roomRef.current
@@ -368,21 +755,40 @@ export function useLiveSession({
       room.localParticipant,
       Track.Source.ScreenShare,
     )
+    const shouldEnable = current?.isMuted ?? !current?.track
     setError(null)
+    updateMediaDevice("screen", {
+      state: shouldEnable ? "starting" : "stopping",
+      label: shouldEnable
+        ? "Starting screen sharing..."
+        : "Stopping screen sharing...",
+    })
 
     try {
-      await room.localParticipant.setScreenShareEnabled(
-        current?.isMuted ?? !current?.track,
-      )
+      await room.localParticipant.setScreenShareEnabled(shouldEnable)
+      updateMediaDevice("screen", {
+        state: shouldEnable ? "on" : "off",
+        label: shouldEnable ? "Screen sharing is on" : "Screen sharing is off",
+      })
+      upsertNotice({
+        id: "screen",
+        scope: "screen",
+        severity: shouldEnable ? "success" : "info",
+        title: shouldEnable
+          ? "Screen sharing started"
+          : "Screen sharing stopped",
+        description: shouldEnable
+          ? "Everyone in the session can see the screen, window, or tab you selected."
+          : "Your screen is no longer shared with the session.",
+      })
       syncParticipants()
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to start screen sharing.",
-      )
+      const { status, ...notice } = createMediaNotice("screen", nextError)
+      updateMediaDevice("screen", status)
+      upsertNotice(notice)
+      setError(notice.description)
     }
-  }, [syncParticipants])
+  }, [syncParticipants, updateMediaDevice, upsertNotice])
 
   const disconnect = useCallback(() => {
     roomRef.current?.disconnect()
@@ -391,6 +797,8 @@ export function useLiveSession({
     setConnectionState(ConnectionState.Disconnected)
     setIsConnecting(false)
     setError(null)
+    setNotices([])
+    setMedia(INITIAL_MEDIA_STATUS)
   }, [])
 
   const localParticipant = participants.find(
@@ -417,6 +825,8 @@ export function useLiveSession({
     connectionState,
     isConnecting,
     error,
+    notices,
+    media,
     micOn: !!localParticipant && !localParticipant.muted,
     camOn: !!localParticipant && !localParticipant.videoOff,
     screenSharing: Boolean(localParticipant?.isPresenting),
@@ -424,6 +834,7 @@ export function useLiveSession({
     toggleMic,
     toggleCamera,
     toggleScreenShare,
+    dismissNotice,
     disconnect,
   }
 }
