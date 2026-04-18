@@ -18,6 +18,7 @@ import type {
   LiveMediaStatus,
   LiveSessionNotice,
   LiveSessionState,
+  LiveSessionWhiteboardMessage,
   SessionParticipant,
   SessionPresentation,
 } from "./live-session-types"
@@ -30,6 +31,8 @@ const ROOM_OPTIONS: RoomOptions = {
 const ROOM_CONNECT_OPTIONS: RoomConnectOptions = {
   autoSubscribe: true,
 }
+
+const WHITEBOARD_TOPIC = "eduverse.whiteboard"
 
 type MediaDeviceKind = "microphone" | "camera" | "screen"
 
@@ -75,6 +78,60 @@ function getErrorMessage(error: unknown) {
   }
 
   return "An unexpected error occurred."
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object"
+}
+
+function isWhiteboardPoint(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number"
+  )
+}
+
+function isWhiteboardMessage(
+  value: unknown,
+): value is LiveSessionWhiteboardMessage {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.senderId !== "string" ||
+    typeof value.type !== "string"
+  ) {
+    return false
+  }
+
+  if (value.type === "clear" || value.type === "snapshot:request") {
+    return true
+  }
+
+  if (value.type === "snapshot") {
+    return typeof value.imageDataUrl === "string"
+  }
+
+  if (value.type === "stroke:end" && typeof value.strokeId === "string") {
+    return true
+  }
+
+  if (
+    value.type === "stroke:point" &&
+    typeof value.strokeId === "string" &&
+    isWhiteboardPoint(value.point)
+  ) {
+    return true
+  }
+
+  return (
+    value.type === "stroke:start" &&
+    typeof value.strokeId === "string" &&
+    (value.tool === "pen" || value.tool === "eraser") &&
+    typeof value.color === "string" &&
+    typeof value.brushSize === "number" &&
+    isWhiteboardPoint(value.point)
+  )
 }
 
 function canDeriveMediaStatus(status: LiveMediaDeviceStatus) {
@@ -396,6 +453,9 @@ export function useLiveSession({
   const [error, setError] = useState<string | null>(null)
   const [notices, setNotices] = useState<LiveSessionNotice[]>([])
   const [media, setMedia] = useState<LiveMediaStatus>(INITIAL_MEDIA_STATUS)
+  const [whiteboardMessages, setWhiteboardMessages] = useState<
+    LiveSessionWhiteboardMessage[]
+  >([])
 
   const upsertNotice = useCallback((notice: LiveSessionNotice) => {
     setNotices((prev) =>
@@ -484,6 +544,7 @@ export function useLiveSession({
       setError(null)
       setNotices([])
       setMedia(INITIAL_MEDIA_STATUS)
+      setWhiteboardMessages([])
       return
     }
 
@@ -494,6 +555,7 @@ export function useLiveSession({
     setIsConnecting(true)
     setError(null)
     setNotices([])
+    setWhiteboardMessages([])
     setMedia({
       microphone: {
         state: "starting",
@@ -533,6 +595,36 @@ export function useLiveSession({
       [RoomEvent.LocalTrackPublished, handleSync],
       [RoomEvent.LocalTrackUnpublished, handleSync],
       [RoomEvent.ActiveSpeakersChanged, handleSync],
+      [
+        RoomEvent.DataReceived,
+        (payload, _participant, _kind, topic) => {
+          if (!(payload instanceof Uint8Array) || topic !== WHITEBOARD_TOPIC) {
+            return
+          }
+
+          try {
+            const decoded = new TextDecoder().decode(payload)
+            const parsed = JSON.parse(decoded) as unknown
+
+            if (!isWhiteboardMessage(parsed)) {
+              return
+            }
+
+            setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
+          } catch {
+            upsertNotice({
+              id: "whiteboard-sync",
+              scope: "whiteboard",
+              severity: "warning",
+              title: "Whiteboard update was skipped",
+              description:
+                "A whiteboard message could not be read by this browser.",
+              nextStep:
+                "Ask the teacher to keep drawing or rejoin if the board looks out of date.",
+            })
+          }
+        },
+      ],
       [
         RoomEvent.MediaDevicesError,
         (nextError) => {
@@ -662,6 +754,41 @@ export function useLiveSession({
     updateMediaDevice,
     upsertNotice,
   ])
+
+  const sendWhiteboardMessage = useCallback(
+    async (
+      message: LiveSessionWhiteboardMessage,
+      options?: { reliable?: boolean },
+    ) => {
+      const room = roomRef.current
+
+      if (!room || room.state !== ConnectionState.Connected) {
+        return false
+      }
+
+      try {
+        const encoded = new TextEncoder().encode(JSON.stringify(message))
+        await room.localParticipant.publishData(encoded, {
+          reliable: options?.reliable ?? true,
+          topic: WHITEBOARD_TOPIC,
+        })
+        return true
+      } catch (nextError) {
+        setError(getErrorMessage(nextError))
+        upsertNotice({
+          id: "whiteboard-sync",
+          scope: "whiteboard",
+          severity: "warning",
+          title: "Whiteboard is not syncing",
+          description: "This whiteboard update could not be sent.",
+          nextStep:
+            "Check your connection and keep the session open. If it continues, leave and rejoin.",
+        })
+        return false
+      }
+    },
+    [upsertNotice],
+  )
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current
@@ -799,6 +926,7 @@ export function useLiveSession({
     setError(null)
     setNotices([])
     setMedia(INITIAL_MEDIA_STATUS)
+    setWhiteboardMessages([])
   }, [])
 
   const localParticipant = participants.find(
@@ -827,6 +955,7 @@ export function useLiveSession({
     error,
     notices,
     media,
+    whiteboardMessages,
     micOn: !!localParticipant && !localParticipant.muted,
     camOn: !!localParticipant && !localParticipant.videoOff,
     screenSharing: Boolean(localParticipant?.isPresenting),
@@ -834,6 +963,7 @@ export function useLiveSession({
     toggleMic,
     toggleCamera,
     toggleScreenShare,
+    sendWhiteboardMessage,
     dismissNotice,
     disconnect,
   }

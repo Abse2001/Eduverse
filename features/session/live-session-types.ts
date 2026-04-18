@@ -28,6 +28,7 @@ export type LiveSessionNoticeScope =
   | "microphone"
   | "camera"
   | "screen"
+  | "whiteboard"
 
 export interface LiveSessionNotice {
   id: string
@@ -60,6 +61,52 @@ export interface LiveMediaStatus {
   screen: LiveMediaDeviceStatus
 }
 
+export interface WhiteboardPoint {
+  x: number
+  y: number
+}
+
+export type LiveSessionWhiteboardMessage =
+  | {
+      id: string
+      senderId: string
+      type: "stroke:start"
+      strokeId: string
+      tool: "pen" | "eraser"
+      color: string
+      brushSize: number
+      point: WhiteboardPoint
+    }
+  | {
+      id: string
+      senderId: string
+      type: "stroke:point"
+      strokeId: string
+      point: WhiteboardPoint
+    }
+  | {
+      id: string
+      senderId: string
+      type: "stroke:end"
+      strokeId: string
+    }
+  | {
+      id: string
+      senderId: string
+      type: "clear"
+    }
+  | {
+      id: string
+      senderId: string
+      type: "snapshot"
+      imageDataUrl: string
+    }
+  | {
+      id: string
+      senderId: string
+      type: "snapshot:request"
+    }
+
 export interface LiveSessionState {
   participants: SessionParticipant[]
   connectionState: ConnectionState
@@ -67,6 +114,7 @@ export interface LiveSessionState {
   error: string | null
   notices: LiveSessionNotice[]
   media: LiveMediaStatus
+  whiteboardMessages: LiveSessionWhiteboardMessage[]
   micOn: boolean
   camOn: boolean
   screenSharing: boolean
@@ -74,6 +122,10 @@ export interface LiveSessionState {
   toggleMic: () => Promise<void>
   toggleCamera: () => Promise<void>
   toggleScreenShare: () => Promise<void>
+  sendWhiteboardMessage: (
+    message: LiveSessionWhiteboardMessage,
+    options?: { reliable?: boolean },
+  ) => Promise<boolean>
   dismissNotice: (noticeId: string) => void
   disconnect: () => void
 }

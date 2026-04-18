@@ -138,19 +138,26 @@ export function SessionScreen({ cls }: { cls: Class }) {
   const [sessionActive, setSessionActive] = useState(true)
 
   const isTeacher = currentUser.role === "teacher"
-  const whiteboard = useWhiteboard(isTeacher)
   const liveSession = useLiveSession({
     classId: cls.id,
     currentUser,
     enabled: sessionActive,
   })
   const participantCount = liveSession.participants.length
+  const connected = liveSession.connectionState === ConnectionState.Connected
+  const whiteboard = useWhiteboard({
+    isTeacher,
+    currentUserId: currentUser.id,
+    incomingMessages: liveSession.whiteboardMessages,
+    participantCount,
+    syncEnabled: connected,
+    sendMessage: liveSession.sendWhiteboardMessage,
+  })
   const liveBadgeLabel = liveSession.isConnecting
     ? "Connecting"
     : liveSession.connectionState === ConnectionState.Connected
       ? "Live Session"
       : "Offline"
-  const connected = liveSession.connectionState === ConnectionState.Connected
   const micBusy = isBusyMediaState(liveSession.media.microphone.state)
   const cameraBusy = isBusyMediaState(liveSession.media.camera.state)
   const screenBusy = isBusyMediaState(liveSession.media.screen.state)
