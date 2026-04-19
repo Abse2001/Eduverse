@@ -66,6 +66,7 @@ type ParsedWhiteboardObject = JsonObject &
     startPoint: JsonValue
     strokeId: JsonValue
     targetId: JsonValue
+    targetIds: JsonValue
     tool: JsonValue
     type: JsonValue
     version: JsonValue
@@ -136,6 +137,10 @@ function isWhiteboardPointList(
   return Array.isArray(value) && value.every(isWhiteboardPoint)
 }
 
+function isStringList(value: JsonValue | undefined): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+}
+
 function isWhiteboardShape(
   value: JsonValue | undefined,
 ): value is WhiteboardShape {
@@ -167,8 +172,16 @@ function isWhiteboardOperation(
     return typeof value.targetId === "string"
   }
 
+  if (value.type === "delete:many") {
+    return isStringList(value.targetIds)
+  }
+
   if (value.type === "move") {
     return typeof value.targetId === "string" && isWhiteboardPoint(value.delta)
+  }
+
+  if (value.type === "move:many") {
+    return isStringList(value.targetIds) && isWhiteboardPoint(value.delta)
   }
 
   if (
@@ -248,12 +261,30 @@ function isWhiteboardMessage(
     )
   }
 
+  if (value.type === "delete:many") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "delete:many"
+    )
+  }
+
   if (value.type === "move") {
     const operation = value.operation
     return (
       typeof value.version === "number" &&
       isWhiteboardOperation(operation) &&
       operation.type === "move"
+    )
+  }
+
+  if (value.type === "move:many") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "move:many"
     )
   }
 

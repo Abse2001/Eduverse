@@ -98,8 +98,19 @@ export type WhiteboardOperation =
     }
   | {
       id: string
+      type: "delete:many"
+      targetIds: string[]
+    }
+  | {
+      id: string
       type: "move"
       targetId: string
+      delta: WhiteboardPoint
+    }
+  | {
+      id: string
+      type: "move:many"
+      targetIds: string[]
       delta: WhiteboardPoint
     }
 
@@ -153,8 +164,22 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      type: "delete:many"
+      operation: Extract<WhiteboardOperation, { type: "delete:many" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
       type: "move"
       operation: Extract<WhiteboardOperation, { type: "move" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      type: "move:many"
+      operation: Extract<WhiteboardOperation, { type: "move:many" }>
       version: number
     }
   | {

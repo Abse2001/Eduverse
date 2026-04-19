@@ -15,12 +15,23 @@ import type { Tool } from "./session-data"
 
 const BOARD_WIDTH = 1400
 const BOARD_HEIGHT = 900
+const SELECTION_OUTLINE_PADDING = 8
 
 type DrawableTool = WhiteboardStrokeTool
 type ShapeTool = WhiteboardShape
 type StrokeOperation = Extract<WhiteboardOperation, { type: "stroke" }>
 type ShapeOperation = Extract<WhiteboardOperation, { type: "shape" }>
 type DrawableOperation = StrokeOperation | ShapeOperation
+type DeleteOperation = Extract<WhiteboardOperation, { type: "delete" }>
+type DeleteManyOperation = Extract<WhiteboardOperation, { type: "delete:many" }>
+type MoveOperation = Extract<WhiteboardOperation, { type: "move" }>
+type MoveManyOperation = Extract<WhiteboardOperation, { type: "move:many" }>
+type OperationBounds = {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
 
 type OutgoingWhiteboardMessage =
   LiveSessionWhiteboardMessage extends infer Message
@@ -91,8 +102,16 @@ function createDeleteId() {
   return `delete-${createMessageId()}`
 }
 
+function createDeleteManyId() {
+  return `delete-many-${createMessageId()}`
+}
+
 function createMoveId() {
   return `move-${createMessageId()}`
+}
+
+function createMoveManyId() {
+  return `move-many-${createMessageId()}`
 }
 
 function isDrawableTool(tool: Tool): tool is DrawableTool {
@@ -274,6 +293,17 @@ function getVisibleDrawableOperations(
       continue
     }
 
+    if (operation.type === "delete:many") {
+      const targetIds = new Set(operation.targetIds)
+
+      for (let index = visibleOperations.length - 1; index >= 0; index -= 1) {
+        if (targetIds.has(visibleOperations[index].id)) {
+          visibleOperations.splice(index, 1)
+        }
+      }
+      continue
+    }
+
     if (operation.type === "move") {
       const targetIndex = visibleOperations.findIndex(
         (visibleOperation) => visibleOperation.id === operation.targetId,
@@ -284,6 +314,20 @@ function getVisibleDrawableOperations(
           visibleOperations[targetIndex],
           operation.delta,
         )
+      }
+      continue
+    }
+
+    if (operation.type === "move:many") {
+      const targetIds = new Set(operation.targetIds)
+
+      for (let index = 0; index < visibleOperations.length; index += 1) {
+        if (targetIds.has(visibleOperations[index].id)) {
+          visibleOperations[index] = moveDrawableOperation(
+            visibleOperations[index],
+            operation.delta,
+          )
+        }
       }
       continue
     }
@@ -326,7 +370,7 @@ function moveDrawableOperation(
 function getOperationBounds(
   operation: DrawableOperation,
   canvas: HTMLCanvasElement,
-) {
+): OperationBounds | null {
   if (operation.type === "shape") {
     const startPoint = denormalizePoint(operation.startPoint, canvas)
     const endPoint = denormalizePoint(operation.endPoint, canvas)
@@ -365,11 +409,76 @@ function getOperationBounds(
   )
 }
 
+function mergeBounds(
+  first: OperationBounds | null,
+  second: OperationBounds | null,
+) {
+  if (!first) {
+    return second
+  }
+
+  if (!second) {
+    return first
+  }
+
+  return {
+    left: Math.min(first.left, second.left),
+    right: Math.max(first.right, second.right),
+    top: Math.min(first.top, second.top),
+    bottom: Math.max(first.bottom, second.bottom),
+  }
+}
+
+function getSelectionBounds(
+  operationsToMeasure: DrawableOperation[],
+  canvas: HTMLCanvasElement,
+) {
+  return operationsToMeasure.reduce<OperationBounds | null>(
+    (bounds, operation) =>
+      mergeBounds(bounds, getOperationBounds(operation, canvas)),
+    null,
+  )
+}
+
+function getBoundsFromPoints(
+  firstPoint: WhiteboardPoint,
+  secondPoint: WhiteboardPoint,
+): OperationBounds {
+  return {
+    left: Math.min(firstPoint.x, secondPoint.x),
+    right: Math.max(firstPoint.x, secondPoint.x),
+    top: Math.min(firstPoint.y, secondPoint.y),
+    bottom: Math.max(firstPoint.y, secondPoint.y),
+  }
+}
+
+function boundsIntersect(first: OperationBounds, second: OperationBounds) {
+  return (
+    first.left <= second.right &&
+    first.right >= second.left &&
+    first.top <= second.bottom &&
+    first.bottom >= second.top
+  )
+}
+
+function boundsContainPoint(
+  bounds: OperationBounds,
+  point: WhiteboardPoint,
+  padding = 0,
+) {
+  return (
+    point.x >= bounds.left - padding &&
+    point.x <= bounds.right + padding &&
+    point.y >= bounds.top - padding &&
+    point.y <= bounds.bottom + padding
+  )
+}
+
 function drawSelectionOutline(
   ctx: CanvasRenderingContext2D,
-  bounds: NonNullable<ReturnType<typeof getOperationBounds>>,
+  bounds: OperationBounds,
 ) {
-  const padding = 8
+  const padding = SELECTION_OUTLINE_PADDING
   const handleSize = 6
   const left = bounds.left - padding
   const top = bounds.top - padding
@@ -406,6 +515,24 @@ function drawSelectionOutline(
     )
   }
 
+  ctx.restore()
+}
+
+function drawMarqueeOutline(
+  ctx: CanvasRenderingContext2D,
+  bounds: OperationBounds,
+) {
+  const width = bounds.right - bounds.left
+  const height = bounds.bottom - bounds.top
+
+  ctx.save()
+  ctx.globalCompositeOperation = "source-over"
+  ctx.fillStyle = "rgba(37, 99, 235, 0.08)"
+  ctx.strokeStyle = "#2563eb"
+  ctx.lineWidth = 1
+  ctx.setLineDash([4, 4])
+  ctx.fillRect(bounds.left, bounds.top, width, height)
+  ctx.strokeRect(bounds.left, bounds.top, width, height)
   ctx.restore()
 }
 
@@ -571,8 +698,10 @@ export function useWhiteboard({
   const lastPos = useRef<WhiteboardPoint | null>(null)
   const startPos = useRef<WhiteboardPoint | null>(null)
   const previewSnapshot = useRef<ImageData | null>(null)
-  const selectedOperationId = useRef<string | null>(null)
-  const movingOperationId = useRef<string | null>(null)
+  const selectedOperationIds = useRef(new Set<string>())
+  const movingOperationIds = useRef<string[]>([])
+  const marqueeStartPos = useRef<WhiteboardPoint | null>(null)
+  const marqueeBaseSelectionIds = useRef<string[]>([])
   const activeStrokeId = useRef<string | null>(null)
   const activeStrokePoints = useRef<WhiteboardPoint[]>([])
   const pendingStrokePoints = useRef<WhiteboardPoint[]>([])
@@ -634,13 +763,11 @@ export function useWhiteboard({
         drawStrokeOperation(context.ctx, context.canvas, operation)
       }
 
-      if (selectedOperationId.current) {
-        const selectedOperation = visibleOperations.find(
-          (operation) => operation.id === selectedOperationId.current,
+      if (selectedOperationIds.current.size > 0) {
+        const selectedOperations = visibleOperations.filter((operation) =>
+          selectedOperationIds.current.has(operation.id),
         )
-        const bounds =
-          selectedOperation &&
-          getOperationBounds(selectedOperation, context.canvas)
+        const bounds = getSelectionBounds(selectedOperations, context.canvas)
 
         if (bounds) {
           drawSelectionOutline(context.ctx, bounds)
@@ -656,8 +783,8 @@ export function useWhiteboard({
     (tool: Tool) => {
       setActiveTool(tool)
 
-      if (!isPointerTool(tool) && selectedOperationId.current) {
-        selectedOperationId.current = null
+      if (!isPointerTool(tool) && selectedOperationIds.current.size > 0) {
+        selectedOperationIds.current = new Set()
         setHasSelection(false)
         renderOperations(operations.current)
       }
@@ -725,9 +852,9 @@ export function useWhiteboard({
   }, [])
 
   const updateSelection = useCallback(
-    (operationId: string | null) => {
-      selectedOperationId.current = operationId
-      setHasSelection(Boolean(operationId))
+    (operationIds: Iterable<string>) => {
+      selectedOperationIds.current = new Set(operationIds)
+      setHasSelection(selectedOperationIds.current.size > 0)
       renderOperations(operations.current)
     },
     [renderOperations],
@@ -735,16 +862,41 @@ export function useWhiteboard({
 
   const reconcileSelection = useCallback(
     (nextOperations: WhiteboardOperation[]) => {
-      if (
-        selectedOperationId.current &&
-        !getVisibleDrawableOperations(nextOperations).some(
-          (operation) => operation.id === selectedOperationId.current,
-        )
-      ) {
-        selectedOperationId.current = null
-        setHasSelection(false)
+      if (selectedOperationIds.current.size === 0) {
+        return
+      }
+
+      const visibleOperationIds = new Set(
+        getVisibleDrawableOperations(nextOperations).map(
+          (operation) => operation.id,
+        ),
+      )
+      const nextSelectedOperationIds = new Set(
+        Array.from(selectedOperationIds.current).filter((operationId) =>
+          visibleOperationIds.has(operationId),
+        ),
+      )
+
+      if (nextSelectedOperationIds.size !== selectedOperationIds.current.size) {
+        selectedOperationIds.current = nextSelectedOperationIds
+        setHasSelection(nextSelectedOperationIds.size > 0)
       }
     },
+    [],
+  )
+
+  const getSelectedOperationIds = useCallback(
+    () => Array.from(selectedOperationIds.current),
+    [],
+  )
+
+  const getOperationsInBounds = useCallback(
+    (bounds: OperationBounds, canvas: HTMLCanvasElement) =>
+      getVisibleDrawableOperations(operations.current).filter((operation) => {
+        const operationBounds = getOperationBounds(operation, canvas)
+
+        return operationBounds && boundsIntersect(bounds, operationBounds)
+      }),
     [],
   )
 
@@ -777,7 +929,7 @@ export function useWhiteboard({
       ).find((operation) => operation.id === targetId)
 
       if (!targetOperation) {
-        updateSelection(null)
+        updateSelection([])
         return false
       }
 
@@ -785,10 +937,10 @@ export function useWhiteboard({
         id: createDeleteId(),
         type: "delete",
         targetId,
-      } satisfies Extract<WhiteboardOperation, { type: "delete" }>
+      } satisfies DeleteOperation
       const version = commitOperation(operation)
 
-      selectedOperationId.current = null
+      selectedOperationIds.current = new Set()
       setHasSelection(false)
       renderOperations(operations.current)
       sendWhiteboardMessage(
@@ -803,6 +955,52 @@ export function useWhiteboard({
       return true
     },
     [commitOperation, renderOperations, sendWhiteboardMessage, updateSelection],
+  )
+
+  const deleteOperationIds = useCallback(
+    (targetIds: string[]) => {
+      const targetIdSet = new Set(targetIds)
+      const visibleTargetIds = getVisibleDrawableOperations(operations.current)
+        .filter((operation) => targetIdSet.has(operation.id))
+        .map((operation) => operation.id)
+
+      if (visibleTargetIds.length === 0) {
+        updateSelection([])
+        return false
+      }
+
+      if (visibleTargetIds.length === 1) {
+        return deleteOperationById(visibleTargetIds[0])
+      }
+
+      const operation = {
+        id: createDeleteManyId(),
+        type: "delete:many",
+        targetIds: visibleTargetIds,
+      } satisfies DeleteManyOperation
+      const version = commitOperation(operation)
+
+      selectedOperationIds.current = new Set()
+      setHasSelection(false)
+      renderOperations(operations.current)
+      sendWhiteboardMessage(
+        {
+          type: "delete:many",
+          operation,
+          version,
+        },
+        { reliable: true },
+      )
+
+      return true
+    },
+    [
+      commitOperation,
+      deleteOperationById,
+      renderOperations,
+      sendWhiteboardMessage,
+      updateSelection,
+    ],
   )
 
   const deleteOperationAtPoint = useCallback(
@@ -820,12 +1018,14 @@ export function useWhiteboard({
   )
 
   const handleDeleteSelection = useCallback(() => {
-    if (!isTeacher || !selectedOperationId.current) {
+    const selectedIds = getSelectedOperationIds()
+
+    if (!isTeacher || selectedIds.length === 0) {
       return
     }
 
-    deleteOperationById(selectedOperationId.current)
-  }, [deleteOperationById, isTeacher])
+    deleteOperationIds(selectedIds)
+  }, [deleteOperationIds, getSelectedOperationIds, isTeacher])
 
   const flushStrokePoints = useCallback(() => {
     if (strokeFlushFrame.current !== null) {
@@ -894,9 +1094,11 @@ export function useWhiteboard({
     isDrawingRef.current = false
     lastPos.current = null
     startPos.current = null
+    marqueeStartPos.current = null
+    marqueeBaseSelectionIds.current = []
     previewSnapshot.current = null
     activeStrokeId.current = null
-    movingOperationId.current = null
+    movingOperationIds.current = []
     activeStrokePoints.current = []
     pendingStrokePoints.current = []
   }, [])
@@ -925,9 +1127,52 @@ export function useWhiteboard({
         10,
         true,
       )
+      const selectedIds = getSelectedOperationIds()
+      const selectedOperations = getVisibleDrawableOperations(
+        operations.current,
+      ).filter((operation) => selectedOperationIds.current.has(operation.id))
+      const selectionBounds = getSelectionBounds(
+        selectedOperations,
+        context.canvas,
+      )
+
+      if (
+        !targetOperation &&
+        selectedIds.length > 0 &&
+        selectionBounds &&
+        boundsContainPoint(selectionBounds, pos, SELECTION_OUTLINE_PADDING)
+      ) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        isDrawingRef.current = true
+        lastPos.current = pos
+        startPos.current = pos
+        movingOperationIds.current = selectedIds
+        return
+      }
 
       if (!targetOperation) {
-        updateSelection(null)
+        event.currentTarget.setPointerCapture(event.pointerId)
+        isDrawingRef.current = true
+        lastPos.current = pos
+        startPos.current = pos
+        marqueeStartPos.current = pos
+        marqueeBaseSelectionIds.current = event.shiftKey
+          ? getSelectedOperationIds()
+          : []
+        updateSelection(marqueeBaseSelectionIds.current)
+        return
+      }
+
+      if (event.shiftKey) {
+        const nextSelectedOperationIds = new Set(selectedOperationIds.current)
+
+        if (nextSelectedOperationIds.has(targetOperation.id)) {
+          nextSelectedOperationIds.delete(targetOperation.id)
+        } else {
+          nextSelectedOperationIds.add(targetOperation.id)
+        }
+
+        updateSelection(nextSelectedOperationIds)
         return
       }
 
@@ -935,8 +1180,12 @@ export function useWhiteboard({
       isDrawingRef.current = true
       lastPos.current = pos
       startPos.current = pos
-      movingOperationId.current = targetOperation.id
-      updateSelection(targetOperation.id)
+      movingOperationIds.current = selectedOperationIds.current.has(
+        targetOperation.id,
+      )
+        ? selectedIds
+        : [targetOperation.id]
+      updateSelection(movingOperationIds.current)
       return
     }
 
@@ -997,20 +1246,52 @@ export function useWhiteboard({
 
     if (
       isPointerTool(activeTool) &&
-      movingOperationId.current &&
+      marqueeStartPos.current &&
+      startPos.current
+    ) {
+      const marqueeBounds = getBoundsFromPoints(marqueeStartPos.current, pos)
+      const marqueeOperationIds = getOperationsInBounds(
+        marqueeBounds,
+        context.canvas,
+      ).map((operation) => operation.id)
+      const nextSelection = new Set([
+        ...marqueeBaseSelectionIds.current,
+        ...marqueeOperationIds,
+      ])
+
+      selectedOperationIds.current = nextSelection
+      setHasSelection(nextSelection.size > 0)
+      renderOperations(operations.current)
+      drawMarqueeOutline(context.ctx, marqueeBounds)
+      lastPos.current = pos
+      return
+    }
+
+    if (
+      isPointerTool(activeTool) &&
+      movingOperationIds.current.length > 0 &&
       startPos.current
     ) {
       const startPoint = normalizePoint(startPos.current, context.canvas)
       const currentPoint = normalizePoint(pos, context.canvas)
-      const operation = {
-        id: "move-preview",
-        type: "move",
-        targetId: movingOperationId.current,
-        delta: {
-          x: currentPoint.x - startPoint.x,
-          y: currentPoint.y - startPoint.y,
-        },
-      } satisfies Extract<WhiteboardOperation, { type: "move" }>
+      const delta = {
+        x: currentPoint.x - startPoint.x,
+        y: currentPoint.y - startPoint.y,
+      }
+      const operation =
+        movingOperationIds.current.length === 1
+          ? ({
+              id: "move-preview",
+              type: "move",
+              targetId: movingOperationIds.current[0],
+              delta,
+            } satisfies MoveOperation)
+          : ({
+              id: "move-many-preview",
+              type: "move:many",
+              targetIds: movingOperationIds.current,
+              delta,
+            } satisfies MoveManyOperation)
 
       renderOperations([...operations.current, operation])
       lastPos.current = pos
@@ -1054,7 +1335,41 @@ export function useWhiteboard({
       isTeacher &&
       isPointerTool(activeTool) &&
       context &&
-      movingOperationId.current &&
+      marqueeStartPos.current &&
+      startPos.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (endPoint) {
+        const marqueeBounds = getBoundsFromPoints(
+          marqueeStartPos.current,
+          endPoint,
+        )
+        const movedEnough =
+          getDistance(marqueeStartPos.current, endPoint) >=
+          Math.max(2, brushSize / 2)
+
+        if (movedEnough) {
+          const marqueeOperationIds = getOperationsInBounds(
+            marqueeBounds,
+            context.canvas,
+          ).map((operation) => operation.id)
+          updateSelection([
+            ...new Set([
+              ...marqueeBaseSelectionIds.current,
+              ...marqueeOperationIds,
+            ]),
+          ])
+        } else {
+          updateSelection(marqueeBaseSelectionIds.current)
+        }
+      }
+    } else if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isPointerTool(activeTool) &&
+      context &&
+      movingOperationIds.current.length > 0 &&
       startPos.current
     ) {
       const endPoint = event ? getPos(event) : lastPos.current
@@ -1070,21 +1385,35 @@ export function useWhiteboard({
           getDistance(startPos.current, endPoint) >= Math.max(2, brushSize / 2)
 
         if (movedEnough) {
-          const operation = {
-            id: createMoveId(),
-            type: "move",
-            targetId: movingOperationId.current,
-            delta,
-          } satisfies Extract<WhiteboardOperation, { type: "move" }>
+          const operation =
+            movingOperationIds.current.length === 1
+              ? ({
+                  id: createMoveId(),
+                  type: "move",
+                  targetId: movingOperationIds.current[0],
+                  delta,
+                } satisfies MoveOperation)
+              : ({
+                  id: createMoveManyId(),
+                  type: "move:many",
+                  targetIds: movingOperationIds.current,
+                  delta,
+                } satisfies MoveManyOperation)
           const version = commitOperation(operation)
 
           renderOperations(operations.current)
           sendWhiteboardMessage(
-            {
-              type: "move",
-              operation,
-              version,
-            },
+            operation.type === "move"
+              ? {
+                  type: "move",
+                  operation,
+                  version,
+                }
+              : {
+                  type: "move:many",
+                  operation,
+                  version,
+                },
             { reliable: true },
           )
         } else {
@@ -1203,7 +1532,7 @@ export function useWhiteboard({
     if (
       !isTeacher ||
       !isPointerTool(activeTool) ||
-      !selectedOperationId.current
+      selectedOperationIds.current.size === 0
     ) {
       return
     }
@@ -1248,7 +1577,7 @@ export function useWhiteboard({
       type: "clear",
     } satisfies Extract<WhiteboardOperation, { type: "clear" }>
     const version = commitOperation(operation)
-    selectedOperationId.current = null
+    selectedOperationIds.current = new Set()
     setHasSelection(false)
     resetBoard()
     sendWhiteboardMessage(
@@ -1345,7 +1674,7 @@ export function useWhiteboard({
         operations.current = [...operations.current, message.operation]
         redoOperations.current = []
         setRedoCount(0)
-        selectedOperationId.current = null
+        selectedOperationIds.current = new Set()
         setHasSelection(false)
         resetBoard()
         remoteStrokes.current.clear()
@@ -1361,16 +1690,34 @@ export function useWhiteboard({
         operations.current = [...operations.current, message.operation]
         redoOperations.current = []
         setRedoCount(0)
-        if (selectedOperationId.current === message.operation.targetId) {
-          selectedOperationId.current = null
-          setHasSelection(false)
+        if (selectedOperationIds.current.has(message.operation.targetId)) {
+          selectedOperationIds.current.delete(message.operation.targetId)
+          setHasSelection(selectedOperationIds.current.size > 0)
         }
         renderOperations(operations.current)
         remoteStrokes.current.clear()
         continue
       }
 
-      if (message.type === "move") {
+      if (message.type === "delete:many") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        for (const targetId of message.operation.targetIds) {
+          selectedOperationIds.current.delete(targetId)
+        }
+        setHasSelection(selectedOperationIds.current.size > 0)
+        renderOperations(operations.current)
+        remoteStrokes.current.clear()
+        continue
+      }
+
+      if (message.type === "move" || message.type === "move:many") {
         if (message.version < boardVersion.current) {
           continue
         }
