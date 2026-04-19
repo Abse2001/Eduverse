@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { AccessToken } from "livekit-server-sdk"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { getClassById } from "@/lib/mock-data"
 
 export const runtime = "nodejs"
@@ -12,6 +13,38 @@ interface TokenRequestBody {
     avatar?: string
     role?: string
   }
+}
+
+async function findClassId(classId: string) {
+  const mockClass = getClassById(classId)
+
+  if (mockClass) return mockClass.id
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
+
+  if (!supabaseUrl || !supabaseSecretKey) {
+    throw new Error(
+      "Supabase env vars are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.",
+    )
+  }
+
+  const supabase = createSupabaseClient(supabaseUrl, supabaseSecretKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+  const { data, error } = await supabase
+    .from("classes")
+    .select("id")
+    .eq("id", classId)
+    .eq("is_archived", false)
+    .maybeSingle()
+
+  if (error) throw error
+
+  return data?.id ?? null
 }
 
 export async function POST(request: Request) {
@@ -43,9 +76,21 @@ export async function POST(request: Request) {
     )
   }
 
-  const cls = getClassById(body.classId)
+  let classId: string | null
 
-  if (!cls) {
+  try {
+    classId = await findClassId(body.classId)
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Could not verify class.",
+      },
+      { status: 500 },
+    )
+  }
+
+  if (!classId) {
     return NextResponse.json(
       {
         error: "Class not found.",
@@ -54,11 +99,11 @@ export async function POST(request: Request) {
     )
   }
 
-  const roomName = `class-${cls.id}`
+  const roomName = `class-${classId}`
   const metadata = JSON.stringify({
     avatar: body.user.avatar ?? body.user.name.slice(0, 2).toUpperCase(),
     role: body.user.role ?? "student",
-    classId: cls.id,
+    classId,
   })
 
   const token = new AccessToken(apiKey, apiSecret, {

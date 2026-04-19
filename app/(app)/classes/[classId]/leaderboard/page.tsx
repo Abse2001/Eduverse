@@ -2,11 +2,14 @@
 
 import { use } from "react"
 import {
-  getClassById,
   getLeaderboardByClass,
   getUserById,
   LeaderboardEntry,
 } from "@/lib/mock-data"
+import {
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -43,11 +46,14 @@ export default function LeaderboardPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
   const entries = getLeaderboardByClass(classId)
 
-  if (!cls)
-    return <div className="p-6 text-muted-foreground">Class not found.</div>
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
 
   const maxScore = entries[0]?.totalScore ?? 1
   const myEntry = entries.find((e) => e.studentId === currentUser.id)

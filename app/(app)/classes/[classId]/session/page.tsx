@@ -1,7 +1,10 @@
 "use client"
 
 import { use } from "react"
-import { getClassById } from "@/lib/mock-data"
+import {
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { SessionScreen } from "@/features/session/session-screen"
 
 export default function SessionPage({
@@ -10,10 +13,13 @@ export default function SessionPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
 
-  if (!cls)
-    return <div className="p-6 text-muted-foreground">Class not found.</div>
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
 
   return <SessionScreen cls={cls} />
 }

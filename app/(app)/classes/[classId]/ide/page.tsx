@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useState, useRef } from "react"
-import { getClassById } from "@/lib/mock-data"
+import { useClassRoute } from "@/features/classes/use-class-route"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -183,7 +183,7 @@ export default function IdePage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const cls = getClassById(classId)
+  const { cls, isLoading } = useClassRoute(classId)
 
   const [lang, setLang] = useState<Language>(LANGUAGES[0])
   const [code, setCode] = useState(LANGUAGES[0].defaultCode)
@@ -245,7 +245,7 @@ export default function IdePage({
           <div className="flex items-center gap-2 mr-2">
             <Code2 className="w-4 h-4 text-indigo-400" />
             <span className="text-sm font-semibold text-white">
-              {cls?.name ?? "IDE"}
+              {cls?.name ?? (isLoading ? "Loading class..." : "IDE")}
             </span>
             {cls && <span className="text-xs text-zinc-400">{cls.code}</span>}
           </div>

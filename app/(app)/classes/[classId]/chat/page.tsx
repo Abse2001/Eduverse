@@ -1,7 +1,10 @@
 "use client"
 
 import { use } from "react"
-import { getClassById } from "@/lib/mock-data"
+import {
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { ChatScreen } from "@/features/chat/chat-screen"
 
 export default function ChatPage({
@@ -10,10 +13,13 @@ export default function ChatPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
 
-  if (!cls)
-    return <div className="p-6 text-muted-foreground">Class not found.</div>
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
 
   return <ChatScreen cls={cls} />
 }

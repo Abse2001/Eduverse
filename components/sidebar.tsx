@@ -75,16 +75,18 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const pathname = usePathname()
-  const { currentUser } = useApp()
+  const { activeOrganization, currentUser } = useApp()
   const isStudent = currentUser.role === "student"
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
 
-  const userClasses = isStudent
-    ? getClassesByStudent(currentUser.id)
-    : isTeacher
-      ? getClassesByTeacher(currentUser.id)
-      : CLASSES
+  const userClasses = activeOrganization
+    ? isStudent
+      ? getClassesByStudent(currentUser.id)
+      : isTeacher
+        ? getClassesByTeacher(currentUser.id)
+        : CLASSES
+    : []
 
   const mainNavItems = isAdmin
     ? NAV_ITEMS_ADMIN
@@ -122,7 +124,10 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       >
         {/* Logo */}
         <div className="flex items-center h-14 px-3 border-b border-sidebar-border">
-          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+          <Link
+            href={activeOrganization ? "/dashboard" : "/organizations"}
+            className="flex items-center gap-2 min-w-0"
+          >
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shrink-0">
               <GraduationCap className="w-4 h-4 text-primary-foreground" />
             </div>

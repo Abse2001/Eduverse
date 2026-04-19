@@ -1,7 +1,11 @@
 "use client"
 
 import { use } from "react"
-import { getClassById, EXAMS } from "@/lib/mock-data"
+import { EXAMS } from "@/lib/mock-data"
+import {
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { ExamScreen, NoExamState } from "@/features/exam/exam-screen"
 
 export default function ExamPage({
@@ -10,10 +14,16 @@ export default function ExamPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
   const exam = EXAMS.find((e) => e.classId === classId)
 
-  if (!cls || !exam) {
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (!exam) {
     return <NoExamState />
   }
 

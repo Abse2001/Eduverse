@@ -1,7 +1,11 @@
 "use client"
 
 import { use, useState } from "react"
-import { getClassById, getMaterialsByClass, Material } from "@/lib/mock-data"
+import { getMaterialsByClass, Material } from "@/lib/mock-data"
+import {
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -65,13 +69,16 @@ export default function MaterialsPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
   const allMaterials = getMaterialsByClass(classId)
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterType>("all")
 
-  if (!cls)
-    return <div className="p-6 text-muted-foreground">Class not found.</div>
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
 
   const filtered = allMaterials.filter((m) => {
     const matchesSearch =

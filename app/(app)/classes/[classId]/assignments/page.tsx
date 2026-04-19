@@ -2,11 +2,11 @@
 
 import { use } from "react"
 import Link from "next/link"
+import { getAssignmentsByClass, Assignment } from "@/lib/mock-data"
 import {
-  getClassById,
-  getAssignmentsByClass,
-  Assignment,
-} from "@/lib/mock-data"
+  ClassRouteFallback,
+  useClassRoute,
+} from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -81,11 +81,14 @@ export default function AssignmentsPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const cls = getClassById(classId)
+  const { cls, isLoading, errorMessage } = useClassRoute(classId)
   const assignments = getAssignmentsByClass(classId)
 
-  if (!cls)
-    return <div className="p-6 text-muted-foreground">Class not found.</div>
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
 
   const pending = assignments.filter((a) => a.status === "pending")
   const submitted = assignments.filter((a) => a.status === "submitted")
