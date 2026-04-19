@@ -15,6 +15,9 @@ import type { Tool } from "./session-data"
 
 const BOARD_WIDTH = 1400
 const BOARD_HEIGHT = 900
+const PRESENTATION_BOARD_HEIGHT = 900
+const DEFAULT_PRESENTATION_ASPECT_RATIO = 16 / 9
+const REGULAR_WHITEBOARD_BOARD_ID = "whiteboard"
 const SELECTION_OUTLINE_PADDING = 8
 
 type DrawableTool = WhiteboardStrokeTool
@@ -36,7 +39,7 @@ type OperationBounds = {
 type OutgoingWhiteboardMessage =
   LiveSessionWhiteboardMessage extends infer Message
     ? Message extends LiveSessionWhiteboardMessage
-      ? Omit<Message, "id" | "senderId">
+      ? Omit<Message, "id" | "senderId" | "boardId">
       : never
     : never
 
@@ -66,8 +69,11 @@ interface WhiteboardState {
 interface WhiteboardOptions {
   isTeacher: boolean
   currentUserId: string
+  boardId: string
   incomingMessages: LiveSessionWhiteboardMessage[]
   participantCount: number
+  overlayActive: boolean
+  overlayAspectRatio?: number
   syncEnabled: boolean
   sendMessage: (
     message: LiveSessionWhiteboardMessage,
@@ -80,6 +86,12 @@ interface RemoteStroke {
   brushSize: number
   lastPoint: WhiteboardPoint
   points: WhiteboardPoint[]
+}
+
+interface BoardState {
+  operations: WhiteboardOperation[]
+  redoOperations: WhiteboardOperation[]
+  boardVersion: number
 }
 
 function createMessageId() {
@@ -114,6 +126,18 @@ function createMoveManyId() {
   return `move-many-${createMessageId()}`
 }
 
+function createEmptyBoardState(): BoardState {
+  return {
+    operations: [],
+    redoOperations: [],
+    boardVersion: 0,
+  }
+}
+
+function getMessageBoardId(message: LiveSessionWhiteboardMessage) {
+  return message.boardId ?? REGULAR_WHITEBOARD_BOARD_ID
+}
+
 function isDrawableTool(tool: Tool): tool is DrawableTool {
   return tool === "pen"
 }
@@ -133,11 +157,26 @@ function isShapeTool(tool: Tool): tool is ShapeTool {
 function drawBoardBackground(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
+  overlayActive: boolean,
+  overlayAspectRatio = DEFAULT_PRESENTATION_ASPECT_RATIO,
 ) {
-  canvas.width = BOARD_WIDTH
-  canvas.height = BOARD_HEIGHT
+  const safeOverlayAspectRatio =
+    Number.isFinite(overlayAspectRatio) && overlayAspectRatio > 0
+      ? overlayAspectRatio
+      : DEFAULT_PRESENTATION_ASPECT_RATIO
+
+  canvas.width = overlayActive
+    ? Math.round(PRESENTATION_BOARD_HEIGHT * safeOverlayAspectRatio)
+    : BOARD_WIDTH
+  canvas.height = overlayActive ? PRESENTATION_BOARD_HEIGHT : BOARD_HEIGHT
 
   ctx.globalCompositeOperation = "source-over"
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  if (overlayActive) {
+    return
+  }
+
   ctx.fillStyle = "#fafafa"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.strokeStyle = "#e5e7eb"
@@ -682,8 +721,11 @@ function hitsDrawableOperation(
 export function useWhiteboard({
   isTeacher,
   currentUserId,
+  boardId,
   incomingMessages,
   participantCount,
+  overlayActive,
+  overlayAspectRatio,
   syncEnabled,
   sendMessage,
 }: WhiteboardOptions): WhiteboardState {
@@ -708,8 +750,10 @@ export function useWhiteboard({
   const strokeFlushFrame = useRef<number | null>(null)
   const processedMessageIds = useRef(new Set<string>())
   const remoteStrokes = useRef(new Map<string, RemoteStroke>())
+  const boardStates = useRef(new Map<string, BoardState>())
+  const activeBoardId = useRef(boardId)
   const lastParticipantCount = useRef(participantCount)
-  const stateRequested = useRef(false)
+  const stateRequested = useRef(new Set<string>())
   const operations = useRef<WhiteboardOperation[]>([])
   const redoOperations = useRef<WhiteboardOperation[]>([])
   const boardVersion = useRef(0)
@@ -732,8 +776,13 @@ export function useWhiteboard({
       return
     }
 
-    drawBoardBackground(context.canvas, context.ctx)
-  }, [getContext])
+    drawBoardBackground(
+      context.canvas,
+      context.ctx,
+      overlayActive,
+      overlayAspectRatio,
+    )
+  }, [getContext, overlayActive, overlayAspectRatio])
 
   const renderOperations = useCallback(
     (nextOperations: WhiteboardOperation[]) => {
@@ -743,7 +792,12 @@ export function useWhiteboard({
         return
       }
 
-      drawBoardBackground(context.canvas, context.ctx)
+      drawBoardBackground(
+        context.canvas,
+        context.ctx,
+        overlayActive,
+        overlayAspectRatio,
+      )
 
       const visibleOperations = getVisibleDrawableOperations(nextOperations)
 
@@ -776,7 +830,7 @@ export function useWhiteboard({
 
       context.ctx.globalCompositeOperation = "source-over"
     },
-    [getContext],
+    [getContext, overlayActive, overlayAspectRatio],
   )
 
   const handleActiveToolChange = useCallback(
@@ -824,12 +878,13 @@ export function useWhiteboard({
         {
           id: createMessageId(),
           senderId: currentUserId,
+          boardId,
           ...message,
         } as LiveSessionWhiteboardMessage,
         options,
       )
     },
-    [currentUserId, sendMessage, syncEnabled],
+    [boardId, currentUserId, sendMessage, syncEnabled],
   )
 
   const sendStateSync = useCallback(() => {
@@ -1591,8 +1646,34 @@ export function useWhiteboard({
   }
 
   useEffect(() => {
-    resetBoard()
-  }, [resetBoard])
+    if (activeBoardId.current === boardId) {
+      return
+    }
+
+    boardStates.current.set(activeBoardId.current, {
+      operations: operations.current,
+      redoOperations: redoOperations.current,
+      boardVersion: boardVersion.current,
+    })
+
+    const nextBoardState =
+      boardStates.current.get(boardId) ?? createEmptyBoardState()
+
+    activeBoardId.current = boardId
+    operations.current = nextBoardState.operations
+    redoOperations.current = nextBoardState.redoOperations
+    boardVersion.current = nextBoardState.boardVersion
+    selectedOperationIds.current = new Set()
+    remoteStrokes.current.clear()
+    setHasSelection(false)
+    setRedoCount(nextBoardState.redoOperations.length)
+    resetDrawingState()
+    renderOperations(nextBoardState.operations)
+  }, [boardId, renderOperations, resetDrawingState])
+
+  useEffect(() => {
+    renderOperations(operations.current)
+  }, [renderOperations])
 
   useEffect(() => {
     return () => {
@@ -1604,15 +1685,15 @@ export function useWhiteboard({
 
   useEffect(() => {
     if (!syncEnabled) {
-      stateRequested.current = false
+      stateRequested.current.clear()
       return
     }
 
-    if (!isTeacher && !stateRequested.current) {
-      stateRequested.current = true
+    if (!isTeacher && !stateRequested.current.has(boardId)) {
+      stateRequested.current.add(boardId)
       sendWhiteboardMessage({ type: "state:request" }, { reliable: true })
     }
-  }, [isTeacher, sendWhiteboardMessage, syncEnabled])
+  }, [boardId, isTeacher, sendWhiteboardMessage, syncEnabled])
 
   useEffect(() => {
     if (!isTeacher || !syncEnabled) {
@@ -1639,6 +1720,10 @@ export function useWhiteboard({
         processedMessageIds.current.has(message.id) ||
         message.senderId === currentUserId
       ) {
+        continue
+      }
+
+      if (getMessageBoardId(message) !== boardId) {
         continue
       }
 
@@ -1795,6 +1880,7 @@ export function useWhiteboard({
       }
     }
   }, [
+    boardId,
     currentUserId,
     getContext,
     incomingMessages,

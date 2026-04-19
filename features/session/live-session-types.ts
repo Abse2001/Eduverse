@@ -118,6 +118,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "stroke:start"
       strokeId: string
       tool: WhiteboardStrokeTool
@@ -128,6 +129,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "stroke:points"
       strokeId: string
       points: WhiteboardPoint[]
@@ -135,6 +137,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "stroke:end"
       strokeId: string
       operation: Extract<WhiteboardOperation, { type: "stroke" }>
@@ -143,6 +146,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "shape"
       operation: Extract<WhiteboardOperation, { type: "shape" }>
       version: number
@@ -150,6 +154,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "clear"
       operation: Extract<WhiteboardOperation, { type: "clear" }>
       version: number
@@ -157,6 +162,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "delete"
       operation: Extract<WhiteboardOperation, { type: "delete" }>
       version: number
@@ -164,6 +170,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "delete:many"
       operation: Extract<WhiteboardOperation, { type: "delete:many" }>
       version: number
@@ -171,6 +178,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "move"
       operation: Extract<WhiteboardOperation, { type: "move" }>
       version: number
@@ -178,6 +186,7 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "move:many"
       operation: Extract<WhiteboardOperation, { type: "move:many" }>
       version: number
@@ -185,11 +194,13 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "state:request"
     }
   | {
       id: string
       senderId: string
+      boardId?: string
       type: "state:sync"
       version: number
       operations: WhiteboardOperation[]

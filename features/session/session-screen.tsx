@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -44,6 +44,9 @@ import { VideoTrackView } from "./track-media"
 import { useLiveSession } from "./use-live-session"
 import { useWhiteboard } from "./use-whiteboard"
 import { VideoTile } from "./video-tile"
+
+const REGULAR_WHITEBOARD_BOARD_ID = "whiteboard"
+const DEFAULT_PRESENTATION_ASPECT_RATIO = 16 / 9
 
 const NOTICE_STYLES = {
   error: {
@@ -144,16 +147,48 @@ export function SessionScreen({ cls }: { cls: Class }) {
     currentUser,
     enabled: sessionActive,
   })
+  const presentationStageRef = useRef<HTMLDivElement | null>(null)
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number | undefined>()
+  const [presentationStageSize, setPresentationStageSize] = useState<{
+    width: number
+    height: number
+  } | null>(null)
+  const presentationSessionId = liveSession.presentation
+    ? `presentation:${liveSession.presentation.publication.trackSid}`
+    : null
+  const presentationDimensions =
+    liveSession.presentation?.publication.dimensions
+  const publicationAspectRatio =
+    presentationDimensions && presentationDimensions.height > 0
+      ? presentationDimensions.width / presentationDimensions.height
+      : undefined
+  const presentationAspectRatio =
+    videoAspectRatio ??
+    publicationAspectRatio ??
+    DEFAULT_PRESENTATION_ASPECT_RATIO
   const participantCount = liveSession.participants.length
   const connected = liveSession.connectionState === ConnectionState.Connected
   const whiteboard = useWhiteboard({
     isTeacher,
     currentUserId: currentUser.id,
+    boardId: presentationSessionId ?? REGULAR_WHITEBOARD_BOARD_ID,
     incomingMessages: liveSession.whiteboardMessages,
     participantCount,
+    overlayActive: Boolean(liveSession.presentation),
+    overlayAspectRatio: presentationAspectRatio,
     syncEnabled: connected,
     sendMessage: liveSession.sendWhiteboardMessage,
   })
+  const handlePresentationDimensionsChange = useCallback(
+    (dimensions: { width: number; height: number }) => {
+      if (dimensions.height <= 0) {
+        return
+      }
+
+      setVideoAspectRatio(dimensions.width / dimensions.height)
+    },
+    [],
+  )
   const liveBadgeLabel = liveSession.isConnecting
     ? "Connecting"
     : liveSession.connectionState === ConnectionState.Connected
@@ -177,6 +212,58 @@ export function SessionScreen({ cls }: { cls: Class }) {
     : liveSession.screenSharing
       ? "Stop sharing"
       : "Share screen"
+
+  useEffect(() => {
+    setVideoAspectRatio(undefined)
+  }, [presentationSessionId])
+
+  useEffect(() => {
+    const element = presentationStageRef.current
+
+    if (!element || !liveSession.presentation) {
+      setPresentationStageSize(null)
+      return
+    }
+
+    const updateStageSize = () => {
+      const rect = element.getBoundingClientRect()
+
+      if (rect.width <= 0 || rect.height <= 0) {
+        return
+      }
+
+      let width = rect.width
+      let height = width / presentationAspectRatio
+
+      if (height > rect.height) {
+        height = rect.height
+        width = height * presentationAspectRatio
+      }
+
+      setPresentationStageSize((prev) => {
+        const roundedWidth = Math.round(width)
+        const roundedHeight = Math.round(height)
+
+        if (prev?.width === roundedWidth && prev.height === roundedHeight) {
+          return prev
+        }
+
+        return {
+          width: roundedWidth,
+          height: roundedHeight,
+        }
+      })
+    }
+
+    updateStageSize()
+
+    const observer = new ResizeObserver(updateStageSize)
+    observer.observe(element)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [liveSession.presentation, presentationAspectRatio])
 
   if (!sessionActive) {
     const title = hasJoinedSession ? "Session ended" : "Ready to join"
@@ -415,7 +502,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
 
           <div className="flex-1 flex flex-col overflow-hidden relative">
             {whiteboard.showColorPicker ? (
-              <div className="absolute top-3 left-3 z-10 flex gap-1.5 p-2 bg-card border border-border rounded-xl shadow-lg">
+              <div className="absolute top-3 left-3 z-30 flex gap-1.5 p-2 bg-card border border-border rounded-xl shadow-lg">
                 {SESSION_COLORS.map((color) => (
                   <button
                     key={color}
@@ -436,13 +523,52 @@ export function SessionScreen({ cls }: { cls: Class }) {
             ) : null}
 
             {liveSession.presentation ? (
-              <div className="absolute inset-0 z-10 bg-black">
-                <VideoTrackView
-                  publication={liveSession.presentation.publication}
-                  muted={liveSession.presentation.participant.isLocal}
-                  className="object-contain"
-                />
-                <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
+              <div
+                ref={presentationStageRef}
+                className="absolute inset-0 bg-black"
+              >
+                <div
+                  className="absolute left-1/2 top-1/2 overflow-hidden"
+                  style={{
+                    width: presentationStageSize?.width ?? "100%",
+                    height: presentationStageSize?.height ?? "100%",
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <VideoTrackView
+                    publication={liveSession.presentation.publication}
+                    muted={liveSession.presentation.participant.isLocal}
+                    className="absolute inset-0 h-full w-full object-fill"
+                    onDimensionsChange={handlePresentationDimensionsChange}
+                  />
+                  <canvas
+                    ref={whiteboard.canvasRef}
+                    aria-label="Presentation annotation canvas"
+                    tabIndex={isTeacher ? 0 : -1}
+                    className={cn(
+                      "absolute inset-0 z-10 h-full w-full touch-none",
+                      isTeacher &&
+                        ["pen", "line", "rect", "circle"].includes(
+                          whiteboard.activeTool,
+                        )
+                        ? "cursor-crosshair"
+                        : "",
+                      isTeacher && whiteboard.activeTool === "eraser"
+                        ? "cursor-cell"
+                        : "",
+                      isTeacher && whiteboard.activeTool === "pointer"
+                        ? "cursor-default"
+                        : "",
+                      !isTeacher ? "cursor-not-allowed" : "",
+                    )}
+                    onPointerDown={whiteboard.handlePointerDown}
+                    onPointerMove={whiteboard.handlePointerMove}
+                    onPointerUp={whiteboard.handlePointerUp}
+                    onPointerCancel={whiteboard.handlePointerCancel}
+                    onKeyDown={whiteboard.handleKeyDown}
+                  />
+                </div>
+                <div className="absolute top-3 left-3 z-20 flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white">
                   <Monitor className="w-3.5 h-3.5" />
                   {liveSession.presentation.participant.isLocal
                     ? "You are presenting"
@@ -462,7 +588,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
             ) : null}
 
             {!isTeacher && !liveSession.presentation ? (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-muted/90 backdrop-blur-sm text-xs text-muted-foreground font-medium border border-border">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full bg-muted/90 backdrop-blur-sm text-xs text-muted-foreground font-medium border border-border">
                 View-only whiteboard
               </div>
             ) : null}
@@ -478,32 +604,34 @@ export function SessionScreen({ cls }: { cls: Class }) {
               </div>
             ) : null}
 
-            <canvas
-              ref={whiteboard.canvasRef}
-              aria-label="Whiteboard canvas"
-              tabIndex={isTeacher ? 0 : -1}
-              className={cn(
-                "w-full h-full touch-none object-contain",
-                isTeacher &&
-                  ["pen", "line", "rect", "circle"].includes(
-                    whiteboard.activeTool,
-                  )
-                  ? "cursor-crosshair"
-                  : "",
-                isTeacher && whiteboard.activeTool === "eraser"
-                  ? "cursor-cell"
-                  : "",
-                isTeacher && whiteboard.activeTool === "pointer"
-                  ? "cursor-default"
-                  : "",
-                !isTeacher ? "cursor-not-allowed" : "",
-              )}
-              onPointerDown={whiteboard.handlePointerDown}
-              onPointerMove={whiteboard.handlePointerMove}
-              onPointerUp={whiteboard.handlePointerUp}
-              onPointerCancel={whiteboard.handlePointerCancel}
-              onKeyDown={whiteboard.handleKeyDown}
-            />
+            {!liveSession.presentation ? (
+              <canvas
+                ref={whiteboard.canvasRef}
+                aria-label="Whiteboard canvas"
+                tabIndex={isTeacher ? 0 : -1}
+                className={cn(
+                  "relative z-10 w-full h-full touch-none object-contain",
+                  isTeacher &&
+                    ["pen", "line", "rect", "circle"].includes(
+                      whiteboard.activeTool,
+                    )
+                    ? "cursor-crosshair"
+                    : "",
+                  isTeacher && whiteboard.activeTool === "eraser"
+                    ? "cursor-cell"
+                    : "",
+                  isTeacher && whiteboard.activeTool === "pointer"
+                    ? "cursor-default"
+                    : "",
+                  !isTeacher ? "cursor-not-allowed" : "",
+                )}
+                onPointerDown={whiteboard.handlePointerDown}
+                onPointerMove={whiteboard.handlePointerMove}
+                onPointerUp={whiteboard.handlePointerUp}
+                onPointerCancel={whiteboard.handlePointerCancel}
+                onKeyDown={whiteboard.handleKeyDown}
+              />
+            ) : null}
           </div>
 
           {rightPanel ? (

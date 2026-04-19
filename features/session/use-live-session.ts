@@ -54,6 +54,7 @@ type JsonValue = string | number | boolean | null | JsonObject | JsonValue[]
 type ParsedWhiteboardObject = JsonObject &
   Partial<{
     brushSize: JsonValue
+    boardId: JsonValue
     color: JsonValue
     delta: JsonValue
     endPoint: JsonValue
@@ -217,7 +218,8 @@ function isWhiteboardMessage(
     !isJsonObject(value) ||
     typeof value.id !== "string" ||
     typeof value.senderId !== "string" ||
-    typeof value.type !== "string"
+    typeof value.type !== "string" ||
+    (value.boardId !== undefined && typeof value.boardId !== "string")
   ) {
     return false
   }

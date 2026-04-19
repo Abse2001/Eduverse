@@ -9,10 +9,12 @@ export function VideoTrackView({
   publication,
   className,
   muted = false,
+  onDimensionsChange,
 }: {
   publication?: TrackPublication
   className?: string
   muted?: boolean
+  onDimensionsChange?: (dimensions: { width: number; height: number }) => void
 }) {
   const ref = useRef<HTMLVideoElement | null>(null)
 
@@ -26,10 +28,30 @@ export function VideoTrackView({
 
     track.attach(element)
 
+    const reportDimensions = () => {
+      if (element.videoWidth > 0 && element.videoHeight > 0) {
+        onDimensionsChange?.({
+          width: element.videoWidth,
+          height: element.videoHeight,
+        })
+      }
+    }
+
+    element.addEventListener("loadedmetadata", reportDimensions)
+    element.addEventListener("resize", reportDimensions)
+    reportDimensions()
+
     return () => {
+      element.removeEventListener("loadedmetadata", reportDimensions)
+      element.removeEventListener("resize", reportDimensions)
       track.detach(element)
     }
-  }, [publication, publication?.track, publication?.trackSid])
+  }, [
+    onDimensionsChange,
+    publication,
+    publication?.track,
+    publication?.trackSid,
+  ])
 
   return (
     <video
