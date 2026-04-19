@@ -135,7 +135,8 @@ export function SessionScreen({ cls }: { cls: Class }) {
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
-  const [sessionActive, setSessionActive] = useState(true)
+  const [sessionActive, setSessionActive] = useState(false)
+  const [hasJoinedSession, setHasJoinedSession] = useState(false)
 
   const isTeacher = currentUser.role === "teacher"
   const liveSession = useLiveSession({
@@ -178,15 +179,25 @@ export function SessionScreen({ cls }: { cls: Class }) {
       : "Share screen"
 
   if (!sessionActive) {
+    const title = hasJoinedSession ? "Session ended" : "Ready to join"
+    const description = hasJoinedSession
+      ? `You left the live session for ${cls.name}.`
+      : `Join the live session for ${cls.name} when you are ready.`
+    const buttonLabel = hasJoinedSession ? "Rejoin" : "Join session"
+
     return (
       <div className="p-6 flex flex-col items-center justify-center gap-3 text-center">
         <Phone className="w-10 h-10 text-muted-foreground" />
-        <p className="text-lg font-semibold text-foreground">Session ended</p>
-        <p className="text-sm text-muted-foreground">
-          You left the live session for {cls.name}.
-        </p>
-        <Button size="sm" onClick={() => setSessionActive(true)}>
-          Rejoin
+        <p className="text-lg font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <Button
+          size="sm"
+          onClick={() => {
+            setHasJoinedSession(true)
+            setSessionActive(true)
+          }}
+        >
+          {buttonLabel}
         </Button>
       </div>
     )
@@ -252,6 +263,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
               onClick={() => {
                 liveSession.disconnect()
                 setSessionActive(false)
+                setHasJoinedSession(true)
               }}
             >
               <Phone className="w-3.5 h-3.5" />

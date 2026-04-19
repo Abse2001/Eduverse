@@ -706,17 +706,7 @@ export function useLiveSession({
     setError(null)
     setNotices([])
     setWhiteboardMessages([])
-    setMedia({
-      microphone: {
-        state: "starting",
-        label: "Starting microphone...",
-      },
-      camera: {
-        state: "starting",
-        label: "Starting camera...",
-      },
-      screen: INITIAL_MEDIA_STATUS.screen,
-    })
+    setMedia(INITIAL_MEDIA_STATUS)
 
     const handleSync = () => {
       syncParticipants()
@@ -808,47 +798,6 @@ export function useLiveSession({
         }
 
         await room.connect(serverUrl, participantToken, ROOM_CONNECT_OPTIONS)
-
-        const mediaResults = await Promise.allSettled([
-          room.localParticipant.setMicrophoneEnabled(true),
-          room.localParticipant.setCameraEnabled(true),
-        ])
-
-        const [microphoneResult, cameraResult] = mediaResults
-
-        if (isCancelled) {
-          return
-        }
-
-        if (microphoneResult.status === "fulfilled") {
-          updateMediaDevice("microphone", {
-            state: "on",
-            label: "Microphone is on",
-          })
-        } else {
-          const { status, ...notice } = createMediaNotice(
-            "microphone",
-            microphoneResult.reason as LiveSessionError,
-          )
-          updateMediaDevice("microphone", status)
-          upsertNotice(notice)
-          setError(notice.description)
-        }
-
-        if (cameraResult.status === "fulfilled") {
-          updateMediaDevice("camera", {
-            state: "on",
-            label: "Camera is on",
-          })
-        } else {
-          const { status, ...notice } = createMediaNotice(
-            "camera",
-            cameraResult.reason as LiveSessionError,
-          )
-          updateMediaDevice("camera", status)
-          upsertNotice(notice)
-          setError(notice.description)
-        }
 
         if (isCancelled) {
           return
