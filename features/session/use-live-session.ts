@@ -8,6 +8,7 @@ import {
   Track,
   type Participant,
   type RoomConnectOptions,
+  type RoomEventCallbacks,
   type RoomOptions,
   type TrackPublication,
 } from "livekit-client"
@@ -22,6 +23,9 @@ import type {
   SessionParticipant,
   SessionPresentation,
   WhiteboardOperation,
+  WhiteboardPoint,
+  WhiteboardShape,
+  WhiteboardStrokeTool,
 } from "./live-session-types"
 
 const ROOM_OPTIONS: RoomOptions = {
@@ -36,6 +40,38 @@ const ROOM_CONNECT_OPTIONS: RoomConnectOptions = {
 const WHITEBOARD_TOPIC = "eduverse.whiteboard"
 
 type MediaDeviceKind = "microphone" | "camera" | "screen"
+type LiveSessionError =
+  | Error
+  | string
+  | {
+      message?: string
+      name?: string
+    }
+  | null
+  | undefined
+type JsonObject = { [key: string]: JsonValue }
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[]
+type ParsedWhiteboardObject = JsonObject &
+  Partial<{
+    brushSize: JsonValue
+    color: JsonValue
+    delta: JsonValue
+    endPoint: JsonValue
+    id: JsonValue
+    operation: JsonValue
+    operations: JsonValue
+    point: JsonValue
+    points: JsonValue
+    senderId: JsonValue
+    startPoint: JsonValue
+    strokeId: JsonValue
+    targetId: JsonValue
+    tool: JsonValue
+    type: JsonValue
+    version: JsonValue
+    x: JsonValue
+    y: JsonValue
+  }>
 
 const INITIAL_MEDIA_STATUS: LiveMediaStatus = {
   microphone: {
@@ -58,18 +94,15 @@ const MEDIA_LABELS: Record<MediaDeviceKind, string> = {
   screen: "Screen sharing",
 }
 
-function getErrorName(error: unknown) {
-  if (error && typeof error === "object" && "name" in error) {
-    const name = (error as { name?: unknown }).name
-    if (typeof name === "string") {
-      return name
-    }
+function getErrorName(error: LiveSessionError) {
+  if (error && typeof error === "object" && typeof error.name === "string") {
+    return error.name
   }
 
   return undefined
 }
 
-function getErrorMessage(error: unknown) {
+function getErrorMessage(error: LiveSessionError) {
   if (error instanceof Error && error.message) {
     return error.message
   }
@@ -81,33 +114,45 @@ function getErrorMessage(error: unknown) {
   return "An unexpected error occurred."
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object"
+function isJsonObject(
+  value: JsonValue | undefined,
+): value is ParsedWhiteboardObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
-function isWhiteboardPoint(value: unknown) {
+function isWhiteboardPoint(
+  value: JsonValue | undefined,
+): value is WhiteboardPoint & JsonObject {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     typeof value.x === "number" &&
     typeof value.y === "number"
   )
 }
 
-function isWhiteboardPointList(value: unknown) {
+function isWhiteboardPointList(
+  value: JsonValue | undefined,
+): value is Array<WhiteboardPoint & JsonObject> {
   return Array.isArray(value) && value.every(isWhiteboardPoint)
 }
 
-function isWhiteboardShape(value: unknown) {
+function isWhiteboardShape(
+  value: JsonValue | undefined,
+): value is WhiteboardShape {
   return value === "line" || value === "rect" || value === "circle"
 }
 
-function isWhiteboardStrokeTool(value: unknown) {
+function isWhiteboardStrokeTool(
+  value: JsonValue | undefined,
+): value is WhiteboardStrokeTool {
   return value === "pen"
 }
 
-function isWhiteboardOperation(value: unknown): value is WhiteboardOperation {
+function isWhiteboardOperation(
+  value: JsonValue | undefined,
+): value is WhiteboardOperation & JsonObject {
   if (
-    !isRecord(value) ||
+    !isJsonObject(value) ||
     typeof value.id !== "string" ||
     typeof value.type !== "string"
   ) {
@@ -146,15 +191,17 @@ function isWhiteboardOperation(value: unknown): value is WhiteboardOperation {
   )
 }
 
-function isWhiteboardOperationList(value: unknown) {
+function isWhiteboardOperationList(
+  value: JsonValue | undefined,
+): value is Array<WhiteboardOperation & JsonObject> {
   return Array.isArray(value) && value.every(isWhiteboardOperation)
 }
 
 function isWhiteboardMessage(
-  value: unknown,
-): value is LiveSessionWhiteboardMessage {
+  value: JsonValue | undefined,
+): value is LiveSessionWhiteboardMessage & JsonObject {
   if (
-    !isRecord(value) ||
+    !isJsonObject(value) ||
     typeof value.id !== "string" ||
     typeof value.senderId !== "string" ||
     typeof value.type !== "string"
@@ -243,7 +290,7 @@ function canDeriveMediaStatus(status: LiveMediaDeviceStatus) {
   )
 }
 
-function createConnectionNotice(error: unknown): LiveSessionNotice {
+function createConnectionNotice(error: LiveSessionError): LiveSessionNotice {
   const message = getErrorMessage(error)
 
   if (message.includes("Live session env vars are missing")) {
@@ -288,7 +335,7 @@ function createConnectionNotice(error: unknown): LiveSessionNotice {
 
 function createMediaNotice(
   device: MediaDeviceKind,
-  error: unknown,
+  error: LiveSessionError,
 ): LiveSessionNotice & { status: LiveMediaDeviceStatus } {
   const name = getErrorName(error)
   const message = getErrorMessage(error)
@@ -683,81 +730,69 @@ export function useLiveSession({
       handleSync()
     }
 
-    const eventHandlers: Array<[RoomEvent, (...args: unknown[]) => void]> = [
-      [
-        RoomEvent.ConnectionStateChanged,
-        (nextState) =>
-          handleConnectionStateChange(nextState as ConnectionState),
-      ],
-      [RoomEvent.ParticipantConnected, handleSync],
-      [RoomEvent.ParticipantDisconnected, handleSync],
-      [RoomEvent.TrackSubscribed, handleSync],
-      [RoomEvent.TrackUnsubscribed, handleSync],
-      [RoomEvent.TrackMuted, handleSync],
-      [RoomEvent.TrackUnmuted, handleSync],
-      [RoomEvent.LocalTrackPublished, handleSync],
-      [RoomEvent.LocalTrackUnpublished, handleSync],
-      [RoomEvent.ActiveSpeakersChanged, handleSync],
-      [
-        RoomEvent.DataReceived,
-        (payload, _participant, _kind, topic) => {
-          if (!(payload instanceof Uint8Array)) {
-            return
-          }
+    const handleDataReceived: RoomEventCallbacks[RoomEvent.DataReceived] = (
+      payload,
+      _participant,
+      _kind,
+      topic,
+    ) => {
+      if (topic && topic !== WHITEBOARD_TOPIC) {
+        return
+      }
 
-          if (topic && topic !== WHITEBOARD_TOPIC) {
-            return
-          }
+      try {
+        const decoded = new TextDecoder().decode(payload)
+        const parsed = JSON.parse(decoded) as JsonValue
 
-          try {
-            const decoded = new TextDecoder().decode(payload)
-            const parsed = JSON.parse(decoded) as unknown
+        if (!isWhiteboardMessage(parsed)) {
+          return
+        }
 
-            if (!isWhiteboardMessage(parsed)) {
-              return
-            }
+        setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
+      } catch {
+        upsertNotice({
+          id: "whiteboard-sync",
+          scope: "whiteboard",
+          severity: "warning",
+          title: "Whiteboard update was skipped",
+          description:
+            "A whiteboard message could not be read by this browser.",
+          nextStep:
+            "Ask the teacher to keep drawing or rejoin if the board looks out of date.",
+        })
+      }
+    }
 
-            setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
-          } catch {
-            upsertNotice({
-              id: "whiteboard-sync",
-              scope: "whiteboard",
-              severity: "warning",
-              title: "Whiteboard update was skipped",
-              description:
-                "A whiteboard message could not be read by this browser.",
-              nextStep:
-                "Ask the teacher to keep drawing or rejoin if the board looks out of date.",
-            })
-          }
-        },
-      ],
-      [
-        RoomEvent.MediaDevicesError,
-        (nextError) => {
-          const description =
-            nextError instanceof Error
-              ? nextError.message
-              : "A media device error occurred."
+    const handleMediaDevicesError: RoomEventCallbacks[RoomEvent.MediaDevicesError] =
+      (nextError) => {
+        const description =
+          nextError.message || "A media device error occurred."
 
-          setError(description)
-          upsertNotice({
-            id: "media-device",
-            scope: "session",
-            severity: "error",
-            title: "Media device problem",
-            description,
-            nextStep:
-              "Check browser and system camera or microphone permissions, then try again.",
-          })
-          setIsConnecting(false)
-        },
-      ],
-    ]
+        setError(description)
+        upsertNotice({
+          id: "media-device",
+          scope: "session",
+          severity: "error",
+          title: "Media device problem",
+          description,
+          nextStep:
+            "Check browser and system camera or microphone permissions, then try again.",
+        })
+        setIsConnecting(false)
+      }
 
-    eventHandlers.forEach(([event, handler]) => {
-      room.on(event, handler as never)
-    })
+    room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChange)
+    room.on(RoomEvent.ParticipantConnected, handleSync)
+    room.on(RoomEvent.ParticipantDisconnected, handleSync)
+    room.on(RoomEvent.TrackSubscribed, handleSync)
+    room.on(RoomEvent.TrackUnsubscribed, handleSync)
+    room.on(RoomEvent.TrackMuted, handleSync)
+    room.on(RoomEvent.TrackUnmuted, handleSync)
+    room.on(RoomEvent.LocalTrackPublished, handleSync)
+    room.on(RoomEvent.LocalTrackUnpublished, handleSync)
+    room.on(RoomEvent.ActiveSpeakersChanged, handleSync)
+    room.on(RoomEvent.DataReceived, handleDataReceived)
+    room.on(RoomEvent.MediaDevicesError, handleMediaDevicesError)
 
     let isCancelled = false
 
@@ -793,7 +828,7 @@ export function useLiveSession({
         } else {
           const { status, ...notice } = createMediaNotice(
             "microphone",
-            microphoneResult.reason,
+            microphoneResult.reason as LiveSessionError,
           )
           updateMediaDevice("microphone", status)
           upsertNotice(notice)
@@ -808,7 +843,7 @@ export function useLiveSession({
         } else {
           const { status, ...notice } = createMediaNotice(
             "camera",
-            cameraResult.reason,
+            cameraResult.reason as LiveSessionError,
           )
           updateMediaDevice("camera", status)
           upsertNotice(notice)
@@ -831,7 +866,7 @@ export function useLiveSession({
             ? nextError.message
             : "Unable to join the live session."
 
-        const notice = createConnectionNotice(nextError)
+        const notice = createConnectionNotice(nextError as LiveSessionError)
         setError(message)
         upsertNotice(notice)
         setIsConnecting(false)
@@ -845,9 +880,18 @@ export function useLiveSession({
 
     return () => {
       isCancelled = true
-      eventHandlers.forEach(([event, handler]) => {
-        room.off(event, handler as never)
-      })
+      room.off(RoomEvent.ConnectionStateChanged, handleConnectionStateChange)
+      room.off(RoomEvent.ParticipantConnected, handleSync)
+      room.off(RoomEvent.ParticipantDisconnected, handleSync)
+      room.off(RoomEvent.TrackSubscribed, handleSync)
+      room.off(RoomEvent.TrackUnsubscribed, handleSync)
+      room.off(RoomEvent.TrackMuted, handleSync)
+      room.off(RoomEvent.TrackUnmuted, handleSync)
+      room.off(RoomEvent.LocalTrackPublished, handleSync)
+      room.off(RoomEvent.LocalTrackUnpublished, handleSync)
+      room.off(RoomEvent.ActiveSpeakersChanged, handleSync)
+      room.off(RoomEvent.DataReceived, handleDataReceived)
+      room.off(RoomEvent.MediaDevicesError, handleMediaDevicesError)
       room.disconnect()
       if (roomRef.current === room) {
         roomRef.current = null
@@ -881,7 +925,7 @@ export function useLiveSession({
         })
         return true
       } catch (nextError) {
-        setError(getErrorMessage(nextError))
+        setError(getErrorMessage(nextError as LiveSessionError))
         upsertNotice({
           id: "whiteboard-sync",
           scope: "whiteboard",
@@ -932,7 +976,10 @@ export function useLiveSession({
       })
       syncParticipants()
     } catch (nextError) {
-      const { status, ...notice } = createMediaNotice("microphone", nextError)
+      const { status, ...notice } = createMediaNotice(
+        "microphone",
+        nextError as LiveSessionError,
+      )
       updateMediaDevice("microphone", status)
       upsertNotice(notice)
       setError(notice.description)
@@ -971,7 +1018,10 @@ export function useLiveSession({
       })
       syncParticipants()
     } catch (nextError) {
-      const { status, ...notice } = createMediaNotice("camera", nextError)
+      const { status, ...notice } = createMediaNotice(
+        "camera",
+        nextError as LiveSessionError,
+      )
       updateMediaDevice("camera", status)
       upsertNotice(notice)
       setError(notice.description)
@@ -1017,7 +1067,10 @@ export function useLiveSession({
       })
       syncParticipants()
     } catch (nextError) {
-      const { status, ...notice } = createMediaNotice("screen", nextError)
+      const { status, ...notice } = createMediaNotice(
+        "screen",
+        nextError as LiveSessionError,
+      )
       updateMediaDevice("screen", status)
       upsertNotice(notice)
       setError(notice.description)
