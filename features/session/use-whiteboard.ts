@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { MouseEvent as ReactMouseEvent, RefObject } from "react"
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  RefObject,
+} from "react"
 import type {
   LiveSessionWhiteboardMessage,
+  WhiteboardOperation,
   WhiteboardPoint,
+  WhiteboardShape,
+  WhiteboardStrokeTool,
 } from "./live-session-types"
 import type { Tool } from "./session-data"
 
 const BOARD_WIDTH = 1400
 const BOARD_HEIGHT = 900
 
-type DrawableTool = "pen" | "eraser"
+type DrawableTool = WhiteboardStrokeTool
+type ShapeTool = WhiteboardShape
+type StrokeOperation = Extract<WhiteboardOperation, { type: "stroke" }>
+type ShapeOperation = Extract<WhiteboardOperation, { type: "shape" }>
+type DrawableOperation = StrokeOperation | ShapeOperation
 
 type OutgoingWhiteboardMessage =
   LiveSessionWhiteboardMessage extends infer Message
@@ -28,10 +39,14 @@ interface WhiteboardState {
   setBrushSize: (size: number) => void
   showColorPicker: boolean
   setShowColorPicker: (visible: boolean) => void
+  hasSelection: boolean
   redoCount: number
-  handleMouseDown: (event: ReactMouseEvent<HTMLCanvasElement>) => void
-  handleMouseMove: (event: ReactMouseEvent<HTMLCanvasElement>) => void
-  handleMouseUp: () => void
+  handlePointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void
+  handlePointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void
+  handlePointerUp: (event?: ReactPointerEvent<HTMLCanvasElement>) => void
+  handlePointerCancel: (event?: ReactPointerEvent<HTMLCanvasElement>) => void
+  handleKeyDown: (event: ReactKeyboardEvent<HTMLCanvasElement>) => void
+  handleDeleteSelection: () => void
   handleUndo: () => void
   handleRedo: () => void
   handleClear: () => void
@@ -50,10 +65,10 @@ interface WhiteboardOptions {
 }
 
 interface RemoteStroke {
-  tool: DrawableTool
   color: string
   brushSize: number
   lastPoint: WhiteboardPoint
+  points: WhiteboardPoint[]
 }
 
 function createMessageId() {
@@ -64,8 +79,36 @@ function createStrokeId() {
   return `stroke-${createMessageId()}`
 }
 
+function createShapeId() {
+  return `shape-${createMessageId()}`
+}
+
+function createClearId() {
+  return `clear-${createMessageId()}`
+}
+
+function createDeleteId() {
+  return `delete-${createMessageId()}`
+}
+
+function createMoveId() {
+  return `move-${createMessageId()}`
+}
+
 function isDrawableTool(tool: Tool): tool is DrawableTool {
-  return tool === "pen" || tool === "eraser"
+  return tool === "pen"
+}
+
+function isEraserTool(tool: Tool) {
+  return tool === "eraser"
+}
+
+function isPointerTool(tool: Tool) {
+  return tool === "pointer"
+}
+
+function isShapeTool(tool: Tool): tool is ShapeTool {
+  return tool === "line" || tool === "rect" || tool === "circle"
 }
 
 function drawBoardBackground(
@@ -112,16 +155,401 @@ function denormalizePoint(point: WhiteboardPoint, canvas: HTMLCanvasElement) {
 
 function configureStroke(
   ctx: CanvasRenderingContext2D,
-  tool: DrawableTool,
   color: string,
   brushSize: number,
 ) {
-  ctx.globalCompositeOperation =
-    tool === "eraser" ? "destination-out" : "source-over"
+  ctx.globalCompositeOperation = "source-over"
   ctx.strokeStyle = color
-  ctx.lineWidth = tool === "eraser" ? brushSize * 4 : brushSize
+  ctx.lineWidth = brushSize
   ctx.lineCap = "round"
   ctx.lineJoin = "round"
+}
+
+function configureShape(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  brushSize: number,
+) {
+  ctx.globalCompositeOperation = "source-over"
+  ctx.strokeStyle = color
+  ctx.lineWidth = brushSize
+  ctx.lineCap = "round"
+  ctx.lineJoin = "round"
+}
+
+function drawShape(
+  ctx: CanvasRenderingContext2D,
+  tool: ShapeTool,
+  color: string,
+  brushSize: number,
+  startPoint: WhiteboardPoint,
+  endPoint: WhiteboardPoint,
+) {
+  const width = endPoint.x - startPoint.x
+  const height = endPoint.y - startPoint.y
+
+  configureShape(ctx, color, brushSize)
+  ctx.beginPath()
+
+  if (tool === "line") {
+    ctx.moveTo(startPoint.x, startPoint.y)
+    ctx.lineTo(endPoint.x, endPoint.y)
+  } else if (tool === "rect") {
+    ctx.rect(startPoint.x, startPoint.y, width, height)
+  } else {
+    ctx.ellipse(
+      startPoint.x + width / 2,
+      startPoint.y + height / 2,
+      Math.abs(width / 2),
+      Math.abs(height / 2),
+      0,
+      0,
+      Math.PI * 2,
+    )
+  }
+
+  ctx.stroke()
+}
+
+function drawStrokePoint(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  brushSize: number,
+  point: WhiteboardPoint,
+) {
+  configureStroke(ctx, color, brushSize)
+  ctx.lineTo(point.x, point.y)
+  ctx.stroke()
+}
+
+function drawStrokeOperation(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  operation: StrokeOperation,
+) {
+  if (operation.points.length === 0) {
+    return
+  }
+
+  const [startPoint, ...points] = operation.points.map((point) =>
+    denormalizePoint(point, canvas),
+  )
+
+  configureStroke(ctx, operation.color, operation.brushSize)
+  ctx.beginPath()
+  ctx.moveTo(startPoint.x, startPoint.y)
+
+  if (points.length === 0) {
+    ctx.lineTo(startPoint.x + 0.1, startPoint.y + 0.1)
+    ctx.stroke()
+    return
+  }
+
+  for (const point of points) {
+    ctx.lineTo(point.x, point.y)
+  }
+
+  ctx.stroke()
+}
+
+function getVisibleDrawableOperations(
+  nextOperations: WhiteboardOperation[],
+): DrawableOperation[] {
+  const visibleOperations: DrawableOperation[] = []
+
+  for (const operation of nextOperations) {
+    if (operation.type === "clear") {
+      visibleOperations.length = 0
+      continue
+    }
+
+    if (operation.type === "delete") {
+      const targetIndex = visibleOperations.findIndex(
+        (visibleOperation) => visibleOperation.id === operation.targetId,
+      )
+
+      if (targetIndex >= 0) {
+        visibleOperations.splice(targetIndex, 1)
+      }
+      continue
+    }
+
+    if (operation.type === "move") {
+      const targetIndex = visibleOperations.findIndex(
+        (visibleOperation) => visibleOperation.id === operation.targetId,
+      )
+
+      if (targetIndex >= 0) {
+        visibleOperations[targetIndex] = moveDrawableOperation(
+          visibleOperations[targetIndex],
+          operation.delta,
+        )
+      }
+      continue
+    }
+
+    visibleOperations.push(operation)
+  }
+
+  return visibleOperations
+}
+
+function getStateSyncOperations(nextOperations: WhiteboardOperation[]) {
+  return getVisibleDrawableOperations(nextOperations)
+}
+
+function movePoint(point: WhiteboardPoint, delta: WhiteboardPoint) {
+  return {
+    x: point.x + delta.x,
+    y: point.y + delta.y,
+  }
+}
+
+function moveDrawableOperation(
+  operation: DrawableOperation,
+  delta: WhiteboardPoint,
+): DrawableOperation {
+  if (operation.type === "stroke") {
+    return {
+      ...operation,
+      points: operation.points.map((point) => movePoint(point, delta)),
+    }
+  }
+
+  return {
+    ...operation,
+    startPoint: movePoint(operation.startPoint, delta),
+    endPoint: movePoint(operation.endPoint, delta),
+  }
+}
+
+function getOperationBounds(
+  operation: DrawableOperation,
+  canvas: HTMLCanvasElement,
+) {
+  if (operation.type === "shape") {
+    const startPoint = denormalizePoint(operation.startPoint, canvas)
+    const endPoint = denormalizePoint(operation.endPoint, canvas)
+
+    return {
+      left: Math.min(startPoint.x, endPoint.x),
+      right: Math.max(startPoint.x, endPoint.x),
+      top: Math.min(startPoint.y, endPoint.y),
+      bottom: Math.max(startPoint.y, endPoint.y),
+    }
+  }
+
+  const points = operation.points.map((point) =>
+    denormalizePoint(point, canvas),
+  )
+
+  if (points.length === 0) {
+    return null
+  }
+
+  const padding = operation.brushSize / 2
+
+  return points.reduce(
+    (bounds, point) => ({
+      left: Math.min(bounds.left, point.x - padding),
+      right: Math.max(bounds.right, point.x + padding),
+      top: Math.min(bounds.top, point.y - padding),
+      bottom: Math.max(bounds.bottom, point.y + padding),
+    }),
+    {
+      left: points[0].x - padding,
+      right: points[0].x + padding,
+      top: points[0].y - padding,
+      bottom: points[0].y + padding,
+    },
+  )
+}
+
+function drawSelectionOutline(
+  ctx: CanvasRenderingContext2D,
+  bounds: NonNullable<ReturnType<typeof getOperationBounds>>,
+) {
+  const padding = 8
+  const handleSize = 6
+  const left = bounds.left - padding
+  const top = bounds.top - padding
+  const width = Math.max(1, bounds.right - bounds.left + padding * 2)
+  const height = Math.max(1, bounds.bottom - bounds.top + padding * 2)
+  const handlePoints = [
+    { x: left, y: top },
+    { x: left + width, y: top },
+    { x: left, y: top + height },
+    { x: left + width, y: top + height },
+  ]
+
+  ctx.save()
+  ctx.globalCompositeOperation = "source-over"
+  ctx.setLineDash([6, 4])
+  ctx.strokeStyle = "#2563eb"
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(left, top, width, height)
+  ctx.setLineDash([])
+  ctx.fillStyle = "#ffffff"
+
+  for (const point of handlePoints) {
+    ctx.fillRect(
+      point.x - handleSize / 2,
+      point.y - handleSize / 2,
+      handleSize,
+      handleSize,
+    )
+    ctx.strokeRect(
+      point.x - handleSize / 2,
+      point.y - handleSize / 2,
+      handleSize,
+      handleSize,
+    )
+  }
+
+  ctx.restore()
+}
+
+function getDistance(first: WhiteboardPoint, second: WhiteboardPoint) {
+  return Math.hypot(first.x - second.x, first.y - second.y)
+}
+
+function getDistanceToSegment(
+  point: WhiteboardPoint,
+  startPoint: WhiteboardPoint,
+  endPoint: WhiteboardPoint,
+) {
+  const width = endPoint.x - startPoint.x
+  const height = endPoint.y - startPoint.y
+  const lengthSquared = width * width + height * height
+
+  if (lengthSquared === 0) {
+    return getDistance(point, startPoint)
+  }
+
+  const ratio = Math.max(
+    0,
+    Math.min(
+      1,
+      ((point.x - startPoint.x) * width + (point.y - startPoint.y) * height) /
+        lengthSquared,
+    ),
+  )
+
+  return getDistance(point, {
+    x: startPoint.x + ratio * width,
+    y: startPoint.y + ratio * height,
+  })
+}
+
+function hitsStroke(
+  operation: StrokeOperation,
+  point: WhiteboardPoint,
+  canvas: HTMLCanvasElement,
+  radius: number,
+) {
+  const points = operation.points.map((operationPoint) =>
+    denormalizePoint(operationPoint, canvas),
+  )
+  const threshold = radius + operation.brushSize / 2
+
+  if (points.length === 0) {
+    return false
+  }
+
+  if (points.length === 1) {
+    return getDistance(point, points[0]) <= threshold
+  }
+
+  return points.some((currentPoint, index) => {
+    const nextPoint = points[index + 1]
+
+    return (
+      Boolean(nextPoint) &&
+      getDistanceToSegment(point, currentPoint, nextPoint) <= threshold
+    )
+  })
+}
+
+function hitsShape(
+  operation: ShapeOperation,
+  point: WhiteboardPoint,
+  canvas: HTMLCanvasElement,
+  radius: number,
+  includeInterior = false,
+) {
+  const startPoint = denormalizePoint(operation.startPoint, canvas)
+  const endPoint = denormalizePoint(operation.endPoint, canvas)
+  const threshold = radius + operation.brushSize / 2
+
+  if (operation.tool === "line") {
+    return getDistanceToSegment(point, startPoint, endPoint) <= threshold
+  }
+
+  const left = Math.min(startPoint.x, endPoint.x)
+  const right = Math.max(startPoint.x, endPoint.x)
+  const top = Math.min(startPoint.y, endPoint.y)
+  const bottom = Math.max(startPoint.y, endPoint.y)
+
+  if (
+    point.x < left - threshold ||
+    point.x > right + threshold ||
+    point.y < top - threshold ||
+    point.y > bottom + threshold
+  ) {
+    return false
+  }
+
+  if (operation.tool === "rect") {
+    if (includeInterior) {
+      return true
+    }
+
+    const distanceToEdge = Math.min(
+      Math.abs(point.x - left),
+      Math.abs(point.x - right),
+      Math.abs(point.y - top),
+      Math.abs(point.y - bottom),
+    )
+
+    return distanceToEdge <= threshold
+  }
+
+  const radiusX = Math.abs(right - left) / 2
+  const radiusY = Math.abs(bottom - top) / 2
+  const center = {
+    x: left + radiusX,
+    y: top + radiusY,
+  }
+
+  if (radiusX <= threshold || radiusY <= threshold) {
+    return getDistance(point, center) <= threshold
+  }
+
+  const normalizedDistance = Math.hypot(
+    (point.x - center.x) / radiusX,
+    (point.y - center.y) / radiusY,
+  )
+
+  if (includeInterior) {
+    return normalizedDistance <= 1 + threshold / Math.min(radiusX, radiusY)
+  }
+
+  const outlineDistance =
+    Math.abs(normalizedDistance - 1) * Math.min(radiusX, radiusY)
+
+  return outlineDistance <= threshold
+}
+
+function hitsDrawableOperation(
+  operation: DrawableOperation,
+  point: WhiteboardPoint,
+  canvas: HTMLCanvasElement,
+  radius: number,
+  includeShapeInterior = false,
+) {
+  return operation.type === "stroke"
+    ? hitsStroke(operation, point, canvas, radius)
+    : hitsShape(operation, point, canvas, radius, includeShapeInterior)
 }
 
 export function useWhiteboard({
@@ -136,16 +564,26 @@ export function useWhiteboard({
   const [activeTool, setActiveTool] = useState<Tool>("pen")
   const [color, setColor] = useState("#6366f1")
   const [brushSize, setBrushSize] = useState(3)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [history, setHistory] = useState<ImageData[]>([])
-  const [redoStack, setRedoStack] = useState<ImageData[]>([])
+  const [redoCount, setRedoCount] = useState(0)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const [hasSelection, setHasSelection] = useState(false)
+  const isDrawingRef = useRef(false)
   const lastPos = useRef<WhiteboardPoint | null>(null)
+  const startPos = useRef<WhiteboardPoint | null>(null)
+  const previewSnapshot = useRef<ImageData | null>(null)
+  const selectedOperationId = useRef<string | null>(null)
+  const movingOperationId = useRef<string | null>(null)
   const activeStrokeId = useRef<string | null>(null)
+  const activeStrokePoints = useRef<WhiteboardPoint[]>([])
+  const pendingStrokePoints = useRef<WhiteboardPoint[]>([])
+  const strokeFlushFrame = useRef<number | null>(null)
   const processedMessageIds = useRef(new Set<string>())
   const remoteStrokes = useRef(new Map<string, RemoteStroke>())
   const lastParticipantCount = useRef(participantCount)
-  const snapshotRequested = useRef(false)
+  const stateRequested = useRef(false)
+  const operations = useRef<WhiteboardOperation[]>([])
+  const redoOperations = useRef<WhiteboardOperation[]>([])
+  const boardVersion = useRef(0)
 
   const getContext = useCallback(() => {
     const canvas = canvasRef.current
@@ -168,17 +606,84 @@ export function useWhiteboard({
     drawBoardBackground(context.canvas, context.ctx)
   }, [getContext])
 
-  const getPos = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+  const renderOperations = useCallback(
+    (nextOperations: WhiteboardOperation[]) => {
+      const context = getContext()
+
+      if (!context) {
+        return
+      }
+
+      drawBoardBackground(context.canvas, context.ctx)
+
+      const visibleOperations = getVisibleDrawableOperations(nextOperations)
+
+      for (const operation of visibleOperations) {
+        if (operation.type === "shape") {
+          drawShape(
+            context.ctx,
+            operation.tool,
+            operation.color,
+            operation.brushSize,
+            denormalizePoint(operation.startPoint, context.canvas),
+            denormalizePoint(operation.endPoint, context.canvas),
+          )
+          continue
+        }
+
+        drawStrokeOperation(context.ctx, context.canvas, operation)
+      }
+
+      if (selectedOperationId.current) {
+        const selectedOperation = visibleOperations.find(
+          (operation) => operation.id === selectedOperationId.current,
+        )
+        const bounds =
+          selectedOperation &&
+          getOperationBounds(selectedOperation, context.canvas)
+
+        if (bounds) {
+          drawSelectionOutline(context.ctx, bounds)
+        }
+      }
+
+      context.ctx.globalCompositeOperation = "source-over"
+    },
+    [getContext],
+  )
+
+  const handleActiveToolChange = useCallback(
+    (tool: Tool) => {
+      setActiveTool(tool)
+
+      if (!isPointerTool(tool) && selectedOperationId.current) {
+        selectedOperationId.current = null
+        setHasSelection(false)
+        renderOperations(operations.current)
+      }
+    },
+    [renderOperations],
+  )
+
+  const getPos = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return null
 
     const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
+    const boardRatio = canvas.width / canvas.height
+    const containerRatio = rect.width / rect.height
+    const drawWidth =
+      containerRatio > boardRatio ? rect.height * boardRatio : rect.width
+    const drawHeight =
+      containerRatio > boardRatio ? rect.height : rect.width / boardRatio
+    const offsetX = (rect.width - drawWidth) / 2
+    const offsetY = (rect.height - drawHeight) / 2
+    const x = event.clientX - rect.left - offsetX
+    const y = event.clientY - rect.top - offsetY
 
     return {
-      x: (event.clientX - rect.left) * scaleX,
-      y: (event.clientY - rect.top) * scaleY,
+      x: Math.min(Math.max(x * (canvas.width / drawWidth), 0), canvas.width),
+      y: Math.min(Math.max(y * (canvas.height / drawHeight), 0), canvas.height),
     }
   }
 
@@ -200,66 +705,262 @@ export function useWhiteboard({
     [currentUserId, sendMessage, syncEnabled],
   )
 
-  const sendSnapshot = useCallback(() => {
-    const context = getContext()
-
-    if (!context || !syncEnabled) {
-      return
-    }
-
+  const sendStateSync = useCallback(() => {
     sendWhiteboardMessage(
       {
-        type: "snapshot",
-        imageDataUrl: context.canvas.toDataURL("image/webp", 0.72),
+        type: "state:sync",
+        version: boardVersion.current,
+        operations: getStateSyncOperations(operations.current),
       },
       { reliable: true },
     )
-  }, [getContext, sendWhiteboardMessage, syncEnabled])
+  }, [sendWhiteboardMessage])
 
-  const saveHistory = useCallback(() => {
+  const commitOperation = useCallback((operation: WhiteboardOperation) => {
+    operations.current = [...operations.current, operation]
+    redoOperations.current = []
+    setRedoCount(0)
+    boardVersion.current += 1
+    return boardVersion.current
+  }, [])
+
+  const updateSelection = useCallback(
+    (operationId: string | null) => {
+      selectedOperationId.current = operationId
+      setHasSelection(Boolean(operationId))
+      renderOperations(operations.current)
+    },
+    [renderOperations],
+  )
+
+  const reconcileSelection = useCallback(
+    (nextOperations: WhiteboardOperation[]) => {
+      if (
+        selectedOperationId.current &&
+        !getVisibleDrawableOperations(nextOperations).some(
+          (operation) => operation.id === selectedOperationId.current,
+        )
+      ) {
+        selectedOperationId.current = null
+        setHasSelection(false)
+      }
+    },
+    [],
+  )
+
+  const findOperationAtPoint = useCallback(
+    (
+      point: WhiteboardPoint,
+      canvas: HTMLCanvasElement,
+      radius: number,
+      includeShapeInterior = false,
+    ) =>
+      getVisibleDrawableOperations(operations.current)
+        .slice()
+        .reverse()
+        .find((operation) =>
+          hitsDrawableOperation(
+            operation,
+            point,
+            canvas,
+            radius,
+            includeShapeInterior,
+          ),
+        ) ?? null,
+    [],
+  )
+
+  const deleteOperationById = useCallback(
+    (targetId: string) => {
+      const targetOperation = getVisibleDrawableOperations(
+        operations.current,
+      ).find((operation) => operation.id === targetId)
+
+      if (!targetOperation) {
+        updateSelection(null)
+        return false
+      }
+
+      const operation = {
+        id: createDeleteId(),
+        type: "delete",
+        targetId,
+      } satisfies Extract<WhiteboardOperation, { type: "delete" }>
+      const version = commitOperation(operation)
+
+      selectedOperationId.current = null
+      setHasSelection(false)
+      renderOperations(operations.current)
+      sendWhiteboardMessage(
+        {
+          type: "delete",
+          operation,
+          version,
+        },
+        { reliable: true },
+      )
+
+      return true
+    },
+    [commitOperation, renderOperations, sendWhiteboardMessage, updateSelection],
+  )
+
+  const deleteOperationAtPoint = useCallback(
+    (point: WhiteboardPoint, canvas: HTMLCanvasElement) => {
+      const eraserRadius = Math.max(12, brushSize * 3)
+      const targetOperation = findOperationAtPoint(point, canvas, eraserRadius)
+
+      if (!targetOperation) {
+        return false
+      }
+
+      return deleteOperationById(targetOperation.id)
+    },
+    [brushSize, deleteOperationById, findOperationAtPoint],
+  )
+
+  const handleDeleteSelection = useCallback(() => {
+    if (!isTeacher || !selectedOperationId.current) {
+      return
+    }
+
+    deleteOperationById(selectedOperationId.current)
+  }, [deleteOperationById, isTeacher])
+
+  const flushStrokePoints = useCallback(() => {
+    if (strokeFlushFrame.current !== null) {
+      cancelAnimationFrame(strokeFlushFrame.current)
+      strokeFlushFrame.current = null
+    }
+
+    const context = getContext()
+    const strokeId = activeStrokeId.current
+    const points = pendingStrokePoints.current
+
+    if (!context || !strokeId || points.length === 0) {
+      pendingStrokePoints.current = []
+      return
+    }
+
+    pendingStrokePoints.current = []
+    sendWhiteboardMessage(
+      {
+        type: "stroke:points",
+        strokeId,
+        points: points.map((point) => normalizePoint(point, context.canvas)),
+      },
+      { reliable: false },
+    )
+  }, [getContext, sendWhiteboardMessage])
+
+  const scheduleStrokeFlush = useCallback(() => {
+    if (strokeFlushFrame.current !== null) {
+      return
+    }
+
+    strokeFlushFrame.current = requestAnimationFrame(() => {
+      strokeFlushFrame.current = null
+      flushStrokePoints()
+    })
+  }, [flushStrokePoints])
+
+  const savePreviewSnapshot = useCallback(() => {
     const context = getContext()
 
-    if (!context) return
+    if (!context) {
+      return
+    }
 
-    const snapshot = context.ctx.getImageData(
+    previewSnapshot.current = context.ctx.getImageData(
       0,
       0,
       context.canvas.width,
       context.canvas.height,
     )
-    setHistory((prev) => [...prev.slice(-30), snapshot])
-    setRedoStack([])
   }, [getContext])
 
-  const drawLineTo = useCallback(
-    (
-      ctx: CanvasRenderingContext2D,
-      tool: DrawableTool,
-      color: string,
-      size: number,
-      point: WhiteboardPoint,
-    ) => {
-      configureStroke(ctx, tool, color, size)
-      ctx.lineTo(point.x, point.y)
-      ctx.stroke()
-    },
-    [],
-  )
+  const restorePreviewSnapshot = useCallback(() => {
+    const context = getContext()
 
-  const handleMouseDown = (event: ReactMouseEvent<HTMLCanvasElement>) => {
-    if (!isTeacher || !isDrawableTool(activeTool)) return
+    if (!context || !previewSnapshot.current) {
+      return
+    }
+
+    context.ctx.putImageData(previewSnapshot.current, 0, 0)
+    context.ctx.globalCompositeOperation = "source-over"
+  }, [getContext])
+
+  const resetDrawingState = useCallback(() => {
+    isDrawingRef.current = false
+    lastPos.current = null
+    startPos.current = null
+    previewSnapshot.current = null
+    activeStrokeId.current = null
+    movingOperationId.current = null
+    activeStrokePoints.current = []
+    pendingStrokePoints.current = []
+  }, [])
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (
+      !isTeacher ||
+      (!isDrawableTool(activeTool) &&
+        !isShapeTool(activeTool) &&
+        !isEraserTool(activeTool) &&
+        !isPointerTool(activeTool))
+    ) {
+      return
+    }
 
     const pos = getPos(event)
     const context = getContext()
     if (!pos || !context) return
 
-    saveHistory()
-    setIsDrawing(true)
+    event.currentTarget.focus()
+
+    if (isPointerTool(activeTool)) {
+      const targetOperation = findOperationAtPoint(
+        pos,
+        context.canvas,
+        10,
+        true,
+      )
+
+      if (!targetOperation) {
+        updateSelection(null)
+        return
+      }
+
+      event.currentTarget.setPointerCapture(event.pointerId)
+      isDrawingRef.current = true
+      lastPos.current = pos
+      startPos.current = pos
+      movingOperationId.current = targetOperation.id
+      updateSelection(targetOperation.id)
+      return
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId)
+    isDrawingRef.current = true
     lastPos.current = pos
+    startPos.current = pos
+
+    if (isEraserTool(activeTool)) {
+      deleteOperationAtPoint(pos, context.canvas)
+      return
+    }
+
+    if (isShapeTool(activeTool)) {
+      savePreviewSnapshot()
+      return
+    }
 
     const strokeId = createStrokeId()
+    const normalizedPoint = normalizePoint(pos, context.canvas)
     activeStrokeId.current = strokeId
-    configureStroke(context.ctx, activeTool, color, brushSize)
+    activeStrokePoints.current = [normalizedPoint]
+    pendingStrokePoints.current = []
+    configureStroke(context.ctx, color, brushSize)
     context.ctx.beginPath()
     context.ctx.moveTo(pos.x, pos.y)
 
@@ -270,18 +971,21 @@ export function useWhiteboard({
         tool: activeTool,
         color,
         brushSize,
-        point: normalizePoint(pos, context.canvas),
+        point: normalizedPoint,
       },
       { reliable: true },
     )
   }
 
-  const handleMouseMove = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (
-      !isDrawing ||
+      !isDrawingRef.current ||
       !lastPos.current ||
       !isTeacher ||
-      !isDrawableTool(activeTool)
+      (!isDrawableTool(activeTool) &&
+        !isShapeTool(activeTool) &&
+        !isEraserTool(activeTool) &&
+        !isPointerTool(activeTool))
     ) {
       return
     }
@@ -291,96 +995,270 @@ export function useWhiteboard({
 
     if (!context || !pos) return
 
-    drawLineTo(context.ctx, activeTool, color, brushSize, pos)
-
-    if (activeStrokeId.current) {
-      sendWhiteboardMessage(
-        {
-          type: "stroke:point",
-          strokeId: activeStrokeId.current,
-          point: normalizePoint(pos, context.canvas),
+    if (
+      isPointerTool(activeTool) &&
+      movingOperationId.current &&
+      startPos.current
+    ) {
+      const startPoint = normalizePoint(startPos.current, context.canvas)
+      const currentPoint = normalizePoint(pos, context.canvas)
+      const operation = {
+        id: "move-preview",
+        type: "move",
+        targetId: movingOperationId.current,
+        delta: {
+          x: currentPoint.x - startPoint.x,
+          y: currentPoint.y - startPoint.y,
         },
-        { reliable: true },
-      )
+      } satisfies Extract<WhiteboardOperation, { type: "move" }>
+
+      renderOperations([...operations.current, operation])
+      lastPos.current = pos
+      return
     }
 
+    if (isEraserTool(activeTool)) {
+      deleteOperationAtPoint(pos, context.canvas)
+      lastPos.current = pos
+      return
+    }
+
+    if (isShapeTool(activeTool)) {
+      if (previewSnapshot.current && startPos.current) {
+        context.ctx.putImageData(previewSnapshot.current, 0, 0)
+        drawShape(
+          context.ctx,
+          activeTool,
+          color,
+          brushSize,
+          startPos.current,
+          pos,
+        )
+      }
+      lastPos.current = pos
+      return
+    }
+
+    drawStrokePoint(context.ctx, color, brushSize, pos)
+    pendingStrokePoints.current.push(pos)
+    activeStrokePoints.current.push(normalizePoint(pos, context.canvas))
+    scheduleStrokeFlush()
     lastPos.current = pos
   }
 
-  const handleMouseUp = () => {
-    if (isDrawing && activeStrokeId.current) {
+  const handlePointerUp = (event?: ReactPointerEvent<HTMLCanvasElement>) => {
+    const context = getContext()
+
+    if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isPointerTool(activeTool) &&
+      context &&
+      movingOperationId.current &&
+      startPos.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (endPoint) {
+        const startPoint = normalizePoint(startPos.current, context.canvas)
+        const normalizedEndPoint = normalizePoint(endPoint, context.canvas)
+        const delta = {
+          x: normalizedEndPoint.x - startPoint.x,
+          y: normalizedEndPoint.y - startPoint.y,
+        }
+        const movedEnough =
+          getDistance(startPos.current, endPoint) >= Math.max(2, brushSize / 2)
+
+        if (movedEnough) {
+          const operation = {
+            id: createMoveId(),
+            type: "move",
+            targetId: movingOperationId.current,
+            delta,
+          } satisfies Extract<WhiteboardOperation, { type: "move" }>
+          const version = commitOperation(operation)
+
+          renderOperations(operations.current)
+          sendWhiteboardMessage(
+            {
+              type: "move",
+              operation,
+              version,
+            },
+            { reliable: true },
+          )
+        } else {
+          renderOperations(operations.current)
+        }
+      }
+    } else if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isShapeTool(activeTool) &&
+      context &&
+      startPos.current &&
+      previewSnapshot.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (endPoint) {
+        const operation = {
+          id: createShapeId(),
+          type: "shape",
+          tool: activeTool,
+          color,
+          brushSize,
+          startPoint: normalizePoint(startPos.current, context.canvas),
+          endPoint: normalizePoint(endPoint, context.canvas),
+        } satisfies Extract<WhiteboardOperation, { type: "shape" }>
+        const version = commitOperation(operation)
+
+        context.ctx.putImageData(previewSnapshot.current, 0, 0)
+        drawShape(
+          context.ctx,
+          activeTool,
+          color,
+          brushSize,
+          startPos.current,
+          endPoint,
+        )
+        sendWhiteboardMessage(
+          {
+            type: "shape",
+            operation,
+            version,
+          },
+          { reliable: true },
+        )
+      }
+    } else if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isDrawableTool(activeTool) &&
+      activeStrokeId.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (context && endPoint && lastPos.current) {
+        drawStrokePoint(context.ctx, color, brushSize, endPoint)
+        pendingStrokePoints.current.push(endPoint)
+        activeStrokePoints.current.push(
+          normalizePoint(endPoint, context.canvas),
+        )
+      }
+
+      flushStrokePoints()
+
+      const operation = {
+        id: activeStrokeId.current,
+        type: "stroke",
+        tool: activeTool,
+        color,
+        brushSize,
+        points: activeStrokePoints.current,
+      } satisfies Extract<WhiteboardOperation, { type: "stroke" }>
+      const version = commitOperation(operation)
+
       sendWhiteboardMessage(
         {
           type: "stroke:end",
           strokeId: activeStrokeId.current,
+          operation,
+          version,
         },
         { reliable: true },
       )
     }
 
-    setIsDrawing(false)
-    lastPos.current = null
-    activeStrokeId.current = null
+    if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
 
-    const context = getContext()
+    resetDrawingState()
 
     if (context) {
       context.ctx.globalCompositeOperation = "source-over"
     }
   }
 
-  const handleUndo = () => {
-    const context = getContext()
-
-    if (!context) return
-
-    if (history.length === 0) {
-      resetBoard()
-      sendSnapshot()
+  const handlePointerCancel = (
+    event?: ReactPointerEvent<HTMLCanvasElement>,
+  ) => {
+    if (!isDrawingRef.current) {
       return
     }
 
-    const current = context.ctx.getImageData(
-      0,
-      0,
-      context.canvas.width,
-      context.canvas.height,
-    )
-    setRedoStack((prev) => [...prev, current])
+    restorePreviewSnapshot()
+    renderOperations(operations.current)
+    sendStateSync()
 
-    const previous = history[history.length - 1]
-    context.ctx.putImageData(previous, 0, 0)
-    context.ctx.globalCompositeOperation = "source-over"
-    setHistory((prev) => prev.slice(0, -1))
-    sendSnapshot()
+    if (event?.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    resetDrawingState()
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    if (
+      !isTeacher ||
+      !isPointerTool(activeTool) ||
+      !selectedOperationId.current
+    ) {
+      return
+    }
+
+    if (event.key === "Backspace" || event.key === "Delete") {
+      event.preventDefault()
+      handleDeleteSelection()
+    }
+  }
+
+  const handleUndo = () => {
+    if (operations.current.length === 0) return
+
+    const nextOperations = operations.current.slice(0, -1)
+    const removedOperation = operations.current[operations.current.length - 1]
+    operations.current = nextOperations
+    redoOperations.current = [removedOperation, ...redoOperations.current]
+    setRedoCount(redoOperations.current.length)
+    boardVersion.current += 1
+    reconcileSelection(nextOperations)
+    renderOperations(nextOperations)
+    sendStateSync()
   }
 
   const handleRedo = () => {
-    if (redoStack.length === 0) return
+    const [nextOperation, ...remainingRedo] = redoOperations.current
 
-    const context = getContext()
+    if (!nextOperation) return
 
-    if (!context) return
-
-    const current = context.ctx.getImageData(
-      0,
-      0,
-      context.canvas.width,
-      context.canvas.height,
-    )
-    setHistory((prev) => [...prev, current])
-
-    const next = redoStack[redoStack.length - 1]
-    context.ctx.putImageData(next, 0, 0)
-    context.ctx.globalCompositeOperation = "source-over"
-    setRedoStack((prev) => prev.slice(0, -1))
-    sendSnapshot()
+    operations.current = [...operations.current, nextOperation]
+    redoOperations.current = remainingRedo
+    setRedoCount(remainingRedo.length)
+    boardVersion.current += 1
+    reconcileSelection(operations.current)
+    renderOperations(operations.current)
+    sendStateSync()
   }
 
   const handleClear = () => {
-    saveHistory()
+    const operation = {
+      id: createClearId(),
+      type: "clear",
+    } satisfies Extract<WhiteboardOperation, { type: "clear" }>
+    const version = commitOperation(operation)
+    selectedOperationId.current = null
+    setHasSelection(false)
     resetBoard()
-    sendWhiteboardMessage({ type: "clear" }, { reliable: true })
+    sendWhiteboardMessage(
+      {
+        type: "clear",
+        operation,
+        version,
+      },
+      { reliable: true },
+    )
   }
 
   useEffect(() => {
@@ -388,14 +1266,22 @@ export function useWhiteboard({
   }, [resetBoard])
 
   useEffect(() => {
+    return () => {
+      if (strokeFlushFrame.current !== null) {
+        cancelAnimationFrame(strokeFlushFrame.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (!syncEnabled) {
-      snapshotRequested.current = false
+      stateRequested.current = false
       return
     }
 
-    if (!isTeacher && !snapshotRequested.current) {
-      snapshotRequested.current = true
-      sendWhiteboardMessage({ type: "snapshot:request" }, { reliable: true })
+    if (!isTeacher && !stateRequested.current) {
+      stateRequested.current = true
+      sendWhiteboardMessage({ type: "state:request" }, { reliable: true })
     }
   }, [isTeacher, sendWhiteboardMessage, syncEnabled])
 
@@ -406,11 +1292,11 @@ export function useWhiteboard({
     }
 
     if (participantCount > lastParticipantCount.current) {
-      sendSnapshot()
+      sendStateSync()
     }
 
     lastParticipantCount.current = participantCount
-  }, [isTeacher, participantCount, sendSnapshot, syncEnabled])
+  }, [isTeacher, participantCount, sendStateSync, syncEnabled])
 
   useEffect(() => {
     const context = getContext()
@@ -430,100 +1316,165 @@ export function useWhiteboard({
       processedMessageIds.current.add(message.id)
 
       if (isTeacher) {
-        if (message.type === "snapshot:request") {
-          sendSnapshot()
+        if (message.type === "state:request") {
+          sendStateSync()
         }
         continue
       }
 
+      if (message.type === "state:sync") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = message.operations
+        redoOperations.current = []
+        setRedoCount(0)
+        remoteStrokes.current.clear()
+        renderOperations(message.operations)
+        continue
+      }
+
       if (message.type === "clear") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        selectedOperationId.current = null
+        setHasSelection(false)
         resetBoard()
         remoteStrokes.current.clear()
         continue
       }
 
-      if (message.type === "snapshot") {
-        const image = new Image()
-        image.onload = () => {
-          resetBoard()
-          context.ctx.drawImage(
-            image,
-            0,
-            0,
-            context.canvas.width,
-            context.canvas.height,
-          )
+      if (message.type === "delete") {
+        if (message.version < boardVersion.current) {
+          continue
         }
-        image.src = message.imageDataUrl
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        if (selectedOperationId.current === message.operation.targetId) {
+          selectedOperationId.current = null
+          setHasSelection(false)
+        }
+        renderOperations(operations.current)
+        remoteStrokes.current.clear()
+        continue
+      }
+
+      if (message.type === "move") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        renderOperations(operations.current)
+        remoteStrokes.current.clear()
         continue
       }
 
       if (message.type === "stroke:start") {
         const point = denormalizePoint(message.point, context.canvas)
         remoteStrokes.current.set(message.strokeId, {
-          tool: message.tool,
           color: message.color,
           brushSize: message.brushSize,
           lastPoint: point,
+          points: [message.point],
         })
-        configureStroke(
-          context.ctx,
-          message.tool,
-          message.color,
-          message.brushSize,
-        )
+        configureStroke(context.ctx, message.color, message.brushSize)
         context.ctx.beginPath()
         context.ctx.moveTo(point.x, point.y)
         continue
       }
 
-      if (message.type === "stroke:point") {
+      if (message.type === "shape") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        drawShape(
+          context.ctx,
+          message.operation.tool,
+          message.operation.color,
+          message.operation.brushSize,
+          denormalizePoint(message.operation.startPoint, context.canvas),
+          denormalizePoint(message.operation.endPoint, context.canvas),
+        )
+        context.ctx.globalCompositeOperation = "source-over"
+        continue
+      }
+
+      if (message.type === "stroke:points") {
         const stroke = remoteStrokes.current.get(message.strokeId)
         if (!stroke) {
           continue
         }
 
-        const point = denormalizePoint(message.point, context.canvas)
-        drawLineTo(
-          context.ctx,
-          stroke.tool,
-          stroke.color,
-          stroke.brushSize,
-          point,
-        )
-        stroke.lastPoint = point
+        for (const normalizedPoint of message.points) {
+          const point = denormalizePoint(normalizedPoint, context.canvas)
+          drawStrokePoint(context.ctx, stroke.color, stroke.brushSize, point)
+          stroke.lastPoint = point
+          stroke.points.push(normalizedPoint)
+        }
         continue
       }
 
       if (message.type === "stroke:end") {
+        if (message.version >= boardVersion.current) {
+          boardVersion.current = message.version
+          operations.current = [...operations.current, message.operation]
+          redoOperations.current = []
+          setRedoCount(0)
+          renderOperations(operations.current)
+        }
+
         remoteStrokes.current.delete(message.strokeId)
         context.ctx.globalCompositeOperation = "source-over"
       }
     }
   }, [
     currentUserId,
-    drawLineTo,
     getContext,
     incomingMessages,
     isTeacher,
+    renderOperations,
     resetBoard,
-    sendSnapshot,
+    sendStateSync,
   ])
 
   return {
     canvasRef,
     activeTool,
-    setActiveTool,
+    setActiveTool: handleActiveToolChange,
     color,
     setColor,
     brushSize,
     setBrushSize,
     showColorPicker,
     setShowColorPicker,
-    redoCount: redoStack.length,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
+    hasSelection,
+    redoCount,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handlePointerCancel,
+    handleKeyDown,
+    handleDeleteSelection,
     handleUndo,
     handleRedo,
     handleClear,

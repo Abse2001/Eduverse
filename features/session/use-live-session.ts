@@ -21,6 +21,7 @@ import type {
   LiveSessionWhiteboardMessage,
   SessionParticipant,
   SessionPresentation,
+  WhiteboardOperation,
 } from "./live-session-types"
 
 const ROOM_OPTIONS: RoomOptions = {
@@ -92,6 +93,63 @@ function isWhiteboardPoint(value: unknown) {
   )
 }
 
+function isWhiteboardPointList(value: unknown) {
+  return Array.isArray(value) && value.every(isWhiteboardPoint)
+}
+
+function isWhiteboardShape(value: unknown) {
+  return value === "line" || value === "rect" || value === "circle"
+}
+
+function isWhiteboardStrokeTool(value: unknown) {
+  return value === "pen"
+}
+
+function isWhiteboardOperation(value: unknown): value is WhiteboardOperation {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.type !== "string"
+  ) {
+    return false
+  }
+
+  if (value.type === "clear") {
+    return true
+  }
+
+  if (value.type === "delete") {
+    return typeof value.targetId === "string"
+  }
+
+  if (value.type === "move") {
+    return typeof value.targetId === "string" && isWhiteboardPoint(value.delta)
+  }
+
+  if (
+    value.type === "stroke" &&
+    isWhiteboardStrokeTool(value.tool) &&
+    typeof value.color === "string" &&
+    typeof value.brushSize === "number" &&
+    isWhiteboardPointList(value.points)
+  ) {
+    return true
+  }
+
+  return (
+    value.type === "shape" &&
+    isWhiteboardShape(value.tool) &&
+    typeof value.color === "string" &&
+    typeof value.brushSize === "number" &&
+    isWhiteboardPoint(value.startPoint) &&
+    isWhiteboardPoint(value.endPoint)
+  )
+}
+
+function isWhiteboardOperationList(value: unknown) {
+  return Array.isArray(value) && value.every(isWhiteboardOperation)
+}
+
 function isWhiteboardMessage(
   value: unknown,
 ): value is LiveSessionWhiteboardMessage {
@@ -104,30 +162,75 @@ function isWhiteboardMessage(
     return false
   }
 
-  if (value.type === "clear" || value.type === "snapshot:request") {
-    return true
-  }
-
-  if (value.type === "snapshot") {
-    return typeof value.imageDataUrl === "string"
-  }
-
-  if (value.type === "stroke:end" && typeof value.strokeId === "string") {
+  if (value.type === "state:request") {
     return true
   }
 
   if (
-    value.type === "stroke:point" &&
-    typeof value.strokeId === "string" &&
-    isWhiteboardPoint(value.point)
+    value.type === "state:sync" &&
+    typeof value.version === "number" &&
+    isWhiteboardOperationList(value.operations)
   ) {
     return true
+  }
+
+  if (value.type === "shape") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "shape"
+    )
+  }
+
+  if (value.type === "clear") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "clear"
+    )
+  }
+
+  if (value.type === "delete") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "delete"
+    )
+  }
+
+  if (value.type === "move") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "move"
+    )
+  }
+
+  if (
+    value.type === "stroke:points" &&
+    typeof value.strokeId === "string" &&
+    isWhiteboardPointList(value.points)
+  ) {
+    return true
+  }
+
+  if (
+    value.type === "stroke:end" &&
+    typeof value.strokeId === "string" &&
+    typeof value.version === "number"
+  ) {
+    const operation = value.operation
+    return isWhiteboardOperation(operation) && operation.type === "stroke"
   }
 
   return (
     value.type === "stroke:start" &&
     typeof value.strokeId === "string" &&
-    (value.tool === "pen" || value.tool === "eraser") &&
+    isWhiteboardStrokeTool(value.tool) &&
     typeof value.color === "string" &&
     typeof value.brushSize === "number" &&
     isWhiteboardPoint(value.point)

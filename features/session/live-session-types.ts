@@ -66,13 +66,50 @@ export interface WhiteboardPoint {
   y: number
 }
 
+export type WhiteboardShape = "line" | "rect" | "circle"
+export type WhiteboardStrokeTool = "pen"
+
+export type WhiteboardOperation =
+  | {
+      id: string
+      type: "stroke"
+      tool: WhiteboardStrokeTool
+      color: string
+      brushSize: number
+      points: WhiteboardPoint[]
+    }
+  | {
+      id: string
+      type: "shape"
+      tool: WhiteboardShape
+      color: string
+      brushSize: number
+      startPoint: WhiteboardPoint
+      endPoint: WhiteboardPoint
+    }
+  | {
+      id: string
+      type: "clear"
+    }
+  | {
+      id: string
+      type: "delete"
+      targetId: string
+    }
+  | {
+      id: string
+      type: "move"
+      targetId: string
+      delta: WhiteboardPoint
+    }
+
 export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
       type: "stroke:start"
       strokeId: string
-      tool: "pen" | "eraser"
+      tool: WhiteboardStrokeTool
       color: string
       brushSize: number
       point: WhiteboardPoint
@@ -80,31 +117,57 @@ export type LiveSessionWhiteboardMessage =
   | {
       id: string
       senderId: string
-      type: "stroke:point"
+      type: "stroke:points"
       strokeId: string
-      point: WhiteboardPoint
+      points: WhiteboardPoint[]
     }
   | {
       id: string
       senderId: string
       type: "stroke:end"
       strokeId: string
+      operation: Extract<WhiteboardOperation, { type: "stroke" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      type: "shape"
+      operation: Extract<WhiteboardOperation, { type: "shape" }>
+      version: number
     }
   | {
       id: string
       senderId: string
       type: "clear"
+      operation: Extract<WhiteboardOperation, { type: "clear" }>
+      version: number
     }
   | {
       id: string
       senderId: string
-      type: "snapshot"
-      imageDataUrl: string
+      type: "delete"
+      operation: Extract<WhiteboardOperation, { type: "delete" }>
+      version: number
     }
   | {
       id: string
       senderId: string
-      type: "snapshot:request"
+      type: "move"
+      operation: Extract<WhiteboardOperation, { type: "move" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      type: "state:request"
+    }
+  | {
+      id: string
+      senderId: string
+      type: "state:sync"
+      version: number
+      operations: WhiteboardOperation[]
     }
 
 export interface LiveSessionState {

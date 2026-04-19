@@ -84,7 +84,7 @@ function SessionNoticeStack({
   }
 
   return (
-    <div className="absolute bottom-3 left-3 z-20 flex w-[min(28rem,calc(100%-1.5rem))] flex-col gap-2">
+    <div className="pointer-events-none absolute bottom-3 left-3 z-20 flex w-[min(28rem,calc(100%-1.5rem))] flex-col gap-2">
       {notices.map((notice) => {
         const style = NOTICE_STYLES[notice.severity]
         const Icon = style.icon
@@ -117,7 +117,7 @@ function SessionNoticeStack({
                   type="button"
                   aria-label={`Dismiss ${notice.title}`}
                   onClick={() => onDismiss(notice.id)}
-                  className="rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="pointer-events-auto rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -300,6 +300,8 @@ export function SessionScreen({ cls }: { cls: Class }) {
                         : "text-muted-foreground hover:text-foreground hover:bg-accent",
                       !isTeacher && "opacity-40 cursor-not-allowed",
                     )}
+                    aria-label={tool.label}
+                    title={tool.label}
                   >
                     <tool.icon className="w-4 h-4" />
                   </button>
@@ -333,6 +335,18 @@ export function SessionScreen({ cls }: { cls: Class }) {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Redo</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={whiteboard.handleDeleteSelection}
+                  disabled={!isTeacher || !whiteboard.hasSelection}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Delete selected</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -454,9 +468,14 @@ export function SessionScreen({ cls }: { cls: Class }) {
 
             <canvas
               ref={whiteboard.canvasRef}
+              aria-label="Whiteboard canvas"
+              tabIndex={isTeacher ? 0 : -1}
               className={cn(
-                "w-full h-full object-contain",
-                isTeacher && whiteboard.activeTool === "pen"
+                "w-full h-full touch-none object-contain",
+                isTeacher &&
+                  ["pen", "line", "rect", "circle"].includes(
+                    whiteboard.activeTool,
+                  )
                   ? "cursor-crosshair"
                   : "",
                 isTeacher && whiteboard.activeTool === "eraser"
@@ -467,10 +486,11 @@ export function SessionScreen({ cls }: { cls: Class }) {
                   : "",
                 !isTeacher ? "cursor-not-allowed" : "",
               )}
-              onMouseDown={whiteboard.handleMouseDown}
-              onMouseMove={whiteboard.handleMouseMove}
-              onMouseUp={whiteboard.handleMouseUp}
-              onMouseLeave={whiteboard.handleMouseUp}
+              onPointerDown={whiteboard.handlePointerDown}
+              onPointerMove={whiteboard.handlePointerMove}
+              onPointerUp={whiteboard.handlePointerUp}
+              onPointerCancel={whiteboard.handlePointerCancel}
+              onKeyDown={whiteboard.handleKeyDown}
             />
           </div>
 
