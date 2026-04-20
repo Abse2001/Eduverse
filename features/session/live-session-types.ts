@@ -28,6 +28,7 @@ export type LiveSessionNoticeScope =
   | "microphone"
   | "camera"
   | "screen"
+  | "chat"
   | "whiteboard"
 
 export interface LiveSessionNotice {
@@ -206,6 +207,18 @@ export type LiveSessionWhiteboardMessage =
       operations: WhiteboardOperation[]
     }
 
+export interface LiveSessionChatMessage {
+  id: string
+  classId: string
+  senderId: string
+  senderName: string
+  senderAvatar: string
+  senderRole: Role
+  content: string
+  timestamp: string
+  status?: "sending" | "sent" | "failed"
+}
+
 export interface LiveSessionState {
   participants: SessionParticipant[]
   connectionState: ConnectionState
@@ -213,6 +226,7 @@ export interface LiveSessionState {
   error: string | null
   notices: LiveSessionNotice[]
   media: LiveMediaStatus
+  chatMessages: LiveSessionChatMessage[]
   whiteboardMessages: LiveSessionWhiteboardMessage[]
   micOn: boolean
   camOn: boolean
@@ -225,6 +239,7 @@ export interface LiveSessionState {
     message: LiveSessionWhiteboardMessage,
     options?: { reliable?: boolean },
   ) => Promise<boolean>
+  sendChatMessage: (content: string) => Promise<boolean>
   dismissNotice: (noticeId: string) => void
   disconnect: () => void
 }

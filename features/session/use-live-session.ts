@@ -12,9 +12,10 @@ import {
   type RoomOptions,
   type TrackPublication,
 } from "livekit-client"
-import type { User } from "@/lib/mock-data"
+import type { Role, User } from "@/lib/mock-data"
 import { getUserById } from "@/lib/mock-data"
 import type {
+  LiveSessionChatMessage,
   LiveMediaDeviceStatus,
   LiveMediaStatus,
   LiveSessionNotice,
@@ -38,6 +39,9 @@ const ROOM_CONNECT_OPTIONS: RoomConnectOptions = {
 }
 
 const WHITEBOARD_TOPIC = "eduverse.whiteboard"
+const CHAT_TOPIC = "eduverse.session.chat"
+const CHAT_STORAGE_PREFIX = "eduverse:session-chat:v1"
+const MAX_CHAT_MESSAGES = 200
 
 type MediaDeviceKind = "microphone" | "camera" | "screen"
 type LiveSessionError =
@@ -74,6 +78,8 @@ type ParsedWhiteboardObject = JsonObject &
     x: JsonValue
     y: JsonValue
   }>
+
+type ChatStreamAttributes = Record<string, string> | undefined
 
 const INITIAL_MEDIA_STATUS: LiveMediaStatus = {
   microphone: {
@@ -152,6 +158,205 @@ function isWhiteboardStrokeTool(
   value: JsonValue | undefined,
 ): value is WhiteboardStrokeTool {
   return value === "pen"
+}
+
+function isRole(value: string | undefined): value is Role {
+  return value === "student" || value === "teacher" || value === "admin"
+}
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+}
+
+function createChatMessageId(senderId: string) {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2)
+
+  return `chat_${senderId}_${Date.now()}_${random}`
+}
+
+function upsertChatMessage(
+  messages: LiveSessionChatMessage[],
+  message: LiveSessionChatMessage,
+) {
+  return [...messages.filter((current) => current.id !== message.id), message]
+    .sort(
+      (left, right) =>
+        new Date(left.timestamp).getTime() -
+        new Date(right.timestamp).getTime(),
+    )
+    .slice(-MAX_CHAT_MESSAGES)
+}
+
+function mergeChatMessages(
+  currentMessages: LiveSessionChatMessage[],
+  nextMessages: LiveSessionChatMessage[],
+) {
+  return nextMessages.reduce(upsertChatMessage, currentMessages)
+}
+
+function hasWindow() {
+  return typeof window !== "undefined"
+}
+
+function getSessionChatStoragePrefix(classId: string, userId: string) {
+  return `${CHAT_STORAGE_PREFIX}:${classId}:${userId}:`
+}
+
+function getSessionChatStorageKey({
+  classId,
+  userId,
+  roomSid,
+}: {
+  classId: string
+  userId: string
+  roomSid: string
+}) {
+  return `${getSessionChatStoragePrefix(classId, userId)}${roomSid}`
+}
+
+function isStoredChatMessage(
+  value: unknown,
+  classId: string,
+): value is LiveSessionChatMessage {
+  if (!value || typeof value !== "object") {
+    return false
+  }
+
+  const message = value as Partial<LiveSessionChatMessage>
+
+  return (
+    message.classId === classId &&
+    typeof message.id === "string" &&
+    typeof message.senderId === "string" &&
+    typeof message.senderName === "string" &&
+    typeof message.senderAvatar === "string" &&
+    isRole(message.senderRole) &&
+    typeof message.content === "string" &&
+    typeof message.timestamp === "string"
+  )
+}
+
+function loadStoredSessionChatMessages(
+  storageKey: string,
+  classId: string,
+): LiveSessionChatMessage[] {
+  if (!hasWindow()) {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    const parsed = raw ? JSON.parse(raw) : null
+
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed
+      .filter((item) => isStoredChatMessage(item, classId))
+      .map((message) => ({ ...message, status: "sent" as const }))
+      .slice(-MAX_CHAT_MESSAGES)
+  } catch {
+    return []
+  }
+}
+
+function saveStoredSessionChatMessages(
+  storageKey: string,
+  messages: LiveSessionChatMessage[],
+) {
+  if (!hasWindow()) {
+    return
+  }
+
+  try {
+    const sentMessages = messages
+      .filter((message) => message.status !== "sending")
+      .filter((message) => message.status !== "failed")
+      .map((message) => ({ ...message, status: "sent" }))
+      .slice(-MAX_CHAT_MESSAGES)
+
+    window.localStorage.setItem(storageKey, JSON.stringify(sentMessages))
+  } catch {
+    console.error("Failed to save session chat to localStorage")
+  }
+}
+
+function pruneStoredSessionChats({
+  classId,
+  userId,
+  activeStorageKey,
+}: {
+  classId: string
+  userId: string
+  activeStorageKey: string
+}) {
+  if (!hasWindow()) {
+    return
+  }
+
+  try {
+    const prefix = getSessionChatStoragePrefix(classId, userId)
+
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index)
+
+      if (key?.startsWith(prefix) && key !== activeStorageKey) {
+        window.localStorage.removeItem(key)
+      }
+    }
+  } catch {
+    console.error("Failed to prune old session chat from localStorage")
+  }
+}
+
+function mapIncomingChatMessage({
+  content,
+  classId,
+  participantIdentity,
+  attributes,
+}: {
+  content: string
+  classId: string
+  participantIdentity: string
+  attributes: ChatStreamAttributes
+}): LiveSessionChatMessage | null {
+  const trimmed = content.trim()
+
+  if (!trimmed || attributes?.classId !== classId) {
+    return null
+  }
+
+  const senderId = attributes.senderId || participantIdentity
+  const fallbackUser = getUserById(senderId)
+  const senderName = attributes.senderName || fallbackUser?.name || senderId
+  const senderRole = isRole(attributes.senderRole)
+    ? attributes.senderRole
+    : (fallbackUser?.role ?? "student")
+
+  return {
+    id: attributes.id || createChatMessageId(senderId),
+    classId,
+    senderId,
+    senderName,
+    senderAvatar:
+      attributes.senderAvatar ||
+      fallbackUser?.avatar ||
+      getInitials(senderName),
+    senderRole,
+    content: trimmed,
+    timestamp: attributes.timestamp || new Date().toISOString(),
+    status: "sent",
+  }
 }
 
 function isWhiteboardOperation(
@@ -642,6 +847,8 @@ export function useLiveSession({
   const [error, setError] = useState<string | null>(null)
   const [notices, setNotices] = useState<LiveSessionNotice[]>([])
   const [media, setMedia] = useState<LiveMediaStatus>(INITIAL_MEDIA_STATUS)
+  const [chatMessages, setChatMessages] = useState<LiveSessionChatMessage[]>([])
+  const [chatStorageKey, setChatStorageKey] = useState<string | null>(null)
   const [whiteboardMessages, setWhiteboardMessages] = useState<
     LiveSessionWhiteboardMessage[]
   >([])
@@ -668,6 +875,14 @@ export function useLiveSession({
     },
     [],
   )
+
+  useEffect(() => {
+    if (!chatStorageKey) {
+      return
+    }
+
+    saveStoredSessionChatMessages(chatStorageKey, chatMessages)
+  }, [chatMessages, chatStorageKey])
 
   const syncParticipants = useCallback(() => {
     const room = roomRef.current
@@ -733,6 +948,8 @@ export function useLiveSession({
       setError(null)
       setNotices([])
       setMedia(INITIAL_MEDIA_STATUS)
+      setChatMessages([])
+      setChatStorageKey(null)
       setWhiteboardMessages([])
       return
     }
@@ -744,6 +961,8 @@ export function useLiveSession({
     setIsConnecting(true)
     setError(null)
     setNotices([])
+    setChatMessages([])
+    setChatStorageKey(null)
     setWhiteboardMessages([])
     setMedia(INITIAL_MEDIA_STATUS)
 
@@ -791,6 +1010,37 @@ export function useLiveSession({
         })
       }
     }
+
+    room.registerTextStreamHandler(CHAT_TOPIC, (reader, participantInfo) => {
+      void reader
+        .readAll()
+        .then((content) => {
+          const message = mapIncomingChatMessage({
+            content,
+            classId,
+            participantIdentity: participantInfo.identity,
+            attributes: reader.info.attributes,
+          })
+
+          if (!message) {
+            return
+          }
+
+          setChatMessages((prev) => upsertChatMessage(prev, message))
+        })
+        .catch(() => {
+          upsertNotice({
+            id: "session-chat",
+            scope: "chat",
+            severity: "warning",
+            title: "Chat message was skipped",
+            description:
+              "A session chat message could not be read by this browser.",
+            nextStep:
+              "Keep the session open. If chat keeps failing, leave and rejoin.",
+          })
+        })
+    })
 
     const handleMediaDevicesError: RoomEventCallbacks[RoomEvent.MediaDevicesError] =
       (nextError) => {
@@ -843,6 +1093,33 @@ export function useLiveSession({
           return
         }
 
+        const roomSid = await room.getSid().catch(() => "")
+
+        if (isCancelled) {
+          return
+        }
+
+        if (roomSid) {
+          const nextChatStorageKey = getSessionChatStorageKey({
+            classId,
+            userId: currentUser.id,
+            roomSid,
+          })
+
+          pruneStoredSessionChats({
+            classId,
+            userId: currentUser.id,
+            activeStorageKey: nextChatStorageKey,
+          })
+          setChatStorageKey(nextChatStorageKey)
+          setChatMessages((prev) =>
+            mergeChatMessages(
+              loadStoredSessionChatMessages(nextChatStorageKey, classId),
+              prev,
+            ),
+          )
+        }
+
         setIsConnecting(false)
         syncParticipants()
       } catch (nextError) {
@@ -882,6 +1159,7 @@ export function useLiveSession({
       room.off(RoomEvent.ActiveSpeakersChanged, handleSync)
       room.off(RoomEvent.DataReceived, handleDataReceived)
       room.off(RoomEvent.MediaDevicesError, handleMediaDevicesError)
+      room.unregisterTextStreamHandler(CHAT_TOPIC)
       room.disconnect()
       if (roomRef.current === room) {
         roomRef.current = null
@@ -929,6 +1207,80 @@ export function useLiveSession({
       }
     },
     [upsertNotice],
+  )
+
+  const sendChatMessage = useCallback(
+    async (content: string) => {
+      const trimmed = content.trim()
+      const room = roomRef.current
+
+      if (!trimmed) {
+        return false
+      }
+
+      if (!room || room.state !== ConnectionState.Connected) {
+        upsertNotice({
+          id: "session-chat",
+          scope: "chat",
+          severity: "warning",
+          title: "Chat is not connected",
+          description: "This message was not sent to the session.",
+          nextStep: "Wait for the session to reconnect, then send it again.",
+        })
+        return false
+      }
+
+      const timestamp = new Date().toISOString()
+      const message: LiveSessionChatMessage = {
+        id: createChatMessageId(currentUser.id),
+        classId,
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        senderRole: currentUser.role,
+        content: trimmed,
+        timestamp,
+        status: "sending",
+      }
+
+      setChatMessages((prev) => upsertChatMessage(prev, message))
+
+      try {
+        await room.localParticipant.sendText(trimmed, {
+          topic: CHAT_TOPIC,
+          attributes: {
+            id: message.id,
+            classId,
+            senderId: currentUser.id,
+            senderName: currentUser.name,
+            senderAvatar: currentUser.avatar,
+            senderRole: currentUser.role,
+            timestamp,
+          },
+        })
+        setChatMessages((prev) =>
+          upsertChatMessage(prev, { ...message, status: "sent" }),
+        )
+        return true
+      } catch (nextError) {
+        const description = getErrorMessage(nextError as LiveSessionError)
+
+        setChatMessages((prev) =>
+          upsertChatMessage(prev, { ...message, status: "failed" }),
+        )
+        upsertNotice({
+          id: "session-chat",
+          scope: "chat",
+          severity: "warning",
+          title: "Chat message was not sent",
+          description,
+          nextStep:
+            "Check your connection and keep the session open. If it continues, leave and rejoin.",
+        })
+        return false
+      }
+    },
+    [classId, currentUser, upsertNotice],
   )
 
   const toggleMic = useCallback(async () => {
@@ -1076,6 +1428,8 @@ export function useLiveSession({
     setError(null)
     setNotices([])
     setMedia(INITIAL_MEDIA_STATUS)
+    setChatMessages([])
+    setChatStorageKey(null)
     setWhiteboardMessages([])
   }, [])
 
@@ -1105,6 +1459,7 @@ export function useLiveSession({
     error,
     notices,
     media,
+    chatMessages,
     whiteboardMessages,
     micOn: !!localParticipant && !localParticipant.muted,
     camOn: !!localParticipant && !localParticipant.videoOff,
@@ -1114,6 +1469,7 @@ export function useLiveSession({
     toggleCamera,
     toggleScreenShare,
     sendWhiteboardMessage,
+    sendChatMessage,
     dismissNotice,
     disconnect,
   }

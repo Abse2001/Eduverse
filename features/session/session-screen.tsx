@@ -670,7 +670,11 @@ export function SessionScreen({ cls }: { cls: Class }) {
               {rightPanel === "participants" ? (
                 <ParticipantsPanel participants={liveSession.participants} />
               ) : (
-                <SessionChat />
+                <SessionChat
+                  messages={liveSession.chatMessages}
+                  connected={connected}
+                  onSend={liveSession.sendChatMessage}
+                />
               )}
             </div>
           ) : null}
