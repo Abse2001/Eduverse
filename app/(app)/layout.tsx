@@ -10,16 +10,13 @@ import { useApp } from "@/lib/store"
 function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
   const router = useRouter()
-  const { activeOrganization, isAuthLoading, isAuthenticated } = useApp()
+  const { isAuthLoading, isAuthenticated } = useApp()
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
       router.replace("/auth")
     }
-    if (!isAuthLoading && isAuthenticated && !activeOrganization) {
-      router.replace("/organizations")
-    }
-  }, [activeOrganization, isAuthLoading, isAuthenticated, router])
+  }, [isAuthLoading, isAuthenticated, router])
 
   if (isAuthLoading) {
     return (
@@ -40,10 +37,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     )
-  }
-
-  if (!activeOrganization) {
-    return null
   }
 
   return (

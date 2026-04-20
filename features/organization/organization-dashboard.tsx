@@ -80,11 +80,11 @@ export function OrganizationDashboard() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Organization Hub
+            Set up your dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Signed in as {currentUser.name}. Choose which organization you want
-            to enter, or create a new one.
+            Signed in as {currentUser.name}. Create an organization to open your
+            workspace.
           </p>
         </div>
         {activeOrganization ? (
@@ -125,7 +125,7 @@ export function OrganizationDashboard() {
             </CardTitle>
             <CardDescription>
               A user can belong to multiple organizations. Your role is decided
-              by the organization you enter.
+              by the active organization selected from the top bar.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
