@@ -147,10 +147,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       >
         {/* Logo */}
         <div className="flex items-center h-14 px-3 border-b border-sidebar-border">
-          <Link
-            href={activeOrganization ? "/dashboard" : "/organizations"}
-            className="flex items-center gap-2 min-w-0"
-          >
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shrink-0">
               <GraduationCap className="w-4 h-4 text-primary-foreground" />
             </div>
