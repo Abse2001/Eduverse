@@ -4,13 +4,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import {
-  LayoutDashboard,
   BookOpen,
   MessageSquare,
   FileText,
   FlaskConical,
   Trophy,
   User,
+  GraduationCap,
   ChevronLeft,
   ChevronRight,
   Video,
@@ -117,35 +117,42 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       >
         {/* Dashboard link */}
         <div className="relative flex items-center h-14 px-2 border-b border-sidebar-border">
-          <Link
-            href="/dashboard"
-            className={cn(
-              "flex items-center gap-2.5 py-2 rounded-lg text-sm font-medium transition-colors min-w-0 flex-1 h-9",
-              "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
-              collapsed ? "px-4" : "pl-4 pr-8",
-            )}
-          >
-            <LayoutDashboard className="w-4 h-4 shrink-0" />
-            <span
-              className={cn(
-                "truncate overflow-hidden transition-opacity duration-150",
-                collapsed && "w-0 opacity-0",
-              )}
+          {collapsed ? (
+            <button
+              onClick={() => setCollapsed(false)}
+              className="flex h-9 flex-1 items-center rounded-lg px-2 transition-opacity hover:opacity-90"
+              aria-label="Expand sidebar"
             >
-              Dashboard
-            </span>
-          </Link>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="absolute right-2 text-muted-foreground hover:text-sidebar-foreground transition-colors"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
-            )}
-          </button>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                <ChevronRight className="h-4 w-4 text-primary-foreground" />
+              </span>
+            </button>
+          ) : (
+            <>
+              <Link
+                href="/dashboard"
+                className={cn(
+                  "flex items-center gap-2.5 py-2 rounded-lg text-sm font-medium transition-colors min-w-0 flex-1 h-9",
+                  "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+                  "pl-2 pr-8",
+                )}
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                  <GraduationCap className="h-4 w-4 text-primary-foreground" />
+                </div>
+                <span className="truncate overflow-hidden transition-opacity duration-150">
+                  Eduverse
+                </span>
+              </Link>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="absolute right-2 text-muted-foreground hover:text-sidebar-foreground transition-colors"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Main nav */}
