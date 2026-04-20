@@ -1,7 +1,5 @@
-"use client"
-
-import { ClassesScreen } from "@/features/classes/classes-screen"
+import { redirect } from "next/navigation"
 
 export default function ClassesPage() {
-  return <ClassesScreen />
+  redirect("/dashboard")
 }

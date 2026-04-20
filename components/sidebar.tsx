@@ -11,13 +11,9 @@ import {
   FlaskConical,
   Trophy,
   User,
-  Settings,
   ChevronLeft,
   ChevronRight,
-  GraduationCap,
-  LogOut,
   Video,
-  Code2,
   Shield,
   ClipboardList,
   Terminal,
@@ -28,8 +24,6 @@ import {
   loadOrganizationClasses,
   type OrganizationClass,
 } from "@/lib/supabase/classes"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
   TooltipContent,
@@ -37,22 +31,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-const NAV_ITEMS_STUDENT = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "My Classes", icon: BookOpen, href: "/classes" },
-  { label: "Profile", icon: User, href: "/profile" },
-]
+const NAV_ITEMS_STUDENT = [{ label: "Profile", icon: User, href: "/profile" }]
 
-const NAV_ITEMS_TEACHER = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "My Classes", icon: BookOpen, href: "/classes" },
-  { label: "Profile", icon: User, href: "/profile" },
-]
+const NAV_ITEMS_TEACHER = [{ label: "Profile", icon: User, href: "/profile" }]
 
 const NAV_ITEMS_ADMIN = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Admin Panel", icon: Shield, href: "/admin" },
-  { label: "All Classes", icon: BookOpen, href: "/classes" },
   { label: "Profile", icon: User, href: "/profile" },
 ]
 
@@ -123,20 +107,6 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const activeSegmentMatch = pathname.match(/\/classes\/[^/]+\/([^/]+)/)
   const activeSegment = activeSegmentMatch?.[1]
 
-  const roleBadge = {
-    student: "Student",
-    teacher: "Teacher",
-    admin: "Admin",
-  }[currentUser.role]
-
-  const roleColor = {
-    student: "bg-brand-subtle text-brand",
-    teacher:
-      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-    admin:
-      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  }[currentUser.role]
-
   return (
     <TooltipProvider delayDuration={0}>
       <aside
@@ -145,24 +115,29 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           collapsed ? "w-16" : "w-60",
         )}
       >
-        {/* Logo */}
-        <div className="flex items-center h-14 px-3 border-b border-sidebar-border">
+        {/* Dashboard link */}
+        <div className="relative flex items-center h-14 px-2 border-b border-sidebar-border">
           <Link
-            href={activeOrganization ? "/dashboard" : "/organizations"}
-            className="flex items-center gap-2 min-w-0"
-          >
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shrink-0">
-              <GraduationCap className="w-4 h-4 text-primary-foreground" />
-            </div>
-            {!collapsed && (
-              <span className="font-semibold text-sidebar-foreground text-sm truncate">
-                EduFlow
-              </span>
+            href="/dashboard"
+            className={cn(
+              "flex items-center gap-2.5 py-2 rounded-lg text-sm font-medium transition-colors min-w-0 flex-1 h-9",
+              "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+              collapsed ? "px-4" : "pl-4 pr-8",
             )}
+          >
+            <LayoutDashboard className="w-4 h-4 shrink-0" />
+            <span
+              className={cn(
+                "truncate overflow-hidden transition-opacity duration-150",
+                collapsed && "w-0 opacity-0",
+              )}
+            >
+              Dashboard
+            </span>
           </Link>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="ml-auto text-muted-foreground hover:text-sidebar-foreground transition-colors"
+            className="absolute right-2 text-muted-foreground hover:text-sidebar-foreground transition-colors"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? (
@@ -174,7 +149,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         </div>
 
         {/* Main nav */}
-        <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 px-2">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-0.5 px-2">
           {mainNavItems.map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(item.href + "/")
@@ -193,11 +168,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           {/* Classes */}
           {userClasses.length > 0 && (
             <div className="pt-4">
-              {!collapsed && (
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1.5">
-                  Classes
-                </p>
-              )}
+              <p
+                className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1.5 transition-opacity duration-150",
+                  collapsed && "opacity-0",
+                )}
+              >
+                Classes
+              </p>
               {userClasses.map((cls) => {
                 const isActiveClass = activeClassId === cls.id
                 return (
@@ -210,8 +188,13 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       collapsed={collapsed}
                       colorDot={cls.color ?? undefined}
                     />
-                    {isActiveClass && !collapsed && (
-                      <div className="ml-4 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1">
+                    {isActiveClass && (
+                      <div
+                        className={cn(
+                          "ml-4 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1 overflow-hidden transition-opacity duration-150",
+                          collapsed && "opacity-0 pointer-events-none",
+                        )}
+                      >
                         {CLASS_NAV_ITEMS.map((sub) => (
                           <Link
                             key={sub.segment}
@@ -235,37 +218,6 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
             </div>
           )}
         </nav>
-
-        {/* User footer */}
-        <div className="border-t border-sidebar-border p-2">
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-sidebar-accent/50 transition-colors cursor-pointer",
-              collapsed && "justify-center",
-            )}
-          >
-            <Avatar className="w-7 h-7 shrink-0">
-              <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
-                {currentUser.avatar}
-              </AvatarFallback>
-            </Avatar>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-sidebar-foreground truncate">
-                  {currentUser.name}
-                </p>
-                <span
-                  className={cn(
-                    "inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none mt-0.5",
-                    roleColor,
-                  )}
-                >
-                  {roleBadge}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
       </aside>
     </TooltipProvider>
   )
@@ -301,24 +253,32 @@ function NavItem({
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition-colors w-full",
+        "flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full h-9",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
-        collapsed && "justify-center",
       )}
     >
       {colorDot ? (
-        <span
-          className={cn(
-            "w-2 h-2 rounded-full shrink-0",
-            DOT_COLOR_MAP[colorDot] ?? "bg-muted-foreground",
-          )}
-        />
+        <span className="flex w-4 shrink-0 justify-center">
+          <span
+            className={cn(
+              "w-2 h-2 rounded-full",
+              DOT_COLOR_MAP[colorDot] ?? "bg-muted-foreground",
+            )}
+          />
+        </span>
       ) : (
         <Icon className="w-4 h-4 shrink-0" />
       )}
-      {!collapsed && <span className="truncate">{label}</span>}
+      <span
+        className={cn(
+          "truncate overflow-hidden transition-opacity duration-150",
+          collapsed && "w-0 opacity-0",
+        )}
+      >
+        {label}
+      </span>
     </Link>
   )
 

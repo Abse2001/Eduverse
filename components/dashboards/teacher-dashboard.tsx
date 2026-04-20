@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import {
-  ArrowRight,
   BookOpen,
   Calendar,
   FileText,
@@ -83,14 +82,7 @@ export function TeacherDashboard() {
 
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-foreground">Your Classes</h2>
-            <Link href="/classes">
-              <Button variant="ghost" size="sm" className="text-xs gap-1">
-                Manage <ArrowRight className="w-3 h-3" />
-              </Button>
-            </Link>
-          </div>
+          <h2 className="font-semibold text-foreground">Your Classes</h2>
 
           {myClasses.map((cls) => {
             const students = getStudentsInClass(cls.id)

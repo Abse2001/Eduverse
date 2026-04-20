@@ -118,11 +118,6 @@ export function AdminDashboard() {
               <CardTitle className="text-sm font-semibold">
                 All Classes
               </CardTitle>
-              <Link href="/classes">
-                <Button variant="ghost" size="sm" className="text-xs gap-1">
-                  Manage <ArrowRight className="w-3 h-3" />
-                </Button>
-              </Link>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
