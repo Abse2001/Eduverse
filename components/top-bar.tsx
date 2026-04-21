@@ -1,27 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import {
-  Bell,
-  Building2,
-  ChevronDown,
-  LogOut,
-  Moon,
-  Search,
-  Sun,
-} from "lucide-react"
+import { Bell, Building2, LogOut, Moon, Search, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useApp } from "@/lib/store"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 export function TopBar() {
   const router = useRouter()
@@ -74,46 +58,35 @@ export function TopBar() {
           <span className="sr-only">Toggle dark mode</span>
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent transition-colors">
-              <Avatar className="w-7 h-7">
-                <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
-                  {currentUser.avatar}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden md:block text-sm font-medium text-foreground">
-                {currentUser.name.split(" ")[0]}
-              </span>
-              <ChevronDown className="w-3 h-3 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-              Signed in account
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <div className="px-2 py-2">
-              <p className="text-sm font-medium truncate">{currentUser.name}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {currentUser.email}
-              </p>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                void signOut().then(() => {
-                  router.replace("/auth")
-                  router.refresh()
-                })
-              }}
-              className="cursor-pointer"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="rounded-lg overflow-hidden"
+        >
+          <Link href="/profile" aria-label="Go to profile">
+            <Avatar className="w-8 h-8">
+              <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
+                {currentUser.avatar}
+              </AvatarFallback>
+            </Avatar>
+          </Link>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-lg"
+          onClick={() => {
+            void signOut().then(() => {
+              router.replace("/auth")
+              router.refresh()
+            })
+          }}
+          aria-label="Log out"
+        >
+          <LogOut className="w-4 h-4" />
+        </Button>
       </div>
     </header>
   )

@@ -9,12 +9,10 @@ import {
   FileText,
   FlaskConical,
   Trophy,
-  User,
   GraduationCap,
   ChevronLeft,
   ChevronRight,
   Video,
-  Shield,
   ClipboardList,
   Terminal,
 } from "lucide-react"
@@ -31,14 +29,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-const NAV_ITEMS_STUDENT = [{ label: "Profile", icon: User, href: "/profile" }]
+const NAV_ITEMS_STUDENT: Array<{
+  label: string
+  icon: typeof BookOpen
+  href: string
+}> = []
 
-const NAV_ITEMS_TEACHER = [{ label: "Profile", icon: User, href: "/profile" }]
+const NAV_ITEMS_TEACHER: Array<{
+  label: string
+  icon: typeof BookOpen
+  href: string
+}> = []
 
-const NAV_ITEMS_ADMIN = [
-  { label: "Admin Panel", icon: Shield, href: "/admin" },
-  { label: "Profile", icon: User, href: "/profile" },
-]
+const NAV_ITEMS_ADMIN: Array<{
+  label: string
+  icon: typeof BookOpen
+  href: string
+}> = []
 
 const CLASS_NAV_ITEMS = [
   { label: "Home", icon: BookOpen, segment: "home" },
