@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { Trophy, Medal, Star, TrendingUp, Users } from "lucide-react"
+import { ChartColumn, Medal, Star, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const RANK_STYLES = [
@@ -68,12 +68,11 @@ export default function LeaderboardPage({
         <div>
           <h1 className="text-xl font-bold text-foreground">{cls.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {cls.code} &middot; Leaderboard &middot; {entries.length} students
-            ranked
+            {cls.code} &middot; Results &middot; {entries.length} students
           </p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <Trophy className="w-4 h-4 text-amber-500" />
+          <ChartColumn className="w-4 h-4 text-amber-500" />
           <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
             {cls.semester}
           </span>
@@ -89,10 +88,10 @@ export default function LeaderboardPage({
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-foreground">
-                Your Position
+                Your Result
               </p>
               <p className="text-xs text-muted-foreground">
-                {myEntry.totalScore} pts &middot; avg {myEntry.avgScore}%
+                {myEntry.totalScore} points &middot; {myEntry.avgScore}% average
                 &middot; {myEntry.assignments} assignments
               </p>
             </div>
@@ -143,7 +142,7 @@ export default function LeaderboardPage({
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Users className="w-4 h-4 text-muted-foreground" />
-            All Rankings
+            Class Results
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -176,7 +175,7 @@ export default function LeaderboardPage({
                     )}
                   >
                     {entry.rank <= 3 ? (
-                      <Trophy className={cn("w-3.5 h-3.5", rankStyle?.icon)} />
+                      <Medal className={cn("w-3.5 h-3.5", rankStyle?.icon)} />
                     ) : (
                       entry.rank
                     )}
@@ -224,12 +223,12 @@ export default function LeaderboardPage({
                     </div>
                   </div>
 
-                  {/* Score */}
+                  {/* Result */}
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-foreground">
                       {entry.totalScore}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">pts</p>
+                    <p className="text-[10px] text-muted-foreground">points</p>
                   </div>
                 </div>
               )
@@ -281,7 +280,7 @@ function PodiumCard({
           {user.name.split(" ")[0]}
         </p>
         <p className="text-[10px] text-muted-foreground">
-          {entry.totalScore} pts
+          {entry.totalScore} points
         </p>
       </div>
       <div
@@ -293,7 +292,7 @@ function PodiumCard({
         )}
       >
         <div className="flex flex-col items-center gap-1">
-          <Trophy className={cn("w-5 h-5", style?.icon)} />
+          <Medal className={cn("w-5 h-5", style?.icon)} />
           <span className={cn("text-lg font-bold", style?.text)}>#{rank}</span>
         </div>
       </div>

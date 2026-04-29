@@ -4,10 +4,10 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   BookOpen,
+  ChartColumn,
   MessageSquare,
   FileText,
   FlaskConical,
-  Trophy,
   GraduationCap,
   ChevronLeft,
   ChevronRight,
@@ -51,7 +51,7 @@ const CLASS_NAV_ITEMS = [
   { label: "Session", icon: Video, segment: "session" },
   { label: "Exam", icon: ClipboardList, segment: "exam" },
   { label: "IDE", icon: Terminal, segment: "ide" },
-  { label: "Leaderboard", icon: Trophy, segment: "leaderboard" },
+  { label: "Results", icon: ChartColumn, segment: "leaderboard" },
 ]
 
 interface SidebarProps {
