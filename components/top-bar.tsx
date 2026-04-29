@@ -1,101 +1,16 @@
 "use client"
 
-import {
-  Bell,
-  Building2,
-  Check,
-  ChevronDown,
-  LogOut,
-  Moon,
-  PlusCircle,
-  Search,
-  Sun,
-} from "lucide-react"
-import { useRouter } from "next/navigation"
+import { Bell, Moon, Search, Sun } from "lucide-react"
+import { AccountMenu } from "@/components/top-bar/account-menu"
+import { OrganizationMenu } from "@/components/top-bar/organization-menu"
 import { useApp } from "@/lib/store"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 export function TopBar() {
-  const router = useRouter()
-  const {
-    activeOrganization,
-    currentUser,
-    isDarkMode,
-    organizations,
-    setDefaultOrganization,
-    toggleDarkMode,
-    signOut,
-  } = useApp()
+  const { isDarkMode, toggleDarkMode } = useApp()
 
   return (
     <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-card/80 backdrop-blur-sm">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex min-w-0 max-w-[14rem] items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent md:max-w-xs">
-            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate">
-              {activeOrganization?.name ?? "No organization"}
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-            Switch organization
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {organizations.length > 0 ? (
-            organizations.map((organization) => (
-              <DropdownMenuItem
-                key={organization.id}
-                className="cursor-pointer"
-                onClick={() => {
-                  if (organization.id === activeOrganization?.id) return
-                  void setDefaultOrganization(organization.id).then(() => {
-                    router.replace("/dashboard")
-                    router.refresh()
-                  })
-                }}
-              >
-                <Building2 className="h-4 w-4" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {organization.name}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {organization.slug}
-                  </p>
-                </div>
-                {organization.id === activeOrganization?.id ? (
-                  <Check className="h-4 w-4 text-primary" />
-                ) : null}
-              </DropdownMenuItem>
-            ))
-          ) : (
-            <div className="px-2 py-2 text-sm text-muted-foreground">
-              No organizations yet.
-            </div>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onClick={() => router.push("/organizations/create")}
-          >
-            <PlusCircle className="h-4 w-4" />
-            Create organization
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
       <div className="relative flex-1 max-w-sm hidden md:block">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
         <input
@@ -106,6 +21,8 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <OrganizationMenu />
+
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="w-4 h-4" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
@@ -121,46 +38,7 @@ export function TopBar() {
           <span className="sr-only">Toggle dark mode</span>
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent transition-colors">
-              <Avatar className="w-7 h-7">
-                <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
-                  {currentUser.avatar}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden md:block text-sm font-medium text-foreground">
-                {currentUser.name.split(" ")[0]}
-              </span>
-              <ChevronDown className="w-3 h-3 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-              Signed in account
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <div className="px-2 py-2">
-              <p className="text-sm font-medium truncate">{currentUser.name}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {currentUser.email}
-              </p>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                void signOut().then(() => {
-                  router.replace("/auth")
-                  router.refresh()
-                })
-              }}
-              className="cursor-pointer"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AccountMenu />
       </div>
     </header>
   )
