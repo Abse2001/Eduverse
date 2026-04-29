@@ -5,13 +5,13 @@ import { FormEvent, useEffect, useState, useTransition } from "react"
 import {
   BookOpen,
   Calendar,
+  ChartColumn,
   FileText,
   FlaskConical,
   LoaderCircle,
   MessageSquare,
   PlusCircle,
   Trash2,
-  Trophy,
   Users,
   Video,
 } from "lucide-react"
@@ -71,10 +71,10 @@ const NAV_SECTIONS = [
     desc: "Live class & whiteboard",
   },
   {
-    label: "Leaderboard",
-    icon: Trophy,
+    label: "Results",
+    icon: ChartColumn,
     segment: "leaderboard",
-    desc: "Student rankings",
+    desc: "Scores and averages",
   },
 ]
 
