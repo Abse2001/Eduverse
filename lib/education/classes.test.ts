@@ -29,6 +29,7 @@ const classes: OrganizationClass[] = [
       role: "teacher",
     },
   ]),
+  createClass("class-3", [], "teacher-2"),
 ]
 
 describe("getClassesForUser", () => {
@@ -43,13 +44,24 @@ describe("getClassesForUser", () => {
       getClassesForUser(classes, { ...baseUser, role: "admin" }).map(
         (classItem) => classItem.id,
       ),
-    ).toEqual(["class-1", "class-2"])
+    ).toEqual(["class-1", "class-2", "class-3"])
+  })
+
+  test("returns classes assigned through teacher_user_id", () => {
+    expect(
+      getClassesForUser(classes, {
+        ...baseUser,
+        id: "teacher-2",
+        role: "teacher",
+      }).map((classItem) => classItem.id),
+    ).toEqual(["class-3"])
   })
 })
 
 function createClass(
   id: string,
   memberships: OrganizationClass["memberships"],
+  teacherUserId: string | null = null,
 ): OrganizationClass {
   return {
     id,
@@ -57,7 +69,7 @@ function createClass(
     name: id,
     code: id.toUpperCase(),
     subject: "General",
-    teacher_user_id: null,
+    teacher_user_id: teacherUserId,
     color: "indigo",
     description: "",
     schedule_text: null,
