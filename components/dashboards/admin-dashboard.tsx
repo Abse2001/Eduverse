@@ -2,7 +2,7 @@
 
 import { Activity, BookOpen, ShieldCheck, Users } from "lucide-react"
 import { useApp } from "@/lib/store"
-import { ASSIGNMENTS, CLASSES, USERS } from "@/lib/mock-data"
+import { ASSIGNMENTS, USERS } from "@/lib/mock-data"
 import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassesTab } from "@/features/admin/classes-tab"
@@ -10,7 +10,7 @@ import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function AdminDashboard() {
-  const { currentUser } = useApp()
+  const { currentUser, organizationClasses } = useApp()
 
   if (currentUser.role !== "admin") {
     return (
@@ -50,7 +50,7 @@ export function AdminDashboard() {
       <AdminOverviewStats
         studentCount={students.length}
         teacherCount={teachers.length}
-        classCount={CLASSES.length}
+        classCount={organizationClasses.length}
         assignmentCount={totalAssignments}
       />
 

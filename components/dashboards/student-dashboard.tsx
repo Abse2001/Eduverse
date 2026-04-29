@@ -14,11 +14,9 @@ import { StatCard } from "@/components/shared/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import {
-  getAssignmentsByClass,
-  getClassesByStudent,
-  getLeaderboardByClass,
-} from "@/lib/mock-data"
+import { getAssignmentsByClass, getLeaderboardByClass } from "@/lib/mock-data"
+import { getClassesForUser } from "@/lib/education/classes"
+import { toLegacyClass } from "@/lib/supabase/classes"
 import {
   getAssignmentProgress,
   getAssignmentsWithClassInfo,
@@ -31,8 +29,10 @@ import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function StudentDashboard() {
-  const { currentUser } = useApp()
-  const myClasses = getClassesByStudent(currentUser.id)
+  const { currentUser, organizationClasses } = useApp()
+  const myClasses = getClassesForUser(organizationClasses, currentUser).map(
+    toLegacyClass,
+  )
   const allAssignments = getAssignmentsWithClassInfo(
     myClasses,
     getAssignmentsByClass,

@@ -19,13 +19,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import {
-  CLASSES,
-  getAssignmentsByClass,
-  getClassesByStudent,
-  getClassesByTeacher,
-  getLeaderboardByClass,
-} from "@/lib/mock-data"
+import { getAssignmentsByClass, getLeaderboardByClass } from "@/lib/mock-data"
+import { getClassesForUser } from "@/lib/education/classes"
 import {
   getAssignmentProgress,
   getAverageAssignmentScore,
@@ -33,6 +28,7 @@ import {
   getStudentRankSummary,
 } from "@/lib/education/selectors"
 import { useApp } from "@/lib/store"
+import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import {
   CLASS_BADGE_COLOR_MAP,
@@ -41,14 +37,12 @@ import {
 } from "@/lib/view-config"
 
 export function ProfileScreen() {
-  const { currentUser } = useApp()
+  const { currentUser, organizationClasses } = useApp()
   const isStudent = currentUser.role === "student"
   const isTeacher = currentUser.role === "teacher"
-  const myClasses = isStudent
-    ? getClassesByStudent(currentUser.id)
-    : isTeacher
-      ? getClassesByTeacher(currentUser.id)
-      : CLASSES
+  const myClasses = getClassesForUser(organizationClasses, currentUser).map(
+    toLegacyClass,
+  )
   const allAssignments = myClasses.flatMap((cls) =>
     getAssignmentsByClass(cls.id),
   )
