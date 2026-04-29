@@ -37,7 +37,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  loadClass,
   type ClassProfile,
   type OrganizationClass,
 } from "@/lib/supabase/classes"
@@ -99,8 +98,19 @@ function inviteLinkFromToken(token: string) {
 }
 
 export function ClassHomeScreen({ classId }: { classId: string }) {
-  const { currentUser } = useApp()
-  const [classItem, setClassItem] = useState<OrganizationClass | null>(null)
+  const {
+    currentUser,
+    organizationClasses,
+    organizationClassesStatus,
+    organizationClassesError,
+    refreshOrganizationClasses,
+  } = useApp()
+  const cachedClass = organizationClasses.find(
+    (classItem) => classItem.id === classId,
+  )
+  const [classItem, setClassItem] = useState<OrganizationClass | null>(
+    cachedClass ?? null,
+  )
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
@@ -118,12 +128,17 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         (membership.role === "teacher" || membership.role === "ta"),
     )
 
-  async function refreshClass() {
+  async function refreshClass(force = true) {
     setIsLoading(true)
     setErrorMessage(null)
 
     try {
-      setClassItem(await loadClass(classId))
+      const classes = await refreshOrganizationClasses({ force })
+      const nextClass = classes.find((classItem) => classItem.id === classId)
+      setClassItem(nextClass ?? null)
+      if (!nextClass) {
+        setErrorMessage("This class does not exist or you cannot view it.")
+      }
     } catch (error) {
       setClassItem(null)
       setErrorMessage(
@@ -135,8 +150,39 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   }
 
   useEffect(() => {
-    void refreshClass()
-  }, [classId])
+    const cachedClass = organizationClasses.find(
+      (classItem) => classItem.id === classId,
+    )
+
+    if (cachedClass) {
+      setClassItem(cachedClass)
+      setIsLoading(false)
+      setErrorMessage(null)
+      return
+    }
+
+    if (organizationClassesStatus === "loading") {
+      setIsLoading(true)
+      setErrorMessage(null)
+      return
+    }
+
+    if (organizationClassesStatus === "error") {
+      setClassItem(null)
+      setIsLoading(false)
+      setErrorMessage(
+        organizationClassesError ?? "Could not load class information",
+      )
+      return
+    }
+
+    void refreshClass(false)
+  }, [
+    classId,
+    organizationClasses,
+    organizationClassesError,
+    organizationClassesStatus,
+  ])
 
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

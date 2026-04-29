@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
 import {
   BookOpen,
   MessageSquare,
@@ -18,10 +17,6 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/lib/store"
-import {
-  loadOrganizationClasses,
-  type OrganizationClass,
-} from "@/lib/supabase/classes"
 import {
   Tooltip,
   TooltipContent,
@@ -65,33 +60,9 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const pathname = usePathname()
-  const { activeOrganization, currentUser } = useApp()
-  const [organizationClasses, setOrganizationClasses] = useState<
-    OrganizationClass[]
-  >([])
+  const { activeOrganization, currentUser, organizationClasses } = useApp()
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
-
-  useEffect(() => {
-    if (!activeOrganization) {
-      setOrganizationClasses([])
-      return
-    }
-
-    let cancelled = false
-
-    loadOrganizationClasses(activeOrganization.id)
-      .then((classes) => {
-        if (!cancelled) setOrganizationClasses(classes)
-      })
-      .catch(() => {
-        if (!cancelled) setOrganizationClasses([])
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeOrganization?.id])
 
   const userClasses =
     activeOrganization && isAdmin

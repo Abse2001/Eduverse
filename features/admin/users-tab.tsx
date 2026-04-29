@@ -33,30 +33,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { useApp } from "@/lib/store"
+import {
+  type OrganizationInviteRow,
+  type OrganizationMemberRow,
+  type OrganizationUserRole,
+  useApp,
+} from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-type OrgRole = "org_owner" | "org_admin" | "teacher" | "student"
+type OrgRole = OrganizationUserRole
 type RoleFilter = "all" | "org_admin" | "teacher" | "student"
-
-type MemberRow = {
-  id: string
-  user_id: string
-  role: OrgRole
-  status: "active" | "invited" | "suspended"
-  profile?: {
-    display_name: string
-    email: string
-  }
-}
-
-type InviteRow = {
-  id: string
-  email: string
-  role: Exclude<OrgRole, "org_owner">
-  status: "active" | "invited" | "suspended"
-  token: string
-}
 
 const ROLE_BADGE_COLOR_MAP: Record<OrgRole, string> = {
   org_owner: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
@@ -92,103 +78,44 @@ function getInviteLink(token: string) {
 }
 
 export function UsersTab() {
-  const { activeOrganization } = useApp()
+  const {
+    activeOrganization,
+    organizationMembers: members,
+    organizationInvites: invites,
+    organizationUsersStatus,
+    organizationUsersError,
+    refreshOrganizationUsers,
+  } = useApp()
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<RoleFilter>("all")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] =
     useState<Exclude<OrgRole, "org_owner">>("teacher")
-  const [members, setMembers] = useState<MemberRow[]>([])
-  const [invites, setInvites] = useState<InviteRow[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
   const [isInviting, startInvite] = useTransition()
+  const isLoading = organizationUsersStatus === "loading"
+  const displayedErrorMessage = errorMessage ?? organizationUsersError
 
   async function loadUsers() {
     if (!activeOrganization) return
 
-    setIsLoading(true)
     setErrorMessage(null)
-
-    const supabase = createClient()
-    const { data: membershipData, error: membershipError } = await supabase
-      .from("organization_memberships")
-      .select("id, user_id, role, status")
-      .eq("organization_id", activeOrganization.id)
-      .order("created_at", { ascending: true })
-
-    if (membershipError) {
-      setErrorMessage(membershipError.message)
-      setIsLoading(false)
-      return
+    try {
+      await refreshOrganizationUsers({ force: true })
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not load users",
+      )
     }
-
-    const typedMemberships = (membershipData ?? []) as Array<{
-      id: string
-      user_id: string
-      role: OrgRole
-      status: "active" | "invited" | "suspended"
-    }>
-    const userIds = typedMemberships.map((membership) => membership.user_id)
-
-    const { data: profileData, error: profileError } =
-      userIds.length > 0
-        ? await supabase
-            .from("profiles")
-            .select("id, display_name, email")
-            .in("id", userIds)
-        : { data: [], error: null }
-
-    if (profileError) {
-      setErrorMessage(profileError.message)
-      setIsLoading(false)
-      return
-    }
-
-    const profileMap = new Map(
-      (
-        (profileData ?? []) as Array<{
-          id: string
-          display_name: string
-          email: string
-        }>
-      ).map((profile) => [
-        profile.id,
-        { display_name: profile.display_name, email: profile.email },
-      ]),
-    )
-
-    setMembers(
-      typedMemberships.map((membership) => ({
-        ...membership,
-        profile: profileMap.get(membership.user_id),
-      })),
-    )
-
-    const { data: inviteData, error: inviteError } = await supabase
-      .from("organization_invites")
-      .select("id, email, role, status, token")
-      .eq("organization_id", activeOrganization.id)
-      .in("status", ["invited", "suspended"])
-      .order("created_at", { ascending: false })
-
-    if (inviteError) {
-      setErrorMessage(inviteError.message)
-      setIsLoading(false)
-      return
-    }
-
-    setInvites((inviteData ?? []) as InviteRow[])
-    setIsLoading(false)
   }
 
   useEffect(() => {
-    void loadUsers()
-  }, [activeOrganization?.id])
+    void refreshOrganizationUsers().catch(() => {})
+  }, [activeOrganization?.id, refreshOrganizationUsers])
 
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -239,7 +166,7 @@ export function UsersTab() {
     })
   }
 
-  function revokeInvite(invite: InviteRow) {
+  function revokeInvite(invite: OrganizationInviteRow) {
     setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
@@ -263,7 +190,7 @@ export function UsersTab() {
     })
   }
 
-  function inviteAgain(invite: InviteRow) {
+  function inviteAgain(invite: OrganizationInviteRow) {
     if (!activeOrganization) return
 
     setErrorMessage(null)
@@ -312,7 +239,7 @@ export function UsersTab() {
     })
   }
 
-  function copyInviteLink(invite: InviteRow) {
+  function copyInviteLink(invite: OrganizationInviteRow) {
     const inviteLink = getInviteLink(invite.token)
 
     if (!inviteLink) return
@@ -322,7 +249,7 @@ export function UsersTab() {
     setSuccessMessage("Invite link copied.")
   }
 
-  const visibleMembers = members.filter((member) => {
+  const visibleMembers = members.filter((member: OrganizationMemberRow) => {
     const name = member.profile?.display_name ?? ""
     const email = member.profile?.email ?? ""
     const matchesSearch =
@@ -333,7 +260,7 @@ export function UsersTab() {
     return matchesSearch && matchesFilter
   })
 
-  const visibleInvites = invites.filter((invite) => {
+  const visibleInvites = invites.filter((invite: OrganizationInviteRow) => {
     const matchesSearch = invite.email
       .toLowerCase()
       .includes(search.toLowerCase())
@@ -386,11 +313,11 @@ export function UsersTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {errorMessage ? (
+          {displayedErrorMessage ? (
             <div className="p-4">
               <Alert variant="destructive">
                 <AlertTitle>Could not load users</AlertTitle>
-                <AlertDescription>{errorMessage}</AlertDescription>
+                <AlertDescription>{displayedErrorMessage}</AlertDescription>
               </Alert>
             </div>
           ) : null}

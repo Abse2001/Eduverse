@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useState, useTransition } from "react"
+import { FormEvent, useState, useTransition } from "react"
 import {
   Edit3,
   LoaderCircle,
@@ -31,10 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  loadOrganizationClasses,
-  type OrganizationClass,
-} from "@/lib/supabase/classes"
+import { type OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -71,8 +68,13 @@ function inviteLinkFromToken(token: string) {
 }
 
 export function ClassesTab() {
-  const { activeOrganization } = useApp()
-  const [classes, setClasses] = useState<OrganizationClass[]>([])
+  const {
+    activeOrganization,
+    organizationClasses: classes,
+    organizationClassesStatus,
+    organizationClassesError,
+    refreshOrganizationClasses,
+  } = useApp()
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
   const [editingClass, setEditingClass] = useState<OrganizationClass | null>(
     null,
@@ -82,32 +84,26 @@ export function ClassesTab() {
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [isClassDialogOpen, setIsClassDialogOpen] = useState(false)
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const isLoading = organizationClassesStatus === "loading"
+  const displayedErrorMessage = errorMessage ?? organizationClassesError
 
   async function loadClasses() {
     if (!activeOrganization) return
 
-    setIsLoading(true)
     setErrorMessage(null)
 
     try {
-      setClasses(await loadOrganizationClasses(activeOrganization.id))
+      await refreshOrganizationClasses({ force: true })
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load classes",
       )
-    } finally {
-      setIsLoading(false)
     }
   }
-
-  useEffect(() => {
-    void loadClasses()
-  }, [activeOrganization?.id])
 
   function openCreateDialog() {
     setEditingClass(null)
@@ -293,11 +289,11 @@ export function ClassesTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {errorMessage ? (
+          {displayedErrorMessage ? (
             <div className="p-4">
               <Alert variant="destructive">
                 <AlertTitle>Class action failed</AlertTitle>
-                <AlertDescription>{errorMessage}</AlertDescription>
+                <AlertDescription>{displayedErrorMessage}</AlertDescription>
               </Alert>
             </div>
           ) : null}

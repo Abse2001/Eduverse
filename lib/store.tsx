@@ -2,8 +2,10 @@
 
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from "react"
@@ -20,9 +22,40 @@ import {
   toAppUser,
   toOrganizations,
 } from "@/lib/supabase/app-user"
+import {
+  loadOrganizationClasses,
+  type OrganizationClass,
+} from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
 
 const FALLBACK_USER = USERS[0]
+
+type DataStatus = "idle" | "loading" | "ready" | "error"
+
+export type OrganizationUserRole =
+  | "org_owner"
+  | "org_admin"
+  | "teacher"
+  | "student"
+
+export type OrganizationMemberRow = {
+  id: string
+  user_id: string
+  role: OrganizationUserRole
+  status: "active" | "invited" | "suspended"
+  profile?: {
+    display_name: string
+    email: string
+  }
+}
+
+export type OrganizationInviteRow = {
+  id: string
+  email: string
+  role: Exclude<OrganizationUserRole, "org_owner">
+  status: "active" | "invited" | "suspended"
+  token: string
+}
 
 interface AppContextValue {
   currentUser: User
@@ -35,6 +68,20 @@ interface AppContextValue {
   isAuthenticated: boolean
   organizations: AppOrganization[]
   activeOrganization: AppOrganization | null
+  organizationClasses: OrganizationClass[]
+  organizationClassesStatus: DataStatus
+  organizationClassesError: string | null
+  organizationMembers: OrganizationMemberRow[]
+  organizationInvites: OrganizationInviteRow[]
+  organizationUsersStatus: DataStatus
+  organizationUsersError: string | null
+  refreshOrganizationClasses: (options?: {
+    force?: boolean
+  }) => Promise<OrganizationClass[]>
+  refreshOrganizationUsers: (options?: { force?: boolean }) => Promise<{
+    members: OrganizationMemberRow[]
+    invites: OrganizationInviteRow[]
+  }>
   refreshCurrentUser: () => Promise<void>
   setDefaultOrganization: (organizationId: string) => Promise<void>
   signOut: () => Promise<void>
@@ -48,6 +95,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<SupabaseAuthUser | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [organizations, setOrganizations] = useState<AppOrganization[]>([])
+  const [organizationClasses, setOrganizationClasses] = useState<
+    OrganizationClass[]
+  >([])
+  const [organizationClassesStatus, setOrganizationClassesStatus] =
+    useState<DataStatus>("idle")
+  const [organizationClassesError, setOrganizationClassesError] = useState<
+    string | null
+  >(null)
+  const [organizationMembers, setOrganizationMembers] = useState<
+    OrganizationMemberRow[]
+  >([])
+  const [organizationInvites, setOrganizationInvites] = useState<
+    OrganizationInviteRow[]
+  >([])
+  const [organizationUsersStatus, setOrganizationUsersStatus] =
+    useState<DataStatus>("idle")
+  const [organizationUsersError, setOrganizationUsersError] = useState<
+    string | null
+  >(null)
+  const classesRequestRef = useRef<Promise<OrganizationClass[]> | null>(null)
+  const usersRequestRef = useRef<Promise<{
+    members: OrganizationMemberRow[]
+    invites: OrganizationInviteRow[]
+  }> | null>(null)
+  const activeOrganizationIdRef = useRef<string | null>(null)
 
   function toggleDarkMode() {
     setIsDarkMode((prev) => {
@@ -116,7 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const memberships =
-      ((membershipData ?? []) as Array<{
+      ((membershipData || []) as Array<{
         organization_id: string
         role: "org_owner" | "org_admin" | "teacher" | "student"
         status: "active" | "invited" | "suspended"
@@ -232,10 +304,148 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAuthUser(null)
     setCurrentUser(FALLBACK_USER)
     setOrganizations([])
+    setOrganizationClasses([])
+    setOrganizationMembers([])
+    setOrganizationInvites([])
+    setOrganizationClassesStatus("idle")
+    setOrganizationUsersStatus("idle")
   }
 
   const activeOrganization =
     organizations.find((organization) => organization.isDefault) ?? null
+
+  const refreshOrganizationClasses = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      const organizationId = activeOrganization?.id
+
+      if (!organizationId) {
+        setOrganizationClasses([])
+        setOrganizationClassesStatus("idle")
+        setOrganizationClassesError(null)
+        return []
+      }
+
+      if (!force && organizationClassesStatus === "ready") {
+        return organizationClasses
+      }
+
+      if (!force && classesRequestRef.current) {
+        return classesRequestRef.current
+      }
+
+      setOrganizationClassesStatus("loading")
+      setOrganizationClassesError(null)
+
+      const request = loadOrganizationClasses(organizationId)
+        .then((classes) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setOrganizationClasses(classes)
+            setOrganizationClassesStatus("ready")
+          }
+
+          return classes
+        })
+        .catch((error) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setOrganizationClasses([])
+            setOrganizationClassesStatus("error")
+            setOrganizationClassesError(
+              error instanceof Error ? error.message : "Could not load classes",
+            )
+          }
+
+          throw error
+        })
+        .finally(() => {
+          if (classesRequestRef.current === request) {
+            classesRequestRef.current = null
+          }
+        })
+
+      classesRequestRef.current = request
+      return request
+    },
+    [activeOrganization?.id, organizationClasses, organizationClassesStatus],
+  )
+
+  const refreshOrganizationUsers = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      const organizationId = activeOrganization?.id
+
+      if (!organizationId) {
+        setOrganizationMembers([])
+        setOrganizationInvites([])
+        setOrganizationUsersStatus("idle")
+        setOrganizationUsersError(null)
+        return { members: [], invites: [] }
+      }
+
+      if (!force && organizationUsersStatus === "ready") {
+        return { members: organizationMembers, invites: organizationInvites }
+      }
+
+      if (!force && usersRequestRef.current) {
+        return usersRequestRef.current
+      }
+
+      setOrganizationUsersStatus("loading")
+      setOrganizationUsersError(null)
+
+      const request = loadOrganizationUsers(organizationId)
+        .then((users) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setOrganizationMembers(users.members)
+            setOrganizationInvites(users.invites)
+            setOrganizationUsersStatus("ready")
+          }
+
+          return users
+        })
+        .catch((error) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setOrganizationMembers([])
+            setOrganizationInvites([])
+            setOrganizationUsersStatus("error")
+            setOrganizationUsersError(
+              error instanceof Error ? error.message : "Could not load users",
+            )
+          }
+
+          throw error
+        })
+        .finally(() => {
+          if (usersRequestRef.current === request) {
+            usersRequestRef.current = null
+          }
+        })
+
+      usersRequestRef.current = request
+      return request
+    },
+    [
+      activeOrganization?.id,
+      organizationInvites,
+      organizationMembers,
+      organizationUsersStatus,
+    ],
+  )
+
+  useEffect(() => {
+    activeOrganizationIdRef.current = activeOrganization?.id ?? null
+    classesRequestRef.current = null
+    usersRequestRef.current = null
+    setOrganizationClasses([])
+    setOrganizationMembers([])
+    setOrganizationInvites([])
+    setOrganizationClassesError(null)
+    setOrganizationUsersError(null)
+    setOrganizationClassesStatus("idle")
+    setOrganizationUsersStatus("idle")
+
+    if (activeOrganization) {
+      void refreshOrganizationClasses({ force: true })
+    }
+  }, [activeOrganization?.id])
 
   return (
     <AppContext.Provider
@@ -250,6 +460,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!authUser,
         organizations,
         activeOrganization,
+        organizationClasses,
+        organizationClassesStatus,
+        organizationClassesError,
+        organizationMembers,
+        organizationInvites,
+        organizationUsersStatus,
+        organizationUsersError,
+        refreshOrganizationClasses,
+        refreshOrganizationUsers,
         refreshCurrentUser,
         setDefaultOrganization,
         signOut,
@@ -264,4 +483,65 @@ export function useApp() {
   const ctx = useContext(AppContext)
   if (!ctx) throw new Error("useApp must be used within AppProvider")
   return ctx
+}
+
+async function loadOrganizationUsers(organizationId: string) {
+  const supabase = createClient()
+  const { data: membershipData, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("id, user_id, role, status")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: true })
+
+  if (membershipError) throw membershipError
+
+  const typedMemberships = (membershipData ?? []) as Array<{
+    id: string
+    user_id: string
+    role: OrganizationUserRole
+    status: "active" | "invited" | "suspended"
+  }>
+  const userIds = typedMemberships.map((membership) => membership.user_id)
+
+  const { data: profileData, error: profileError } =
+    userIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, display_name, email")
+          .in("id", userIds)
+      : { data: [], error: null }
+
+  if (profileError) throw profileError
+
+  const profileMap = new Map(
+    (
+      (profileData ?? []) as Array<{
+        id: string
+        display_name: string
+        email: string
+      }>
+    ).map((profile) => [
+      profile.id,
+      { display_name: profile.display_name, email: profile.email },
+    ]),
+  )
+
+  const members = typedMemberships.map((membership) => ({
+    ...membership,
+    profile: profileMap.get(membership.user_id),
+  }))
+
+  const { data: inviteData, error: inviteError } = await supabase
+    .from("organization_invites")
+    .select("id, email, role, status, token")
+    .eq("organization_id", organizationId)
+    .in("status", ["invited", "suspended"])
+    .order("created_at", { ascending: false })
+
+  if (inviteError) throw inviteError
+
+  return {
+    members,
+    invites: (inviteData ?? []) as OrganizationInviteRow[],
+  }
 }

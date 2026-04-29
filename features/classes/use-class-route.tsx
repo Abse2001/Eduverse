@@ -2,21 +2,46 @@
 
 import { useEffect, useState } from "react"
 import { getClassById, type Class } from "@/lib/mock-data"
+import { useApp } from "@/lib/store"
 import { loadClass, toLegacyClass } from "@/lib/supabase/classes"
 
 export function useClassRoute(classId: string) {
-  const [cls, setCls] = useState<Class | null>(
-    () => getClassById(classId) ?? null,
+  const { organizationClasses, organizationClassesStatus } = useApp()
+  const cachedClass = organizationClasses.find(
+    (classItem) => classItem.id === classId,
   )
-  const [isLoading, setIsLoading] = useState(() => !getClassById(classId))
+  const [cls, setCls] = useState<Class | null>(
+    () =>
+      getClassById(classId) ??
+      (cachedClass ? toLegacyClass(cachedClass) : null),
+  )
+  const [isLoading, setIsLoading] = useState(
+    () => !getClassById(classId) && !cachedClass,
+  )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
     const mockClass = getClassById(classId)
+    const cachedClass = organizationClasses.find(
+      (classItem) => classItem.id === classId,
+    )
 
     if (mockClass) {
       setCls(mockClass)
       setIsLoading(false)
+      setErrorMessage(null)
+      return
+    }
+
+    if (cachedClass) {
+      setCls(toLegacyClass(cachedClass))
+      setIsLoading(false)
+      setErrorMessage(null)
+      return
+    }
+
+    if (organizationClassesStatus === "loading") {
+      setIsLoading(true)
       setErrorMessage(null)
       return
     }
@@ -45,7 +70,7 @@ export function useClassRoute(classId: string) {
     return () => {
       cancelled = true
     }
-  }, [classId])
+  }, [classId, organizationClasses, organizationClassesStatus])
 
   return { cls, isLoading, errorMessage }
 }
