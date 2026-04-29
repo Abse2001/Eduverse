@@ -22,11 +22,12 @@ export default function AuthPage() {
   const [isPending, startTransition] = useTransition()
 
   function getNextPath() {
-    if (typeof window === "undefined") return "/organizations"
+    if (typeof window === "undefined") return "/dashboard"
 
     const next = new URLSearchParams(window.location.search).get("next")
-    if (!next?.startsWith("/")) return "/organizations"
-    if (next.startsWith("//")) return "/organizations"
+    if (!next?.startsWith("/")) return "/dashboard"
+    if (next.startsWith("//")) return "/dashboard"
+    if (next === "/organizations") return "/dashboard"
 
     return next
   }
@@ -102,7 +103,7 @@ export default function AuthPage() {
 
       setFeedback(
         data.session
-          ? "Account created. Opening your organization hub..."
+          ? "Account created. Opening your dashboard..."
           : "Account created. Check your email if confirmation is enabled.",
       )
 
@@ -143,19 +144,19 @@ export default function AuthPage() {
               Learning workspace
             </p>
             <h1 className="text-5xl font-black leading-[0.95] tracking-tight text-white sm:text-7xl">
-              Start with your organizations.
+              Start with your workspace.
             </h1>
             <p className="max-w-xl text-lg leading-8 text-slate-300">
-              Sign in first, then choose which organization to enter. Your role
-              changes per organization, so owners, admins, teachers, and
-              students each get the right workspace.
+              Sign in first, then choose or create an organization from your
+              workspace. Owners, admins, teachers, and students each get the
+              right view.
             </p>
           </div>
 
           <div className="grid max-w-2xl gap-3 sm:grid-cols-3">
             {[
               ["Auth", "Supabase email and password."],
-              ["Org hub", "Create or enter an organization."],
+              ["Organizations", "Create or switch from the top bar."],
               ["Workspace", "Dashboard opens after org selection."],
             ].map(([title, description]) => (
               <div
@@ -204,7 +205,7 @@ export default function AuthPage() {
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {mode === "sign-in"
-                  ? "Enter your credentials to open the organization hub."
+                  ? "Enter your credentials to open your workspace."
                   : "Create an auth user. Your profile row is created by the database trigger."}
               </p>
             </div>
