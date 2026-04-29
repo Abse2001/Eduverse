@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/lib/store"
+import { getClassesForUser } from "@/lib/education/classes"
 import {
   Tooltip,
   TooltipContent,
@@ -64,14 +65,9 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
 
-  const userClasses =
-    activeOrganization && isAdmin
-      ? organizationClasses
-      : organizationClasses.filter((classItem) =>
-          classItem.memberships.some(
-            (membership) => membership.user_id === currentUser.id,
-          ),
-        )
+  const userClasses = activeOrganization
+    ? getClassesForUser(organizationClasses, currentUser)
+    : []
 
   const mainNavItems = isAdmin
     ? NAV_ITEMS_ADMIN

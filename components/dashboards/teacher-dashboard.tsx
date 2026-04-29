@@ -14,19 +14,21 @@ import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  getAssignmentsByClass,
-  getClassesByTeacher,
-  getStudentsInClass,
-} from "@/lib/mock-data"
+import { getAssignmentsByClass } from "@/lib/mock-data"
+import { getClassesForUser } from "@/lib/education/classes"
 import { getAssignmentProgress } from "@/lib/education/selectors"
 import { useApp } from "@/lib/store"
+import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function TeacherDashboard() {
-  const { currentUser } = useApp()
-  const myClasses = getClassesByTeacher(currentUser.id)
+  const { currentUser, organizationClasses } = useApp()
+  const classRows = getClassesForUser(organizationClasses, currentUser)
+  const classRowById = new Map(
+    classRows.map((classItem) => [classItem.id, classItem]),
+  )
+  const myClasses = classRows.map(toLegacyClass)
   const totalStudents = new Set(myClasses.flatMap((cls) => cls.studentIds)).size
   const totalAssignments = myClasses.reduce(
     (sum, cls) => sum + getAssignmentsByClass(cls.id).length,
@@ -85,7 +87,7 @@ export function TeacherDashboard() {
           <h2 className="font-semibold text-foreground">Your Classes</h2>
 
           {myClasses.map((cls) => {
-            const students = getStudentsInClass(cls.id)
+            const students = classRowById.get(cls.id)?.students ?? []
             const assignments = getAssignmentsByClass(cls.id)
             const submittedAssignments = assignments.filter(
               (assignment) => assignment.status === "submitted",
@@ -140,7 +142,7 @@ export function TeacherDashboard() {
                               className="w-6 h-6 ring-2 ring-card"
                             >
                               <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-                                {student.avatar}
+                                {getInitials(student.display_name)}
                               </AvatarFallback>
                             </Avatar>
                           ))}
@@ -255,4 +257,12 @@ export function TeacherDashboard() {
       </div>
     </div>
   )
+}
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .slice(0, 2)
+    .join("")
 }
