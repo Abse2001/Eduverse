@@ -79,5 +79,6 @@ function createClass(
     memberships,
     teacher: null,
     students: [],
+    featureSettings: [],
   }
 }

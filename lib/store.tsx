@@ -27,6 +27,12 @@ import {
   type OrganizationClass,
 } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
+import {
+  loadFeatureDefinitions,
+  loadOrganizationFeatureSettings,
+  type FeatureDefinition,
+  type FeatureSetting,
+} from "@/lib/supabase/features"
 
 const FALLBACK_USER = USERS[0]
 
@@ -68,6 +74,9 @@ interface AppContextValue {
   isAuthenticated: boolean
   organizations: AppOrganization[]
   activeOrganization: AppOrganization | null
+  featureDefinitions: FeatureDefinition[]
+  featureDefinitionsStatus: DataStatus
+  featureDefinitionsError: string | null
   organizationClasses: OrganizationClass[]
   organizationClassesStatus: DataStatus
   organizationClassesError: string | null
@@ -78,6 +87,9 @@ interface AppContextValue {
   refreshOrganizationClasses: (options?: {
     force?: boolean
   }) => Promise<OrganizationClass[]>
+  refreshFeatureDefinitions: (options?: {
+    force?: boolean
+  }) => Promise<FeatureDefinition[]>
   refreshOrganizationUsers: (options?: { force?: boolean }) => Promise<{
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
@@ -95,6 +107,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<SupabaseAuthUser | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [organizations, setOrganizations] = useState<AppOrganization[]>([])
+  const [featureDefinitions, setFeatureDefinitions] = useState<
+    FeatureDefinition[]
+  >([])
+  const [featureDefinitionsStatus, setFeatureDefinitionsStatus] =
+    useState<DataStatus>("idle")
+  const [featureDefinitionsError, setFeatureDefinitionsError] = useState<
+    string | null
+  >(null)
   const [organizationClasses, setOrganizationClasses] = useState<
     OrganizationClass[]
   >([])
@@ -115,6 +135,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     string | null
   >(null)
   const classesRequestRef = useRef<Promise<OrganizationClass[]> | null>(null)
+  const featureDefinitionsRequestRef = useRef<
+    Promise<FeatureDefinition[]> | null
+  >(null)
   const usersRequestRef = useRef<Promise<{
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
@@ -200,12 +223,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     let membershipsWithOrganizations: OrganizationMembershipRecord[] =
       memberships
+    let featureSettingsByOrganization = new Map<string, FeatureSetting[]>()
 
     if (organizationIds.length > 0) {
-      const { data: organizationData } = await supabase
-        .from("organizations")
-        .select("id, slug, name")
-        .in("id", organizationIds)
+      const [organizationResult, organizationFeatureSettings] =
+        await Promise.all([
+          supabase
+            .from("organizations")
+            .select("id, slug, name")
+            .in("id", organizationIds),
+          loadOrganizationFeatureSettings(organizationIds),
+        ])
+
+      const { data: organizationData } = organizationResult
+      featureSettingsByOrganization = organizationFeatureSettings
 
       const organizationMap = new Map(
         (
@@ -226,6 +257,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const nextOrganizations = toOrganizations(
       profile,
       membershipsWithOrganizations,
+      featureSettingsByOrganization,
     )
     const nextActiveOrganization =
       nextOrganizations.find((organization) => organization.isDefault) ?? null
@@ -304,15 +336,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAuthUser(null)
     setCurrentUser(FALLBACK_USER)
     setOrganizations([])
+    setFeatureDefinitions([])
     setOrganizationClasses([])
     setOrganizationMembers([])
     setOrganizationInvites([])
     setOrganizationClassesStatus("idle")
+    setFeatureDefinitionsStatus("idle")
     setOrganizationUsersStatus("idle")
   }
 
   const activeOrganization =
     organizations.find((organization) => organization.isDefault) ?? null
+
+  const refreshFeatureDefinitions = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      if (!force && featureDefinitionsStatus === "ready") {
+        return featureDefinitions
+      }
+
+      if (!force && featureDefinitionsRequestRef.current) {
+        return featureDefinitionsRequestRef.current
+      }
+
+      setFeatureDefinitionsStatus("loading")
+      setFeatureDefinitionsError(null)
+
+      const request = loadFeatureDefinitions()
+        .then((definitions) => {
+          setFeatureDefinitions(definitions)
+          setFeatureDefinitionsStatus("ready")
+          return definitions
+        })
+        .catch((error) => {
+          setFeatureDefinitions([])
+          setFeatureDefinitionsStatus("error")
+          setFeatureDefinitionsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load feature definitions",
+          )
+          throw error
+        })
+        .finally(() => {
+          if (featureDefinitionsRequestRef.current === request) {
+            featureDefinitionsRequestRef.current = null
+          }
+        })
+
+      featureDefinitionsRequestRef.current = request
+      return request
+    },
+    [featureDefinitions, featureDefinitionsStatus],
+  )
 
   const refreshOrganizationClasses = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
@@ -443,6 +518,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrganizationUsersStatus("idle")
 
     if (activeOrganization) {
+      void refreshFeatureDefinitions()
       void refreshOrganizationClasses({ force: true })
     }
   }, [activeOrganization?.id])
@@ -460,6 +536,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!authUser,
         organizations,
         activeOrganization,
+        featureDefinitions,
+        featureDefinitionsStatus,
+        featureDefinitionsError,
         organizationClasses,
         organizationClassesStatus,
         organizationClassesError,
@@ -468,6 +547,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         organizationUsersStatus,
         organizationUsersError,
         refreshOrganizationClasses,
+        refreshFeatureDefinitions,
         refreshOrganizationUsers,
         refreshCurrentUser,
         setDefaultOrganization,
