@@ -248,7 +248,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }))
     let featureSettingsByOrganization = new Map<string, FeatureSetting[]>()
     let extensionsByOrganization = new Map<string, OrganizationExtension[]>()
-    let rolesByMembership = new Map<string, OrganizationMembershipRoleRecord[]>()
+    let rolesByMembership = new Map<
+      string,
+      OrganizationMembershipRoleRecord[]
+    >()
 
     if (organizationIds.length > 0) {
       const [
@@ -780,7 +783,10 @@ function groupMembershipRoles(
     OrganizationMembershipRoleRecord & { organization_membership_id: string }
   >,
 ) {
-  const rolesByMembership = new Map<string, OrganizationMembershipRoleRecord[]>()
+  const rolesByMembership = new Map<
+    string,
+    OrganizationMembershipRoleRecord[]
+  >()
 
   for (const roleRow of roleRows) {
     const existingRoles =
