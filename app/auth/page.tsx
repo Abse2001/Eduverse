@@ -22,11 +22,12 @@ export default function AuthPage() {
   const [isPending, startTransition] = useTransition()
 
   function getNextPath() {
-    if (typeof window === "undefined") return "/organizations"
+    if (typeof window === "undefined") return "/dashboard"
 
     const next = new URLSearchParams(window.location.search).get("next")
-    if (!next?.startsWith("/")) return "/organizations"
-    if (next.startsWith("//")) return "/organizations"
+    if (!next?.startsWith("/")) return "/dashboard"
+    if (next.startsWith("//")) return "/dashboard"
+    if (next === "/organizations") return "/dashboard"
 
     return next
   }

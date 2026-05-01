@@ -90,7 +90,7 @@ export default function InvitePage() {
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             {successMessage ? (
               <Button asChild className="flex-1">
-                <Link href="/organizations">Go to organization hub</Link>
+                <Link href="/dashboard">Go to dashboard</Link>
               </Button>
             ) : (
               <Button
@@ -109,7 +109,7 @@ export default function InvitePage() {
               </Button>
             )}
             <Button asChild variant="outline" className="flex-1">
-              <Link href="/organizations">Cancel</Link>
+              <Link href="/dashboard">Cancel</Link>
             </Button>
           </div>
         </div>
