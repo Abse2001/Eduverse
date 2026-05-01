@@ -90,6 +90,7 @@ export async function POST(request: Request, context: RouteContext) {
       mimeType: validated.mimeType,
       sizeBytes: validated.sizeBytes,
       method: "PUT",
+      organizationId: classRow.organization_id,
       headers: {
         "Content-Type": validated.mimeType,
       },
