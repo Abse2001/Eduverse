@@ -18,6 +18,8 @@ import { User, USERS } from "@/lib/mock-data"
 import {
   type AppOrganization,
   type OrganizationMembershipRecord,
+  type OrganizationMembershipRoleRecord,
+  type OrganizationUserRole,
   type ProfileRecord,
   toAppUser,
   toOrganizations,
@@ -40,16 +42,13 @@ const FALLBACK_USER = USERS[0]
 
 type DataStatus = "idle" | "loading" | "ready" | "error"
 
-export type OrganizationUserRole =
-  | "org_owner"
-  | "org_admin"
-  | "teacher"
-  | "student"
+export type { OrganizationUserRole } from "@/lib/supabase/app-user"
 
 export type OrganizationMemberRow = {
   id: string
   user_id: string
   role: OrganizationUserRole
+  roles: OrganizationMembershipRoleRecord[]
   status: "active" | "invited" | "suspended"
   profile?: {
     display_name: string
@@ -76,6 +75,7 @@ interface AppContextValue {
   isAuthenticated: boolean
   organizations: AppOrganization[]
   activeOrganization: AppOrganization | null
+  activeOrganizationRole: OrganizationUserRole | null
   featureDefinitions: FeatureDefinition[]
   featureDefinitionsStatus: DataStatus
   featureDefinitionsError: string | null
@@ -106,6 +106,7 @@ interface AppContextValue {
   ) => void
   refreshCurrentUser: () => Promise<void>
   setDefaultOrganization: (organizationId: string) => Promise<void>
+  setActiveOrganizationRole: (role: OrganizationUserRole) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -210,7 +211,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("organization_memberships")
-      .select("organization_id, role, status")
+      .select("id, organization_id, role, status, selected_role_id")
       .eq("user_id", user.id)
 
     if (membershipError) {
@@ -222,25 +223,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const memberships =
       ((membershipData || []) as Array<{
+        id: string
         organization_id: string
-        role: "org_owner" | "org_admin" | "teacher" | "student"
+        role: OrganizationUserRole
         status: "active" | "invited" | "suspended"
+        selected_role_id: string | null
       }>) ?? []
 
     const organizationIds = memberships
       .filter((membership) => membership.status === "active")
       .map((membership) => membership.organization_id)
+    const membershipIds = memberships.map((membership) => membership.id)
 
     let membershipsWithOrganizations: OrganizationMembershipRecord[] =
-      memberships
+      memberships.map((membership) => ({
+        ...membership,
+        roles: [
+          {
+            id: membership.selected_role_id ?? "",
+            role: membership.role,
+            status: membership.status,
+          },
+        ],
+      }))
     let featureSettingsByOrganization = new Map<string, FeatureSetting[]>()
     let extensionsByOrganization = new Map<string, OrganizationExtension[]>()
+    let rolesByMembership = new Map<
+      string,
+      OrganizationMembershipRoleRecord[]
+    >()
 
     if (organizationIds.length > 0) {
       const [
         organizationResult,
         organizationFeatureSettings,
         organizationExtensions,
+        membershipRolesResult,
       ] = await Promise.all([
         supabase
           .from("organizations")
@@ -248,11 +266,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .in("id", organizationIds),
         loadOrganizationFeatureSettings(organizationIds),
         loadOrganizationExtensions(organizationIds),
+        membershipIds.length > 0
+          ? supabase
+              .from("organization_membership_roles")
+              .select("id, organization_membership_id, role, status")
+              .in("organization_membership_id", membershipIds)
+          : Promise.resolve({ data: [], error: null }),
       ])
 
       const { data: organizationData } = organizationResult
+      const { data: membershipRoleData, error: membershipRoleError } =
+        membershipRolesResult
+
       featureSettingsByOrganization = organizationFeatureSettings
       extensionsByOrganization = organizationExtensions
+      if (!membershipRoleError) {
+        rolesByMembership = groupMembershipRoles(
+          (membershipRoleData ?? []) as Array<
+            OrganizationMembershipRoleRecord & {
+              organization_membership_id: string
+            }
+          >,
+        )
+      }
 
       const organizationMap = new Map(
         (
@@ -266,6 +302,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       membershipsWithOrganizations = memberships.map((membership) => ({
         ...membership,
+        roles: rolesByMembership.get(membership.id) ?? [
+          {
+            id: membership.selected_role_id ?? "",
+            role: membership.role,
+            status: membership.status,
+          },
+        ],
         organizations: organizationMap.get(membership.organization_id) ?? null,
       }))
     }
@@ -347,6 +390,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshCurrentUser()
   }
 
+  async function setActiveOrganizationRole(role: OrganizationUserRole) {
+    if (!authUser || !activeOrganization) return
+
+    const supabase = createClient()
+    const { error } = await supabase.rpc("set_selected_organization_role", {
+      target_org_id: activeOrganization.id,
+      target_role: role,
+    })
+
+    if (error) throw error
+
+    await refreshCurrentUser()
+  }
+
   async function signOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -407,6 +464,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const activeOrganization =
     organizations.find((organization) => organization.isDefault) ?? null
+  const activeOrganizationRole = activeOrganization?.selectedRole ?? null
 
   const refreshFeatureDefinitions = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
@@ -596,6 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!authUser,
         organizations,
         activeOrganization,
+        activeOrganizationRole,
         featureDefinitions,
         featureDefinitionsStatus,
         featureDefinitionsError,
@@ -613,6 +672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         upsertOrganizationExtension,
         refreshCurrentUser,
         setDefaultOrganization,
+        setActiveOrganizationRole,
         signOut,
       }}
     >
@@ -643,7 +703,26 @@ async function loadOrganizationUsers(organizationId: string) {
     role: OrganizationUserRole
     status: "active" | "invited" | "suspended"
   }>
+  const membershipIds = typedMemberships.map((membership) => membership.id)
   const userIds = typedMemberships.map((membership) => membership.user_id)
+
+  const { data: membershipRoleData, error: membershipRoleError } =
+    membershipIds.length > 0
+      ? await supabase
+          .from("organization_membership_roles")
+          .select("id, organization_membership_id, role, status")
+          .in("organization_membership_id", membershipIds)
+      : { data: [], error: null }
+
+  if (membershipRoleError) throw membershipRoleError
+
+  const rolesByMembership = groupMembershipRoles(
+    (membershipRoleData ?? []) as Array<
+      OrganizationMembershipRoleRecord & {
+        organization_membership_id: string
+      }
+    >,
+  )
 
   const { data: profileData, error: profileError } =
     userIds.length > 0
@@ -668,10 +747,21 @@ async function loadOrganizationUsers(organizationId: string) {
     ]),
   )
 
-  const members = typedMemberships.map((membership) => ({
-    ...membership,
-    profile: profileMap.get(membership.user_id),
-  }))
+  const members = typedMemberships.map((membership) => {
+    const roles = rolesByMembership.get(membership.id) ?? [
+      {
+        id: "",
+        role: membership.role,
+        status: membership.status,
+      },
+    ]
+
+    return {
+      ...membership,
+      roles,
+      profile: profileMap.get(membership.user_id),
+    }
+  })
 
   const { data: inviteData, error: inviteError } = await supabase
     .from("organization_invites")
@@ -686,4 +776,29 @@ async function loadOrganizationUsers(organizationId: string) {
     members,
     invites: (inviteData ?? []) as OrganizationInviteRow[],
   }
+}
+
+function groupMembershipRoles(
+  roleRows: Array<
+    OrganizationMembershipRoleRecord & { organization_membership_id: string }
+  >,
+) {
+  const rolesByMembership = new Map<
+    string,
+    OrganizationMembershipRoleRecord[]
+  >()
+
+  for (const roleRow of roleRows) {
+    const existingRoles =
+      rolesByMembership.get(roleRow.organization_membership_id) ?? []
+
+    existingRoles.push({
+      id: roleRow.id,
+      role: roleRow.role,
+      status: roleRow.status,
+    })
+    rolesByMembership.set(roleRow.organization_membership_id, existingRoles)
+  }
+
+  return rolesByMembership
 }

@@ -36,6 +36,8 @@ import {
   type ClassProfile,
   type OrganizationClass,
 } from "@/lib/supabase/classes"
+import { hasClassAccessForRole } from "@/lib/education/classes"
+import type { User } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/client"
 import {
   getClassNavFeatures,
@@ -104,8 +106,14 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const cachedClass = organizationClasses.find(
     (classItem) => classItem.id === classId,
   )
+  const accessibleCachedClass =
+    cachedClass &&
+    activeOrganization &&
+    canOpenClass(cachedClass, activeOrganization.id, currentUser)
+      ? cachedClass
+      : null
   const [classItem, setClassItem] = useState<OrganizationClass | null>(
-    cachedClass ?? null,
+    accessibleCachedClass,
   )
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -149,10 +157,22 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     try {
       const classes = await refreshOrganizationClasses({ force })
       const nextClass = classes.find((classItem) => classItem.id === classId)
-      setClassItem(nextClass ?? null)
       if (!nextClass) {
+        setClassItem(null)
         setErrorMessage("This class does not exist or you cannot view it.")
+        return
       }
+
+      if (
+        !activeOrganization ||
+        !canOpenClass(nextClass, activeOrganization.id, currentUser)
+      ) {
+        setClassItem(null)
+        setErrorMessage("This class is not available for your selected role.")
+        return
+      }
+
+      setClassItem(nextClass)
     } catch (error) {
       setClassItem(null)
       setErrorMessage(
@@ -169,6 +189,16 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     )
 
     if (cachedClass) {
+      if (
+        !activeOrganization ||
+        !canOpenClass(cachedClass, activeOrganization.id, currentUser)
+      ) {
+        setClassItem(null)
+        setIsLoading(false)
+        setErrorMessage("This class is not available for your selected role.")
+        return
+      }
+
       setClassItem(cachedClass)
       setIsLoading(false)
       setErrorMessage(null)
@@ -193,6 +223,8 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     void refreshClass(false)
   }, [
     classId,
+    activeOrganization,
+    currentUser,
     organizationClasses,
     organizationClassesError,
     organizationClassesStatus,
@@ -598,5 +630,16 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function canOpenClass(
+  classItem: OrganizationClass,
+  activeOrganizationId: string,
+  currentUser: User,
+) {
+  return (
+    classItem.organization_id === activeOrganizationId &&
+    hasClassAccessForRole(classItem, currentUser)
   )
 }

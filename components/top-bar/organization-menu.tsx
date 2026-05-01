@@ -89,11 +89,16 @@ export function OrganizationMenu() {
                     <Badge
                       variant="secondary"
                       className={cn(
-                        ORGANIZATION_ROLE_BADGES[organization.role],
+                        ORGANIZATION_ROLE_BADGES[organization.selectedRole],
                       )}
                     >
-                      {organizationRoleLabel(organization.role)}
+                      {organizationRoleLabel(organization.selectedRole)}
                     </Badge>
+                    {organization.roles.length > 1 ? (
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        +{organization.roles.length - 1}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="truncate text-xs text-muted-foreground">
                     {organization.slug}

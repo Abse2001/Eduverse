@@ -3,6 +3,7 @@
 import { Bell, Moon, Search, Sun } from "lucide-react"
 import { AccountMenu } from "@/components/top-bar/account-menu"
 import { OrganizationMenu } from "@/components/top-bar/organization-menu"
+import { RoleMenu } from "@/components/top-bar/role-menu"
 import { useApp } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 
@@ -21,6 +22,7 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <RoleMenu />
         <OrganizationMenu />
 
         <Button variant="ghost" size="icon" className="relative">

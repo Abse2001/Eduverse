@@ -7,15 +7,39 @@ export function getClassesForUser(
 ): OrganizationClass[] {
   if (user.role === "admin") return classes
 
-  return classes.filter((classItem) => hasClassAccess(classItem, user))
+  return classes.filter((classItem) => hasClassAccessForRole(classItem, user))
 }
 
-function hasClassAccess(classItem: OrganizationClass, user: User) {
-  if (user.role === "teacher" && classItem.teacher_user_id === user.id) {
+export function hasClassAccessForRole(
+  classItem: OrganizationClass,
+  user: User,
+) {
+  if (user.role === "admin") return true
+
+  if (user.role === "teacher" && isClassTeacher(classItem, user.id)) {
     return true
   }
 
+  if (user.role === "student" && isClassStudent(classItem, user.id)) {
+    return true
+  }
+
+  return false
+}
+
+function isClassTeacher(classItem: OrganizationClass, userId: string) {
+  if (classItem.teacher_user_id === userId) return true
+
   return classItem.memberships.some(
-    (membership) => membership.user_id === user.id,
+    (membership) =>
+      membership.user_id === userId &&
+      (membership.role === "teacher" || membership.role === "ta"),
+  )
+}
+
+function isClassStudent(classItem: OrganizationClass, userId: string) {
+  return classItem.memberships.some(
+    (membership) =>
+      membership.user_id === userId && membership.role === "student",
   )
 }
