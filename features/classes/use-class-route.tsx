@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { hasClassAccessForRole } from "@/lib/education/classes"
 import { getClassById, type Class } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import {
@@ -16,20 +17,25 @@ import {
 import { Button } from "@/components/ui/button"
 
 export function useClassRoute(classId: string) {
-  const { organizationClasses, organizationClassesStatus } = useApp()
+  const { currentUser, organizationClasses, organizationClassesStatus } =
+    useApp()
   const cachedClass = organizationClasses.find(
     (classItem) => classItem.id === classId,
   )
+  const accessibleCachedClass =
+    cachedClass && hasClassAccessForRole(cachedClass, currentUser)
+      ? cachedClass
+      : null
   const [cls, setCls] = useState<Class | null>(
     () =>
       getClassById(classId) ??
-      (cachedClass ? toLegacyClass(cachedClass) : null),
+      (accessibleCachedClass ? toLegacyClass(accessibleCachedClass) : null),
   )
   const [classRow, setClassRow] = useState<OrganizationClass | null>(
-    cachedClass ?? null,
+    accessibleCachedClass,
   )
   const [isLoading, setIsLoading] = useState(
-    () => !getClassById(classId) && !cachedClass,
+    () => !getClassById(classId) && !accessibleCachedClass,
   )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -48,6 +54,14 @@ export function useClassRoute(classId: string) {
     }
 
     if (cachedClass) {
+      if (!hasClassAccessForRole(cachedClass, currentUser)) {
+        setCls(null)
+        setClassRow(null)
+        setIsLoading(false)
+        setErrorMessage("This class is not available for your selected role.")
+        return
+      }
+
       setCls(toLegacyClass(cachedClass))
       setClassRow(cachedClass)
       setIsLoading(false)
@@ -68,6 +82,13 @@ export function useClassRoute(classId: string) {
     loadClass(classId)
       .then((classRow) => {
         if (cancelled) return
+        if (!hasClassAccessForRole(classRow, currentUser)) {
+          setCls(null)
+          setClassRow(null)
+          setErrorMessage("This class is not available for your selected role.")
+          return
+        }
+
         setCls(toLegacyClass(classRow))
         setClassRow(classRow)
       })
@@ -87,7 +108,7 @@ export function useClassRoute(classId: string) {
     return () => {
       cancelled = true
     }
-  }, [classId, organizationClasses, organizationClassesStatus])
+  }, [classId, currentUser, organizationClasses, organizationClassesStatus])
 
   return { cls, classRow, isLoading, errorMessage }
 }

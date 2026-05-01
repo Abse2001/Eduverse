@@ -30,13 +30,37 @@ const classes: OrganizationClass[] = [
     },
   ]),
   createClass("class-3", [], "teacher-2"),
+  createClass("class-4", [
+    {
+      id: "membership-3",
+      class_id: "class-4",
+      user_id: "student-1",
+      role: "teacher",
+    },
+  ]),
+  createClass("class-5", [
+    {
+      id: "membership-4",
+      class_id: "class-5",
+      user_id: "teacher-2",
+      role: "student",
+    },
+  ]),
 ]
 
 describe("getClassesForUser", () => {
-  test("returns classes where the user has a membership", () => {
+  test("returns student classes when the selected role is student", () => {
     expect(
       getClassesForUser(classes, baseUser).map((classItem) => classItem.id),
     ).toEqual(["class-1"])
+  })
+
+  test("does not return teacher classes when the selected role is student", () => {
+    expect(
+      getClassesForUser(classes, { ...baseUser, id: "teacher-2" }).map(
+        (classItem) => classItem.id,
+      ),
+    ).toEqual(["class-5"])
   })
 
   test("returns all classes for admins", () => {
@@ -44,7 +68,7 @@ describe("getClassesForUser", () => {
       getClassesForUser(classes, { ...baseUser, role: "admin" }).map(
         (classItem) => classItem.id,
       ),
-    ).toEqual(["class-1", "class-2", "class-3"])
+    ).toEqual(["class-1", "class-2", "class-3", "class-4", "class-5"])
   })
 
   test("returns classes assigned through teacher_user_id", () => {
@@ -55,6 +79,15 @@ describe("getClassesForUser", () => {
         role: "teacher",
       }).map((classItem) => classItem.id),
     ).toEqual(["class-3"])
+  })
+
+  test("returns teacher memberships when the selected role is teacher", () => {
+    expect(
+      getClassesForUser(classes, {
+        ...baseUser,
+        role: "teacher",
+      }).map((classItem) => classItem.id),
+    ).toEqual(["class-4"])
   })
 })
 

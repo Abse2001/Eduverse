@@ -36,6 +36,7 @@ import {
   type ClassProfile,
   type OrganizationClass,
 } from "@/lib/supabase/classes"
+import { hasClassAccessForRole } from "@/lib/education/classes"
 import { createClient } from "@/lib/supabase/client"
 import {
   getClassNavFeatures,
@@ -104,8 +105,12 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const cachedClass = organizationClasses.find(
     (classItem) => classItem.id === classId,
   )
+  const accessibleCachedClass =
+    cachedClass && hasClassAccessForRole(cachedClass, currentUser)
+      ? cachedClass
+      : null
   const [classItem, setClassItem] = useState<OrganizationClass | null>(
-    cachedClass ?? null,
+    accessibleCachedClass,
   )
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -149,10 +154,19 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     try {
       const classes = await refreshOrganizationClasses({ force })
       const nextClass = classes.find((classItem) => classItem.id === classId)
-      setClassItem(nextClass ?? null)
       if (!nextClass) {
+        setClassItem(null)
         setErrorMessage("This class does not exist or you cannot view it.")
+        return
       }
+
+      if (!hasClassAccessForRole(nextClass, currentUser)) {
+        setClassItem(null)
+        setErrorMessage("This class is not available for your selected role.")
+        return
+      }
+
+      setClassItem(nextClass)
     } catch (error) {
       setClassItem(null)
       setErrorMessage(
@@ -169,6 +183,13 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     )
 
     if (cachedClass) {
+      if (!hasClassAccessForRole(cachedClass, currentUser)) {
+        setClassItem(null)
+        setIsLoading(false)
+        setErrorMessage("This class is not available for your selected role.")
+        return
+      }
+
       setClassItem(cachedClass)
       setIsLoading(false)
       setErrorMessage(null)
@@ -193,6 +214,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     void refreshClass(false)
   }, [
     classId,
+    currentUser,
     organizationClasses,
     organizationClassesError,
     organizationClassesStatus,
