@@ -1,11 +1,12 @@
 "use client"
 
-import { Activity, BookOpen, ShieldCheck, Users } from "lucide-react"
+import { Activity, BookOpen, Puzzle, ShieldCheck, Users } from "lucide-react"
 import { useApp } from "@/lib/store"
 import { ASSIGNMENTS, USERS } from "@/lib/mock-data"
 import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassesTab } from "@/features/admin/classes-tab"
+import { FeaturesTab } from "@/features/admin/features-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -64,6 +65,10 @@ export function AdminDashboard() {
             <Users className="w-3.5 h-3.5" />
             Users
           </TabsTrigger>
+          <TabsTrigger value="features" className="text-xs gap-1.5">
+            <Puzzle className="w-3.5 h-3.5" />
+            Features
+          </TabsTrigger>
           <TabsTrigger value="activity" className="text-xs gap-1.5">
             <Activity className="w-3.5 h-3.5" />
             Activity
@@ -76,6 +81,10 @@ export function AdminDashboard() {
 
         <TabsContent value="users" className="mt-4">
           <UsersTab />
+        </TabsContent>
+
+        <TabsContent value="features" className="mt-4">
+          <FeaturesTab />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-4">
