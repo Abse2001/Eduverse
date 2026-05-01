@@ -29,9 +29,11 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import {
   loadFeatureDefinitions,
+  loadOrganizationExtensions,
   loadOrganizationFeatureSettings,
   type FeatureDefinition,
   type FeatureSetting,
+  type OrganizationExtension,
 } from "@/lib/supabase/features"
 
 const FALLBACK_USER = USERS[0]
@@ -224,19 +226,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let membershipsWithOrganizations: OrganizationMembershipRecord[] =
       memberships
     let featureSettingsByOrganization = new Map<string, FeatureSetting[]>()
+    let extensionsByOrganization = new Map<string, OrganizationExtension[]>()
 
     if (organizationIds.length > 0) {
-      const [organizationResult, organizationFeatureSettings] =
+      const [
+        organizationResult,
+        organizationFeatureSettings,
+        organizationExtensions,
+      ] =
         await Promise.all([
           supabase
             .from("organizations")
             .select("id, slug, name")
             .in("id", organizationIds),
           loadOrganizationFeatureSettings(organizationIds),
+          loadOrganizationExtensions(organizationIds),
         ])
 
       const { data: organizationData } = organizationResult
       featureSettingsByOrganization = organizationFeatureSettings
+      extensionsByOrganization = organizationExtensions
 
       const organizationMap = new Map(
         (
@@ -258,6 +267,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       profile,
       membershipsWithOrganizations,
       featureSettingsByOrganization,
+      extensionsByOrganization,
     )
     const nextActiveOrganization =
       nextOrganizations.find((organization) => organization.isDefault) ?? null

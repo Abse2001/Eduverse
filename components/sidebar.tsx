@@ -70,7 +70,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   // Detect active class
   const activeClassMatch = pathname.match(/\/classes\/([^/]+)/)
   const activeClassId = activeClassMatch?.[1]
-  const activeSegmentMatch = pathname.match(/\/classes\/[^/]+\/([^/]+)/)
+  const activeSegmentMatch = pathname.match(/\/classes\/[^/]+\/(.+)/)
   const activeSegment = activeSegmentMatch?.[1]
 
   return (
@@ -158,6 +158,8 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                         organizationSettings:
                           activeOrganization.featureSettings,
                         classSettings: cls.featureSettings,
+                        organizationExtensions: activeOrganization.extensions,
+                        classExtensionSettings: cls.extensionSettings,
                       }),
                     )
                   : []
@@ -212,8 +214,10 @@ function ClassFeatureNavItem({
   activeSegment?: string
 }) {
   const isActive =
-    feature.routeSegment === activeSegment ||
-    feature.children.some((child) => child.routeSegment === activeSegment)
+    isFeatureRouteActive(feature.routeSegment, activeSegment) ||
+    feature.children.some((child) =>
+      isFeatureRouteActive(child.routeSegment, activeSegment),
+    )
 
   if (!feature.routeSegment) {
     return (
@@ -235,7 +239,7 @@ function ClassFeatureNavItem({
               key={child.key}
               classId={classId}
               feature={child}
-              active={activeSegment === child.routeSegment}
+              active={isFeatureRouteActive(child.routeSegment, activeSegment)}
             />
           ))}
         </div>
@@ -247,7 +251,7 @@ function ClassFeatureNavItem({
     <ClassFeatureNavLink
       classId={classId}
       feature={feature}
-      active={activeSegment === feature.routeSegment}
+      active={isFeatureRouteActive(feature.routeSegment, activeSegment)}
     />
   )
 }
@@ -259,7 +263,7 @@ function ClassFeatureNavLink({
 }: {
   classId: string
   feature: ResolvedClassFeature
-  active: boolean
+      active: boolean
 }) {
   if (!feature.routeSegment) return null
 
@@ -277,6 +281,15 @@ function ClassFeatureNavLink({
       {feature.label}
     </Link>
   )
+}
+
+function isFeatureRouteActive(
+  routeSegment: string | null,
+  activeSegment?: string,
+) {
+  if (!routeSegment || !activeSegment) return false
+
+  return activeSegment === routeSegment || activeSegment.startsWith(`${routeSegment}/`)
 }
 
 function getFirstClassNavRouteSegment(features: ResolvedClassFeature[]) {

@@ -1,5 +1,8 @@
 import type { User } from "@/lib/mock-data/types"
-import type { FeatureSetting } from "@/lib/supabase/features"
+import type {
+  FeatureSetting,
+  OrganizationExtension,
+} from "@/lib/supabase/features"
 
 export type OrganizationMembershipRecord = {
   organization_id: string
@@ -27,6 +30,7 @@ export type AppOrganization = {
   status: OrganizationMembershipRecord["status"]
   isDefault: boolean
   featureSettings: FeatureSetting[]
+  extensions: OrganizationExtension[]
 }
 
 function toInitials(name: string) {
@@ -45,6 +49,7 @@ export function toOrganizations(
   profile: ProfileRecord,
   memberships: OrganizationMembershipRecord[],
   featureSettingsByOrganization = new Map<string, FeatureSetting[]>(),
+  extensionsByOrganization = new Map<string, OrganizationExtension[]>(),
 ): AppOrganization[] {
   return memberships
     .filter(
@@ -60,6 +65,7 @@ export function toOrganizations(
       isDefault: profile.default_organization_id === membership.organization_id,
       featureSettings:
         featureSettingsByOrganization.get(membership.organization_id) ?? [],
+      extensions: extensionsByOrganization.get(membership.organization_id) ?? [],
     }))
 }
 

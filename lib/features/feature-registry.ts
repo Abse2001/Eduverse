@@ -13,6 +13,8 @@ import type { LucideIcon } from "lucide-react"
 import type {
   FeatureDefinition,
   FeatureSetting,
+  ClassExtensionSetting,
+  OrganizationExtension,
 } from "@/lib/supabase/features"
 
 export const FEATURE_KEYS = [
@@ -30,10 +32,10 @@ export const FEATURE_KEYS = [
 export type FeatureKey = (typeof FEATURE_KEYS)[number]
 
 export type FeatureRegistryItem = {
-  key: FeatureKey
+  key: string
   label: string
   icon: LucideIcon
-  parentKey: FeatureKey | null
+  parentKey: string | null
   routeSegment: string | null
   defaultEnabled: boolean
   sortOrder: number
@@ -47,6 +49,8 @@ export type ResolvedClassFeature = FeatureRegistryItem & {
   definition: FeatureDefinition | null
   organizationSetting: FeatureSetting | null
   classSetting: FeatureSetting | null
+  customExtension: OrganizationExtension | null
+  extensionSetting: ClassExtensionSetting | null
   children: ResolvedClassFeature[]
 }
 
@@ -151,17 +155,24 @@ export function resolveClassFeatures({
   definitions,
   organizationSettings,
   classSettings,
+  organizationExtensions = [],
+  classExtensionSettings = [],
 }: {
   definitions: FeatureDefinition[]
   organizationSettings: FeatureSetting[]
   classSettings: FeatureSetting[]
+  organizationExtensions?: OrganizationExtension[]
+  classExtensionSettings?: ClassExtensionSetting[]
 }) {
   const definitionsByKey = new Map(
     definitions.map((definition) => [definition.key, definition]),
   )
   const organizationSettingsByKey = toSettingsMap(organizationSettings)
   const classSettingsByKey = toSettingsMap(classSettings)
-  const resolvedByKey = new Map<FeatureKey, ResolvedClassFeature>()
+  const extensionSettingsById = new Map(
+    classExtensionSettings.map((setting) => [setting.extension_id, setting]),
+  )
+  const resolvedByKey = new Map<string, ResolvedClassFeature>()
 
   function resolveFeature(feature: FeatureRegistryItem): ResolvedClassFeature {
     const existing = resolvedByKey.get(feature.key)
@@ -193,6 +204,8 @@ export function resolveClassFeatures({
       definition,
       organizationSetting,
       classSetting,
+      customExtension: null,
+      extensionSetting: null,
       children: [],
     }
 
@@ -202,6 +215,38 @@ export function resolveClassFeatures({
 
   for (const feature of FEATURE_REGISTRY) {
     resolveFeature(feature)
+  }
+
+  const extensionsParent = resolvedByKey.get("extensions")
+
+  if (extensionsParent) {
+    for (const extension of organizationExtensions) {
+      const extensionSetting = extensionSettingsById.get(extension.id) ?? null
+      const orgEnabled = extensionsParent.orgEnabled && extension.enabled
+      const classEnabled =
+        extensionsParent.classEnabled && (extensionSetting?.enabled ?? true)
+      const enabled = orgEnabled && classEnabled
+
+      resolvedByKey.set(`custom-extension:${extension.id}`, {
+        key: `custom-extension:${extension.id}`,
+        label: extension.name,
+        icon: Puzzle,
+        parentKey: "extensions",
+        routeSegment: `extensions/${extension.id}`,
+        defaultEnabled: true,
+        sortOrder: extension.sort_order,
+        renderInClassNav: true,
+        enabled,
+        orgEnabled,
+        classEnabled,
+        definition: null,
+        organizationSetting: null,
+        classSetting: null,
+        customExtension: extension,
+        extensionSetting,
+        children: [],
+      })
+    }
   }
 
   const resolvedFeatures = Array.from(resolvedByKey.values()).sort(

@@ -80,5 +80,6 @@ function createClass(
     teacher: null,
     students: [],
     featureSettings: [],
+    extensionSettings: [],
   }
 }

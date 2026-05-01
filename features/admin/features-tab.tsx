@@ -1,12 +1,23 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
-import { LoaderCircle, Puzzle, RotateCcw } from "lucide-react"
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import { LoaderCircle, PlusCircle, Puzzle, RotateCcw } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
 import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
@@ -23,6 +34,10 @@ export function FeaturesTab() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [busyFeatureKey, setBusyFeatureKey] = useState<string | null>(null)
+  const [isExtensionDialogOpen, setIsExtensionDialogOpen] = useState(false)
+  const [extensionName, setExtensionName] = useState("")
+  const [extensionDescription, setExtensionDescription] = useState("")
+  const [extensionUrl, setExtensionUrl] = useState("")
   const [isPending, startTransition] = useTransition()
   const isLoading = featureDefinitionsStatus === "loading"
   const displayedErrorMessage = errorMessage ?? featureDefinitionsError
@@ -72,9 +87,66 @@ export function FeaturesTab() {
     })
   }
 
+  function createExtension(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activeOrganization) return
+
+    setErrorMessage(null)
+    setSuccessMessage(null)
+
+    startTransition(async () => {
+      const { error } = await createClient()
+        .from("organization_extensions")
+        .insert({
+          organization_id: activeOrganization.id,
+          name: extensionName,
+          slug: slugify(extensionName),
+          description: extensionDescription,
+          launch_url: extensionUrl || null,
+          enabled: true,
+        })
+
+      if (error) {
+        setErrorMessage(error.message)
+        return
+      }
+
+      setExtensionName("")
+      setExtensionDescription("")
+      setExtensionUrl("")
+      setIsExtensionDialogOpen(false)
+      await refreshCurrentUser()
+      setSuccessMessage("Custom extension added.")
+    })
+  }
+
+  function toggleExtension(extensionId: string, enabled: boolean) {
+    setErrorMessage(null)
+    setSuccessMessage(null)
+    setBusyFeatureKey(extensionId)
+
+    startTransition(async () => {
+      const { error } = await createClient()
+        .from("organization_extensions")
+        .update({ enabled })
+        .eq("id", extensionId)
+
+      if (error) {
+        setErrorMessage(error.message)
+        setBusyFeatureKey(null)
+        return
+      }
+
+      await refreshCurrentUser()
+      setSuccessMessage("Custom extension updated.")
+      setBusyFeatureKey(null)
+    })
+  }
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-sm">Organization Features</CardTitle>
           <Button
@@ -87,8 +159,8 @@ export function FeaturesTab() {
             Refresh
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
+        </CardHeader>
+        <CardContent className="p-0">
         {displayedErrorMessage ? (
           <div className="p-4">
             <Alert variant="destructive">
@@ -131,8 +203,131 @@ export function FeaturesTab() {
             ) : null}
           </div>
         )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-sm">Custom Extensions</CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setIsExtensionDialogOpen(true)}
+            >
+              <PlusCircle className="h-3.5 w-3.5" />
+              Add Extension
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="divide-y divide-border">
+            {(activeOrganization?.extensions ?? []).map((extension) => (
+              <div
+                key={extension.id}
+                className="flex items-start gap-4 px-5 py-4"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Puzzle className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">
+                    {extension.name}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {extension.description || extension.launch_url || "No description provided."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isPending && busyFeatureKey === extension.id ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : null}
+                  <Switch
+                    checked={extension.enabled}
+                    disabled={isPending}
+                    aria-label={`Toggle ${extension.name}`}
+                    onCheckedChange={(checked) =>
+                      toggleExtension(extension.id, checked)
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+
+            {(activeOrganization?.extensions ?? []).length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                No custom extensions yet.
+              </div>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={isExtensionDialogOpen}
+        onOpenChange={setIsExtensionDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add custom extension</DialogTitle>
+            <DialogDescription>
+              Custom extensions appear under Extensions in each class sidebar.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={createExtension}>
+            <div className="space-y-2">
+              <Label htmlFor="extension-name">Name</Label>
+              <Input
+                id="extension-name"
+                value={extensionName}
+                onChange={(event) => setExtensionName(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="extension-url">Launch URL</Label>
+              <Input
+                id="extension-url"
+                type="url"
+                value={extensionUrl}
+                onChange={(event) => setExtensionUrl(event.target.value)}
+                placeholder="https://example.com/tool"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="extension-description">Description</Label>
+              <Textarea
+                id="extension-description"
+                value={extensionDescription}
+                onChange={(event) =>
+                  setExtensionDescription(event.target.value)
+                }
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsExtensionDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  "Add extension"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 
@@ -258,4 +453,14 @@ function buildFeatureRows(
   }
 
   return topLevelRows
+}
+
+function slugify(value: string) {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "extension"
+  )
 }

@@ -35,6 +35,10 @@ import { Switch } from "@/components/ui/switch"
 import { type OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
 import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
+import type {
+  ClassExtensionSetting,
+  OrganizationExtension,
+} from "@/lib/supabase/features"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
@@ -52,6 +56,7 @@ type ClassFormState = {
 }
 
 type FeatureValueMap = Record<string, boolean>
+type ExtensionValueMap = Record<string, boolean>
 
 const EMPTY_CLASS_FORM: ClassFormState = {
   name: "",
@@ -83,6 +88,8 @@ export function ClassesTab() {
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
   const [classFeatureValues, setClassFeatureValues] =
     useState<FeatureValueMap>({})
+  const [classExtensionValues, setClassExtensionValues] =
+    useState<ExtensionValueMap>({})
   const [editingClass, setEditingClass] = useState<OrganizationClass | null>(
     null,
   )
@@ -110,6 +117,14 @@ export function ClassesTab() {
       featureDefinitions,
     ],
   )
+  const classExtensionRows = useMemo(
+    () =>
+      buildClassExtensionRows(
+        activeOrganization?.extensions ?? [],
+        classExtensionValues,
+      ),
+    [activeOrganization?.extensions, classExtensionValues],
+  )
 
   async function loadClasses() {
     if (!activeOrganization) return
@@ -135,6 +150,9 @@ export function ClassesTab() {
         [],
       ),
     )
+    setClassExtensionValues(
+      getInitialClassExtensionValues(activeOrganization?.extensions ?? [], []),
+    )
     setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
@@ -159,6 +177,12 @@ export function ClassesTab() {
         featureDefinitions,
         activeOrganization?.featureSettings ?? [],
         classItem.featureSettings,
+      ),
+    )
+    setClassExtensionValues(
+      getInitialClassExtensionValues(
+        activeOrganization?.extensions ?? [],
+        classItem.extensionSettings,
       ),
     )
     setErrorMessage(null)
@@ -236,12 +260,24 @@ export function ClassesTab() {
           setErrorMessage(featureError)
           return
         }
+
+        const extensionError = await saveClassExtensionSettings(
+          savedClassId,
+          activeOrganization.id,
+          classExtensionRows,
+        )
+
+        if (extensionError) {
+          setErrorMessage(extensionError)
+          return
+        }
       }
 
       setIsClassDialogOpen(false)
       setEditingClass(null)
       setClassForm(EMPTY_CLASS_FORM)
       setClassFeatureValues({})
+      setClassExtensionValues({})
       await loadClasses()
       setSuccessMessage(editingClass ? "Class updated." : "Class created.")
     })
@@ -642,6 +678,31 @@ export function ClassesTab() {
                 </div>
               </div>
             ) : null}
+            {classExtensionRows.length > 0 ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <Label>Custom extensions</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These organization extensions appear under Extensions in
+                    the class sidebar.
+                  </p>
+                </div>
+                <div className="divide-y divide-border">
+                  {classExtensionRows.map((extension) => (
+                    <ClassExtensionSettingRow
+                      key={extension.id}
+                      extension={extension}
+                      onToggle={(extensionId, enabled) =>
+                        setClassExtensionValues((values) => ({
+                          ...values,
+                          [extensionId]: enabled,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <DialogFooter>
               <Button
                 type="button"
@@ -792,6 +853,34 @@ function ClassFeatureSettingRow({
   )
 }
 
+type ClassExtensionRow = OrganizationExtension & {
+  checked: boolean
+}
+
+function ClassExtensionSettingRow({
+  extension,
+  onToggle,
+}: {
+  extension: ClassExtensionRow
+  onToggle: (extensionId: string, enabled: boolean) => void
+}) {
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{extension.name}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {extension.description || extension.launch_url || "No description provided."}
+        </p>
+      </div>
+      <Switch
+        checked={extension.checked}
+        aria-label={`Toggle ${extension.name}`}
+        onCheckedChange={(checked) => onToggle(extension.id, checked)}
+      />
+    </div>
+  )
+}
+
 async function saveClassFeatureSettings(
   classId: string,
   organizationId: string,
@@ -812,6 +901,28 @@ async function saveClassFeatureSettings(
   const { error } = await createClient()
     .from("class_feature_settings")
     .upsert(rows, { onConflict: "class_id,feature_key" })
+
+  return error?.message ?? null
+}
+
+async function saveClassExtensionSettings(
+  classId: string,
+  organizationId: string,
+  extensionRows: ClassExtensionRow[],
+) {
+  const rows = extensionRows.map((extension) => ({
+    organization_id: organizationId,
+    class_id: classId,
+    extension_id: extension.id,
+    enabled: extension.checked,
+    config: {},
+  }))
+
+  if (rows.length === 0) return null
+
+  const { error } = await createClient()
+    .from("class_extension_settings")
+    .upsert(rows, { onConflict: "class_id,extension_id" })
 
   return error?.message ?? null
 }
@@ -842,6 +953,36 @@ function getInitialClassFeatureValues(
   }
 
   return values
+}
+
+function getInitialClassExtensionValues(
+  extensions: OrganizationExtension[],
+  classSettings: ClassExtensionSetting[],
+) {
+  const classSettingsById = new Map(
+    classSettings.map((setting) => [setting.extension_id, setting.enabled]),
+  )
+  const values: ExtensionValueMap = {}
+
+  for (const extension of extensions) {
+    if (!extension.enabled) continue
+
+    values[extension.id] = classSettingsById.get(extension.id) ?? true
+  }
+
+  return values
+}
+
+function buildClassExtensionRows(
+  extensions: OrganizationExtension[],
+  classExtensionValues: ExtensionValueMap,
+) {
+  return extensions
+    .filter((extension) => extension.enabled)
+    .map((extension) => ({
+      ...extension,
+      checked: classExtensionValues[extension.id] ?? true,
+    }))
 }
 
 function buildClassFeatureRows(

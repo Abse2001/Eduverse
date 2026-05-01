@@ -21,6 +21,24 @@ export type FeatureSetting = {
   config: Record<string, unknown>
 }
 
+export type OrganizationExtension = {
+  id: string
+  organization_id: string
+  name: string
+  slug: string
+  description: string
+  launch_url: string | null
+  enabled: boolean
+  sort_order: number
+  config: Record<string, unknown>
+}
+
+export type ClassExtensionSetting = {
+  extension_id: string
+  enabled: boolean
+  config: Record<string, unknown>
+}
+
 export async function loadFeatureDefinitions() {
   const supabase = createClient()
   const { data, error } = await supabase
@@ -66,6 +84,34 @@ export async function loadOrganizationFeatureSettings(
   return settingsByOrganization
 }
 
+export async function loadOrganizationExtensions(organizationIds: string[]) {
+  if (organizationIds.length === 0) {
+    return new Map<string, OrganizationExtension[]>()
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("organization_extensions")
+    .select(
+      "id, organization_id, name, slug, description, launch_url, enabled, sort_order, config",
+    )
+    .in("organization_id", organizationIds)
+    .order("sort_order", { ascending: true })
+
+  if (error) throw error
+
+  const extensionsByOrganization = new Map<string, OrganizationExtension[]>()
+
+  for (const extension of (data ?? []) as OrganizationExtension[]) {
+    const existing =
+      extensionsByOrganization.get(extension.organization_id) ?? []
+    existing.push(extension)
+    extensionsByOrganization.set(extension.organization_id, existing)
+  }
+
+  return extensionsByOrganization
+}
+
 export async function loadClassFeatureSettings(classIds: string[]) {
   if (classIds.length === 0) return new Map<string, FeatureSetting[]>()
 
@@ -86,6 +132,36 @@ export async function loadClassFeatureSettings(classIds: string[]) {
     const existing = settingsByClass.get(row.class_id) ?? []
     existing.push({
       feature_key: row.feature_key,
+      enabled: row.enabled,
+      config: row.config,
+    })
+    settingsByClass.set(row.class_id, existing)
+  }
+
+  return settingsByClass
+}
+
+export async function loadClassExtensionSettings(classIds: string[]) {
+  if (classIds.length === 0) {
+    return new Map<string, ClassExtensionSetting[]>()
+  }
+
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("class_extension_settings")
+    .select("class_id, extension_id, enabled, config")
+    .in("class_id", classIds)
+
+  if (error) throw error
+
+  const settingsByClass = new Map<string, ClassExtensionSetting[]>()
+
+  for (const row of (data ?? []) as Array<
+    ClassExtensionSetting & { class_id: string }
+  >) {
+    const existing = settingsByClass.get(row.class_id) ?? []
+    existing.push({
+      extension_id: row.extension_id,
       enabled: row.enabled,
       config: row.config,
     })
