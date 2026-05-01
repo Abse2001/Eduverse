@@ -7,8 +7,9 @@ import {
   LeaderboardEntry,
 } from "@/lib/mock-data"
 import {
+  ClassFeatureDisabledFallback,
   ClassRouteFallback,
-  useClassRoute,
+  useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,12 +47,19 @@ export default function LeaderboardPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const { cls, isLoading, errorMessage } = useClassRoute(classId)
+  const { cls, isLoading, errorMessage, isFeatureDisabled } =
+    useClassFeatureRoute(classId, "leaderboard")
   const entries = getLeaderboardByClass(classId)
 
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (isFeatureDisabled) {
+    return (
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="Results" />
     )
   }
 

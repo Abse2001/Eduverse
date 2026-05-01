@@ -4,8 +4,9 @@ import { use } from "react"
 import Link from "next/link"
 import { getAssignmentsByClass, Assignment } from "@/lib/mock-data"
 import {
+  ClassFeatureDisabledFallback,
   ClassRouteFallback,
-  useClassRoute,
+  useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent } from "@/components/ui/card"
@@ -81,12 +82,22 @@ export default function AssignmentsPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const { cls, isLoading, errorMessage } = useClassRoute(classId)
+  const { cls, isLoading, errorMessage, isFeatureDisabled } =
+    useClassFeatureRoute(classId, "assignments")
   const assignments = getAssignmentsByClass(classId)
 
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (isFeatureDisabled) {
+    return (
+      <ClassFeatureDisabledFallback
+        classId={classId}
+        featureLabel="Assignments"
+      />
     )
   }
 

@@ -1,7 +1,11 @@
 "use client"
 
 import { use, useState, useRef } from "react"
-import { useClassRoute } from "@/features/classes/use-class-route"
+import {
+  ClassFeatureDisabledFallback,
+  ClassRouteFallback,
+  useClassFeatureRoute,
+} from "@/features/classes/use-class-route"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -183,7 +187,8 @@ export default function IdePage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const { cls, isLoading } = useClassRoute(classId)
+  const { cls, isLoading, errorMessage, isFeatureDisabled } =
+    useClassFeatureRoute(classId, "extensions.ide")
 
   const [lang, setLang] = useState<Language>(LANGUAGES[0])
   const [code, setCode] = useState(LANGUAGES[0].defaultCode)
@@ -234,6 +239,16 @@ export default function IdePage({
   const handleClear = () => {
     setCode(lang.defaultCode)
     setOutput("")
+  }
+
+  if (!cls) {
+    return (
+      <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (isFeatureDisabled) {
+    return <ClassFeatureDisabledFallback classId={classId} featureLabel="IDE" />
   }
 
   return (

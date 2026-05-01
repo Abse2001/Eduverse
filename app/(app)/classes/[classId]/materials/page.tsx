@@ -3,8 +3,9 @@
 import { use, useState } from "react"
 import { getMaterialsByClass, Material } from "@/lib/mock-data"
 import {
+  ClassFeatureDisabledFallback,
   ClassRouteFallback,
-  useClassRoute,
+  useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { Card, CardContent } from "@/components/ui/card"
@@ -69,7 +70,8 @@ export default function MaterialsPage({
 }) {
   const { classId } = use(params)
   const { currentUser } = useApp()
-  const { cls, isLoading, errorMessage } = useClassRoute(classId)
+  const { cls, isLoading, errorMessage, isFeatureDisabled } =
+    useClassFeatureRoute(classId, "materials")
   const allMaterials = getMaterialsByClass(classId)
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterType>("all")
@@ -77,6 +79,15 @@ export default function MaterialsPage({
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (isFeatureDisabled) {
+    return (
+      <ClassFeatureDisabledFallback
+        classId={classId}
+        featureLabel="Materials"
+      />
     )
   }
 
