@@ -20,7 +20,10 @@ export function AccountMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent">
+        <button
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent"
+          aria-label="Open account menu"
+        >
           <Avatar className="h-7 w-7">
             <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
               {currentUser.avatar}
