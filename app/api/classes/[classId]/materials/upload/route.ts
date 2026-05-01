@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import {
+  deleteMaterialObject,
   uploadMaterialObject,
   validateMaterialUpload,
 } from "@/lib/api/s3-materials"
@@ -125,7 +126,10 @@ export async function POST(request: Request, context: RouteContext) {
       )
       .single()
 
-    if (materialError) throw materialError
+    if (materialError) {
+      await deleteMaterialObject(uploadedObject).catch(() => null)
+      throw materialError
+    }
 
     return NextResponse.json({
       material: toMaterialResponse(materialData as MaterialRow),

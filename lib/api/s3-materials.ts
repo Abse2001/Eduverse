@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -7,7 +8,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 export type MaterialFileType = "image" | "pdf" | "video" | "slide"
 
-const UPLOAD_URL_EXPIRES_IN_SECONDS = 5 * 60
 const DOWNLOAD_URL_EXPIRES_IN_SECONDS = 5 * 60
 
 const MAX_UPLOAD_BYTES: Record<MaterialFileType, number> = {
@@ -78,36 +78,6 @@ export function validateMaterialUpload(input: {
   }
 }
 
-export async function createMaterialUploadUrl(input: {
-  organizationId: string
-  classId: string
-  fileName: string
-  mimeType: string
-}) {
-  const bucket = getS3Bucket()
-  const storageKey = buildStorageKey({
-    organizationId: input.organizationId,
-    classId: input.classId,
-    fileName: input.fileName,
-  })
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: storageKey,
-    ContentType: input.mimeType,
-  })
-
-  const uploadUrl = await getSignedUrl(getS3Client(), command, {
-    expiresIn: UPLOAD_URL_EXPIRES_IN_SECONDS,
-  })
-
-  return {
-    bucket,
-    storageKey,
-    uploadUrl,
-    expiresIn: UPLOAD_URL_EXPIRES_IN_SECONDS,
-  }
-}
-
 export async function uploadMaterialObject(input: {
   organizationId: string
   classId: string
@@ -134,6 +104,18 @@ export async function uploadMaterialObject(input: {
     bucket,
     storageKey,
   }
+}
+
+export async function deleteMaterialObject(input: {
+  bucket: string
+  storageKey: string
+}) {
+  const command = new DeleteObjectCommand({
+    Bucket: input.bucket,
+    Key: input.storageKey,
+  })
+
+  await getS3Client().send(command)
 }
 
 export async function createMaterialDownloadUrl(input: {

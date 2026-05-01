@@ -77,7 +77,12 @@ export function useClassMaterials({
         | { error?: string }
         | null
 
-      if (!response.ok || !payload || !("downloadUrl" in payload)) {
+      if (
+        !response.ok ||
+        !payload ||
+        !("downloadUrl" in payload) ||
+        typeof payload.downloadUrl !== "string"
+      ) {
         throw new Error(
           payload && "error" in payload && payload.error
             ? payload.error
@@ -91,57 +96,54 @@ export function useClassMaterials({
   )
 
   const refreshMaterials = useCallback(async () => {
-    const supabase = createClient()
     setIsLoading(true)
     setErrorMessage(null)
 
-    const { data, error } = await supabase
-      .from("class_materials")
-      .select(
-        "id, organization_id, class_id, uploaded_by_user_id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
+    try {
+      const nextMaterials = await loadMaterialsWithThumbnails(
+        classId,
+        getDownloadUrl,
       )
-      .eq("class_id", classId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
 
-    if (error) {
+      setMaterials(nextMaterials)
+      return nextMaterials
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load materials."
       setMaterials([])
-      setErrorMessage(error.message)
+      setErrorMessage(message)
+      return []
+    } finally {
       setIsLoading(false)
-      return
     }
-
-    const nextMaterials = ((data ?? []) as ClassMaterialRow[]).map(toMaterial)
-    const withThumbnails = await Promise.all(
-      nextMaterials.map(async (material) => {
-        if (material.type !== "image") return material
-
-        try {
-          return {
-            ...material,
-            thumbnailUrl: await getDownloadUrl(material.id, "inline"),
-          }
-        } catch {
-          return material
-        }
-      }),
-    )
-
-    setMaterials(withThumbnails)
-    setIsLoading(false)
   }, [classId, getDownloadUrl])
 
   useEffect(() => {
     let cancelled = false
+    setIsLoading(true)
+    setErrorMessage(null)
 
-    refreshMaterials().finally(() => {
-      if (cancelled) return
-    })
+    loadMaterialsWithThumbnails(classId, getDownloadUrl)
+      .then((nextMaterials) => {
+        if (cancelled) return
+        setMaterials(nextMaterials)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setMaterials([])
+        setErrorMessage(
+          error instanceof Error ? error.message : "Could not load materials.",
+        )
+      })
+      .finally(() => {
+        if (cancelled) return
+        setIsLoading(false)
+      })
 
     return () => {
       cancelled = true
     }
-  }, [refreshMaterials])
+  }, [classId, getDownloadUrl])
 
   async function uploadMaterial(input: {
     file: File
@@ -208,6 +210,43 @@ export function useClassMaterials({
     uploadMaterial,
     getDownloadUrl,
   }
+}
+
+async function loadMaterialsWithThumbnails(
+  classId: string,
+  getDownloadUrl: (
+    materialId: string,
+    disposition?: "inline" | "attachment",
+  ) => Promise<string>,
+) {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("class_materials")
+    .select(
+      "id, organization_id, class_id, uploaded_by_user_id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
+    )
+    .eq("class_id", classId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+
+  if (error) throw error
+
+  const nextMaterials = ((data ?? []) as ClassMaterialRow[]).map(toMaterial)
+
+  return Promise.all(
+    nextMaterials.map(async (material) => {
+      if (material.type !== "image") return material
+
+      try {
+        return {
+          ...material,
+          thumbnailUrl: await getDownloadUrl(material.id, "inline"),
+        }
+      } catch {
+        return material
+      }
+    }),
+  )
 }
 
 function toMaterial(row: ClassMaterialRow): ClassMaterial {
