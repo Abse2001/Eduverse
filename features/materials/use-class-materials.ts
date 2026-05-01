@@ -40,20 +40,6 @@ type ClassMaterialRow = {
   updated_at: string
 }
 
-type UploadUrlResponse = {
-  bucket: string
-  storageKey: string
-  uploadUrl: string
-  expiresIn: number
-  type: ClassMaterialType
-  fileName: string
-  mimeType: string
-  sizeBytes: number
-  method: "PUT"
-  headers: Record<string, string>
-  organizationId: string
-}
-
 type DownloadUrlResponse = {
   downloadUrl: string
   expiresIn: number
@@ -173,63 +159,34 @@ export function useClassMaterials({
     setErrorMessage(null)
 
     try {
-      const uploadUrlResponse = await fetch(
-        `/api/classes/${encodeURIComponent(classId)}/materials/upload-url`,
+      const formData = new FormData()
+      formData.set("file", input.file)
+      formData.set("title", title)
+      formData.set("description", input.description.trim())
+
+      const uploadResponse = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/materials/upload`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fileName: input.file.name,
-            mimeType: input.file.type,
-            sizeBytes: input.file.size,
-          }),
+          body: formData,
         },
       )
-      const uploadPayload = (await uploadUrlResponse
-        .json()
-        .catch(() => null)) as Partial<UploadUrlResponse> & { error?: string }
+      const uploadPayload = (await uploadResponse.json().catch(() => null)) as {
+        material?: ClassMaterial
+        error?: string
+      } | null
 
-      if (
-        !uploadUrlResponse.ok ||
-        !uploadPayload.uploadUrl ||
-        !uploadPayload.bucket ||
-        !uploadPayload.storageKey ||
-        !uploadPayload.type ||
-        !uploadPayload.organizationId
-      ) {
-        throw new Error(uploadPayload.error ?? "Could not prepare upload.")
+      if (!uploadResponse.ok || !uploadPayload?.material) {
+        throw new Error(uploadPayload?.error ?? "Could not upload material.")
       }
 
-      const s3Response = await fetch(uploadPayload.uploadUrl, {
-        method: uploadPayload.method ?? "PUT",
-        headers: uploadPayload.headers ?? {
-          "Content-Type": input.file.type,
-        },
-        body: input.file,
+      setMaterials((prev) => {
+        const next = [uploadPayload.material as ClassMaterial, ...prev]
+        return next.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
       })
-
-      if (!s3Response.ok) {
-        throw new Error("Upload to storage failed.")
-      }
-
-      const supabase = createClient()
-      const { error } = await supabase.from("class_materials").insert({
-        organization_id: uploadPayload.organizationId,
-        class_id: classId,
-        uploaded_by_user_id: uploaderUserId,
-        title,
-        description: input.description.trim(),
-        type: uploadPayload.type,
-        storage_bucket: uploadPayload.bucket,
-        storage_key: uploadPayload.storageKey,
-        original_filename: input.file.name,
-        mime_type: input.file.type,
-        size_bytes: input.file.size,
-      })
-
-      if (error) throw error
 
       await refreshMaterials()
     } catch (error) {

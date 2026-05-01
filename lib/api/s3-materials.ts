@@ -108,6 +108,34 @@ export async function createMaterialUploadUrl(input: {
   }
 }
 
+export async function uploadMaterialObject(input: {
+  organizationId: string
+  classId: string
+  fileName: string
+  mimeType: string
+  body: Uint8Array
+}) {
+  const bucket = getS3Bucket()
+  const storageKey = buildStorageKey({
+    organizationId: input.organizationId,
+    classId: input.classId,
+    fileName: input.fileName,
+  })
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: storageKey,
+    Body: input.body,
+    ContentType: input.mimeType,
+  })
+
+  await getS3Client().send(command)
+
+  return {
+    bucket,
+    storageKey,
+  }
+}
+
 export async function createMaterialDownloadUrl(input: {
   bucket: string
   storageKey: string
