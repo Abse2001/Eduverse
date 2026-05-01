@@ -1,29 +1,28 @@
 "use client"
 
+import { format } from "date-fns"
+import {
+  Download,
+  FileText,
+  ImageIcon,
+  Layers,
+  PlusCircle,
+  Search,
+  Video,
+} from "lucide-react"
 import { use, useState } from "react"
-import { getMaterialsByClass, Material } from "@/lib/mock-data"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   ClassFeatureDisabledFallback,
   ClassRouteFallback,
   useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
+import { getMaterialsByClass, type Material } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  FileText,
-  Video,
-  Link as LinkIcon,
-  Code2,
-  Download,
-  Search,
-  PlusCircle,
-  Layers,
-} from "lucide-react"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
 
 type FilterType = "all" | Material["type"]
 
@@ -43,17 +42,11 @@ const TYPE_CONFIG: Record<
     color: "text-blue-600 dark:text-blue-400",
     bg: "bg-blue-50 dark:bg-blue-900/30",
   },
-  link: {
-    label: "Link",
-    icon: LinkIcon,
+  image: {
+    label: "Image",
+    icon: ImageIcon,
     color: "text-emerald-600 dark:text-emerald-400",
     bg: "bg-emerald-50 dark:bg-emerald-900/30",
-  },
-  code: {
-    label: "Code",
-    icon: Code2,
-    color: "text-violet-600 dark:text-violet-400",
-    bg: "bg-violet-50 dark:bg-violet-900/30",
   },
   slide: {
     label: "Slides",
@@ -101,20 +94,18 @@ export default function MaterialsPage({
 
   const filterCounts: Record<FilterType, number> = {
     all: allMaterials.length,
+    image: allMaterials.filter((m) => m.type === "image").length,
     pdf: allMaterials.filter((m) => m.type === "pdf").length,
     video: allMaterials.filter((m) => m.type === "video").length,
-    link: allMaterials.filter((m) => m.type === "link").length,
-    code: allMaterials.filter((m) => m.type === "code").length,
     slide: allMaterials.filter((m) => m.type === "slide").length,
   }
 
   const filterLabels: { key: FilterType; label: string }[] = [
     { key: "all", label: "All" },
+    { key: "image", label: "Images" },
     { key: "slide", label: "Slides" },
     { key: "pdf", label: "PDFs" },
     { key: "video", label: "Videos" },
-    { key: "code", label: "Code" },
-    { key: "link", label: "Links" },
   ]
 
   return (

@@ -45,7 +45,7 @@ export interface Material {
   id: string
   classId: string
   title: string
-  type: "pdf" | "video" | "link" | "code" | "slide"
+  type: "image" | "pdf" | "video" | "slide"
   url: string
   uploadedBy: string
   uploadedAt: string
