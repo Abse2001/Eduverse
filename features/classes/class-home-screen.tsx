@@ -1,15 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { FormEvent, useEffect, useState, useTransition } from "react"
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
 import {
   BookOpen,
   Calendar,
-  ChartColumn,
-  FileText,
-  FlaskConical,
   LoaderCircle,
-  MessageSquare,
   PlusCircle,
   Trash2,
   Users,
@@ -41,42 +37,14 @@ import {
   type OrganizationClass,
 } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
+import {
+  getClassNavFeatures,
+  resolveClassFeatures,
+  type ResolvedClassFeature,
+} from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_HEADER_GRADIENT_MAP } from "@/lib/view-config"
-
-const NAV_SECTIONS = [
-  {
-    label: "Chat",
-    icon: MessageSquare,
-    segment: "chat",
-    desc: "Class discussions",
-  },
-  {
-    label: "Materials",
-    icon: FileText,
-    segment: "materials",
-    desc: "Lectures & resources",
-  },
-  {
-    label: "Assignments",
-    icon: FlaskConical,
-    segment: "assignments",
-    desc: "Tasks & exams",
-  },
-  {
-    label: "Session",
-    icon: Video,
-    segment: "session",
-    desc: "Live class & whiteboard",
-  },
-  {
-    label: "Results",
-    icon: ChartColumn,
-    segment: "leaderboard",
-    desc: "Scores and averages",
-  },
-]
 
 function initials(profile: ClassProfile | null) {
   const name = profile?.display_name || profile?.email || "User"
@@ -97,9 +65,37 @@ function inviteLinkFromToken(token: string) {
   return `${window.location.origin}/invite/${token}`
 }
 
+type ClassHomeNavFeature = ResolvedClassFeature & {
+  routeSegment: string
+}
+
+function flattenClassHomeNavFeatures(
+  features: ResolvedClassFeature[],
+): ClassHomeNavFeature[] {
+  return features.flatMap((feature) => {
+    const childFeatures = flattenClassHomeNavFeatures(feature.children)
+
+    if (feature.key !== "home" && feature.routeSegment) {
+      return [feature as ClassHomeNavFeature, ...childFeatures]
+    }
+
+    return childFeatures
+  })
+}
+
+function getClassHomeFeatureDescription(feature: ResolvedClassFeature) {
+  return (
+    feature.definition?.description ||
+    feature.customExtension?.description ||
+    "Open feature"
+  )
+}
+
 export function ClassHomeScreen({ classId }: { classId: string }) {
   const {
+    activeOrganization,
     currentUser,
+    featureDefinitions,
     organizationClasses,
     organizationClassesStatus,
     organizationClassesError,
@@ -127,6 +123,24 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         membership.user_id === currentUser.id &&
         (membership.role === "teacher" || membership.role === "ta"),
     )
+  const classNavFeatures = useMemo(() => {
+    if (!classItem || !activeOrganization) return []
+
+    return getClassNavFeatures(
+      resolveClassFeatures({
+        definitions: featureDefinitions,
+        organizationSettings: activeOrganization.featureSettings,
+        classSettings: classItem.featureSettings,
+        organizationExtensions: activeOrganization.extensions,
+        classExtensionSettings: classItem.extensionSettings,
+      }),
+    )
+  }, [activeOrganization, classItem, featureDefinitions])
+  const classHomeNavFeatures = flattenClassHomeNavFeatures(classNavFeatures)
+  const sessionsFeature = classHomeNavFeatures.find(
+    (feature) => feature.key === "sessions",
+  )
+  const SessionIcon = sessionsFeature?.icon ?? Video
 
   async function refreshClass(force = true) {
     setIsLoading(true)
@@ -349,16 +363,20 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   <PlusCircle className="w-4 h-4" />
                   Add member
                 </Button>
-                <Link href={`/classes/${classItem.id}/session`}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="gap-2 shrink-0 bg-white/20 hover:bg-white/30 text-white border-0"
+                {sessionsFeature?.routeSegment ? (
+                  <Link
+                    href={`/classes/${classItem.id}/${sessionsFeature.routeSegment}`}
                   >
-                    <Video className="w-4 h-4" />
-                    Start Session
-                  </Button>
-                </Link>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="gap-2 shrink-0 bg-white/20 hover:bg-white/30 text-white border-0"
+                    >
+                      <SessionIcon className="w-4 h-4" />
+                      Start Session
+                    </Button>
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -383,10 +401,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {NAV_SECTIONS.map((section) => (
+          {classHomeNavFeatures.map((section) => (
             <Link
-              key={section.segment}
-              href={`/classes/${classItem.id}/${section.segment}`}
+              key={section.key}
+              href={`/classes/${classItem.id}/${section.routeSegment}`}
             >
               <Card className="hover:shadow-md hover:border-primary/40 transition-all cursor-pointer group h-full">
                 <CardContent className="p-4 flex flex-col items-center text-center gap-2">
@@ -398,7 +416,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                       {section.label}
                     </p>
                     <p className="text-[11px] text-muted-foreground leading-tight">
-                      {section.desc}
+                      {getClassHomeFeatureDescription(section)}
                     </p>
                   </div>
                 </CardContent>
