@@ -1,13 +1,11 @@
 import { ASSIGNMENTS } from "./assignments"
 import { CLASSES } from "./classes"
 import { LEADERBOARD } from "./leaderboard"
-import { MATERIALS } from "./materials"
 import { MESSAGES } from "./messages"
 import type {
   Assignment,
   Class,
   LeaderboardEntry,
-  Material,
   Message,
   User,
 } from "./types"
@@ -38,10 +36,6 @@ export function getMessagesByClass(classId: string): Message[] {
   return MESSAGES.filter((message) => message.classId === classId).sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   )
-}
-
-export function getMaterialsByClass(classId: string): Material[] {
-  return MATERIALS.filter((material) => material.classId === classId)
 }
 
 export function getAssignmentsByClass(classId: string): Assignment[] {

@@ -41,18 +41,6 @@ export interface Message {
   pinned?: boolean
 }
 
-export interface Material {
-  id: string
-  classId: string
-  title: string
-  type: "image" | "pdf" | "video" | "slide"
-  url: string
-  uploadedBy: string
-  uploadedAt: string
-  size?: string
-  description?: string
-}
-
 export interface Assignment {
   id: string
   classId: string
