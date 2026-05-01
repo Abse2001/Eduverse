@@ -17,6 +17,13 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 const ROLE_BADGES: Record<string, string> = {
@@ -29,6 +36,24 @@ const ROLE_BADGES: Record<string, string> = {
   student:
     "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300 border-0",
 }
+
+const FEATURE_PRESETS = [
+  {
+    key: "primary_school",
+    name: "Primary School",
+    description: "Core classroom tools with live sessions and extensions off.",
+  },
+  {
+    key: "kindergarten",
+    name: "Kindergarten",
+    description: "Simple setup without exams, sessions, or extensions.",
+  },
+  {
+    key: "university",
+    name: "University",
+    description: "Full setup with sessions, exams, extensions, and IDE.",
+  },
+]
 
 function roleLabel(role: string) {
   if (role === "org_owner") return "Owner"
@@ -47,6 +72,7 @@ export function OrganizationDashboard() {
   } = useApp()
   const [orgName, setOrgName] = useState("")
   const [orgSlug, setOrgSlug] = useState("")
+  const [presetKey, setPresetKey] = useState("primary_school")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isCreatingOrg, startCreateOrg] = useTransition()
@@ -61,6 +87,7 @@ export function OrganizationDashboard() {
       const { error } = await supabase.rpc("create_organization", {
         org_name: orgName,
         requested_slug: orgSlug || null,
+        preset_key: presetKey,
       })
 
       if (error) {
@@ -70,6 +97,7 @@ export function OrganizationDashboard() {
 
       setOrgName("")
       setOrgSlug("")
+      setPresetKey("primary_school")
       await refreshCurrentUser()
       setSuccessMessage("Organization created. You are now its owner.")
     })
@@ -216,6 +244,27 @@ export function OrganizationDashboard() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Optional. Leave blank to auto-generate from the name.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-preset">Feature preset</Label>
+                <Select value={presetKey} onValueChange={setPresetKey}>
+                  <SelectTrigger id="org-preset" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FEATURE_PRESETS.map((preset) => (
+                      <SelectItem key={preset.key} value={preset.key}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {
+                    FEATURE_PRESETS.find((preset) => preset.key === presetKey)
+                      ?.description
+                  }
                 </p>
               </div>
               <Button className="w-full" type="submit" disabled={isCreatingOrg}>

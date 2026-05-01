@@ -3,8 +3,9 @@
 import { use } from "react"
 import { EXAMS } from "@/lib/mock-data"
 import {
+  ClassFeatureDisabledFallback,
   ClassRouteFallback,
-  useClassRoute,
+  useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
 import { ExamScreen, NoExamState } from "@/features/exam/exam-screen"
 
@@ -14,12 +15,19 @@ export default function ExamPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
-  const { cls, isLoading, errorMessage } = useClassRoute(classId)
+  const { cls, isLoading, errorMessage, isFeatureDisabled } =
+    useClassFeatureRoute(classId, "exam")
   const exam = EXAMS.find((e) => e.classId === classId)
 
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
+    )
+  }
+
+  if (isFeatureDisabled) {
+    return (
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="Exam" />
     )
   }
 

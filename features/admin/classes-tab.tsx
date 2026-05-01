@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useState, useTransition } from "react"
+import { FormEvent, useMemo, useState, useTransition } from "react"
 import {
   Edit3,
   LoaderCircle,
@@ -31,8 +31,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import { type OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
+import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
+import type {
+  ClassExtensionSetting,
+  OrganizationExtension,
+} from "@/lib/supabase/features"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
@@ -48,6 +54,9 @@ type ClassFormState = {
   room: string
   semester: string
 }
+
+type FeatureValueMap = Record<string, boolean>
+type ExtensionValueMap = Record<string, boolean>
 
 const EMPTY_CLASS_FORM: ClassFormState = {
   name: "",
@@ -70,12 +79,18 @@ function inviteLinkFromToken(token: string) {
 export function ClassesTab() {
   const {
     activeOrganization,
+    featureDefinitions,
     organizationClasses: classes,
     organizationClassesStatus,
     organizationClassesError,
     refreshOrganizationClasses,
   } = useApp()
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
+  const [classFeatureValues, setClassFeatureValues] = useState<FeatureValueMap>(
+    {},
+  )
+  const [classExtensionValues, setClassExtensionValues] =
+    useState<ExtensionValueMap>({})
   const [editingClass, setEditingClass] = useState<OrganizationClass | null>(
     null,
   )
@@ -90,6 +105,27 @@ export function ClassesTab() {
   const [isPending, startTransition] = useTransition()
   const isLoading = organizationClassesStatus === "loading"
   const displayedErrorMessage = errorMessage ?? organizationClassesError
+  const classFeatureRows = useMemo(
+    () =>
+      buildClassFeatureRows(
+        featureDefinitions,
+        activeOrganization?.featureSettings ?? [],
+        classFeatureValues,
+      ),
+    [
+      activeOrganization?.featureSettings,
+      classFeatureValues,
+      featureDefinitions,
+    ],
+  )
+  const classExtensionRows = useMemo(
+    () =>
+      buildClassExtensionRows(
+        activeOrganization?.extensions ?? [],
+        classExtensionValues,
+      ),
+    [activeOrganization?.extensions, classExtensionValues],
+  )
 
   async function loadClasses() {
     if (!activeOrganization) return
@@ -108,6 +144,16 @@ export function ClassesTab() {
   function openCreateDialog() {
     setEditingClass(null)
     setClassForm(EMPTY_CLASS_FORM)
+    setClassFeatureValues(
+      getInitialClassFeatureValues(
+        featureDefinitions,
+        activeOrganization?.featureSettings ?? [],
+        [],
+      ),
+    )
+    setClassExtensionValues(
+      getInitialClassExtensionValues(activeOrganization?.extensions ?? [], []),
+    )
     setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
@@ -127,6 +173,19 @@ export function ClassesTab() {
       room: classItem.room ?? "",
       semester: classItem.semester ?? "",
     })
+    setClassFeatureValues(
+      getInitialClassFeatureValues(
+        featureDefinitions,
+        activeOrganization?.featureSettings ?? [],
+        classItem.featureSettings,
+      ),
+    )
+    setClassExtensionValues(
+      getInitialClassExtensionValues(
+        activeOrganization?.extensions ?? [],
+        classItem.extensionSettings,
+      ),
+    )
     setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
@@ -180,18 +239,48 @@ export function ClassesTab() {
             class_semester: classForm.semester,
           }
 
-      const { error } = await supabase.rpc(rpcName, payload)
+      const { data, error } = await supabase.rpc(rpcName, payload)
 
       if (error) {
         setErrorMessage(error.message)
         return
       }
 
+      const savedClassId =
+        editingClass?.id ??
+        (data as { class_id?: string } | null | undefined)?.class_id ??
+        null
+
+      if (savedClassId) {
+        const featureError = await saveClassFeatureSettings(
+          savedClassId,
+          activeOrganization.id,
+          classFeatureRows,
+        )
+
+        if (featureError) {
+          setErrorMessage(featureError)
+          return
+        }
+
+        const extensionError = await saveClassExtensionSettings(
+          savedClassId,
+          activeOrganization.id,
+          classExtensionRows,
+        )
+
+        if (extensionError) {
+          setErrorMessage(extensionError)
+          return
+        }
+      }
+
       setIsClassDialogOpen(false)
       setEditingClass(null)
       setClassForm(EMPTY_CLASS_FORM)
+      setClassFeatureValues({})
+      setClassExtensionValues({})
       await loadClasses()
-      setSuccessMessage(editingClass ? "Class updated." : "Class created.")
     })
   }
 
@@ -565,6 +654,56 @@ export function ClassesTab() {
                 }
               />
             </div>
+            {classFeatureRows.length > 0 ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <Label>Class features</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Features disabled by the organization cannot be enabled for
+                    this class.
+                  </p>
+                </div>
+                <div className="divide-y divide-border">
+                  {classFeatureRows.map((feature) => (
+                    <ClassFeatureSettingRow
+                      key={feature.key}
+                      feature={feature}
+                      onToggle={(featureKey, enabled) =>
+                        setClassFeatureValues((values) => ({
+                          ...values,
+                          [featureKey]: enabled,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {classExtensionRows.length > 0 ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <Label>Custom extensions</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These organization extensions appear under Extensions in the
+                    class sidebar.
+                  </p>
+                </div>
+                <div className="divide-y divide-border">
+                  {classExtensionRows.map((extension) => (
+                    <ClassExtensionSettingRow
+                      key={extension.id}
+                      extension={extension}
+                      onToggle={(extensionId, enabled) =>
+                        setClassExtensionValues((values) => ({
+                          ...values,
+                          [extensionId]: enabled,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <DialogFooter>
               <Button
                 type="button"
@@ -651,4 +790,288 @@ export function ClassesTab() {
       </Dialog>
     </>
   )
+}
+
+type ClassFeatureRow = FeatureDefinition & {
+  checked: boolean
+  orgEnabled: boolean
+  parentClassEnabled: boolean
+  children: ClassFeatureRow[]
+}
+
+function ClassFeatureSettingRow({
+  feature,
+  onToggle,
+}: {
+  feature: ClassFeatureRow
+  onToggle: (featureKey: string, enabled: boolean) => void
+}) {
+  const isLocked = !feature.orgEnabled
+  const isBlockedByClassParent = !feature.parentClassEnabled
+
+  return (
+    <div>
+      <div className="flex items-start gap-3 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">
+              {feature.label}
+            </p>
+            {isLocked ? (
+              <Badge variant="outline" className="text-[10px]">
+                Disabled by organization
+              </Badge>
+            ) : null}
+            {isBlockedByClassParent ? (
+              <Badge variant="outline" className="text-[10px]">
+                Blocked by class parent
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {feature.description || "No description provided."}
+          </p>
+        </div>
+        <Switch
+          checked={feature.checked}
+          disabled={isLocked}
+          aria-label={`Toggle ${feature.label}`}
+          onCheckedChange={(checked) => onToggle(feature.key, checked)}
+        />
+      </div>
+      {feature.children.length > 0 ? (
+        <div className="ml-4 border-l border-border pl-4">
+          {feature.children.map((child) => (
+            <ClassFeatureSettingRow
+              key={child.key}
+              feature={child}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+type ClassExtensionRow = OrganizationExtension & {
+  checked: boolean
+}
+
+function ClassExtensionSettingRow({
+  extension,
+  onToggle,
+}: {
+  extension: ClassExtensionRow
+  onToggle: (extensionId: string, enabled: boolean) => void
+}) {
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{extension.name}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {extension.description ||
+            extension.launch_url ||
+            "No description provided."}
+        </p>
+      </div>
+      <Switch
+        checked={extension.checked}
+        aria-label={`Toggle ${extension.name}`}
+        onCheckedChange={(checked) => onToggle(extension.id, checked)}
+      />
+    </div>
+  )
+}
+
+async function saveClassFeatureSettings(
+  classId: string,
+  organizationId: string,
+  featureRows: ClassFeatureRow[],
+) {
+  const rows = flattenClassFeatureRows(featureRows)
+    .filter((feature) => feature.orgEnabled)
+    .map((feature) => ({
+      organization_id: organizationId,
+      class_id: classId,
+      feature_key: feature.key,
+      enabled: feature.checked,
+      config: {},
+    }))
+
+  if (rows.length === 0) return null
+
+  const { error } = await createClient()
+    .from("class_feature_settings")
+    .upsert(rows, { onConflict: "class_id,feature_key" })
+
+  return error?.message ?? null
+}
+
+async function saveClassExtensionSettings(
+  classId: string,
+  organizationId: string,
+  extensionRows: ClassExtensionRow[],
+) {
+  const rows = extensionRows.map((extension) => ({
+    organization_id: organizationId,
+    class_id: classId,
+    extension_id: extension.id,
+    enabled: extension.checked,
+    config: {},
+  }))
+
+  if (rows.length === 0) return null
+
+  const { error } = await createClient()
+    .from("class_extension_settings")
+    .upsert(rows, { onConflict: "class_id,extension_id" })
+
+  return error?.message ?? null
+}
+
+function flattenClassFeatureRows(rows: ClassFeatureRow[]): ClassFeatureRow[] {
+  return rows.flatMap((row) => [row, ...flattenClassFeatureRows(row.children)])
+}
+
+function getInitialClassFeatureValues(
+  definitions: FeatureDefinition[],
+  organizationSettings: FeatureSetting[],
+  classSettings: FeatureSetting[],
+) {
+  const orgEnabledByKey = getOrganizationEffectiveMap(
+    definitions,
+    organizationSettings,
+  )
+  const classSettingsByKey = new Map(
+    classSettings.map((setting) => [setting.feature_key, setting.enabled]),
+  )
+  const values: FeatureValueMap = {}
+
+  for (const definition of definitions) {
+    values[definition.key] =
+      classSettingsByKey.get(definition.key) ??
+      orgEnabledByKey.get(definition.key) ??
+      definition.default_enabled
+  }
+
+  return values
+}
+
+function getInitialClassExtensionValues(
+  extensions: OrganizationExtension[],
+  classSettings: ClassExtensionSetting[],
+) {
+  const classSettingsById = new Map(
+    classSettings.map((setting) => [setting.extension_id, setting.enabled]),
+  )
+  const values: ExtensionValueMap = {}
+
+  for (const extension of extensions) {
+    if (!extension.enabled) continue
+
+    values[extension.id] = classSettingsById.get(extension.id) ?? true
+  }
+
+  return values
+}
+
+function buildClassExtensionRows(
+  extensions: OrganizationExtension[],
+  classExtensionValues: ExtensionValueMap,
+) {
+  return extensions
+    .filter((extension) => extension.enabled)
+    .map((extension) => ({
+      ...extension,
+      checked: classExtensionValues[extension.id] ?? true,
+    }))
+}
+
+function buildClassFeatureRows(
+  definitions: FeatureDefinition[],
+  organizationSettings: FeatureSetting[],
+  classFeatureValues: FeatureValueMap,
+) {
+  const orgEnabledByKey = getOrganizationEffectiveMap(
+    definitions,
+    organizationSettings,
+  )
+  const rowsByKey = new Map<string, ClassFeatureRow>()
+
+  for (const definition of definitions) {
+    const orgEnabled = orgEnabledByKey.get(definition.key) ?? false
+
+    rowsByKey.set(definition.key, {
+      ...definition,
+      checked: orgEnabled
+        ? (classFeatureValues[definition.key] ?? true)
+        : false,
+      orgEnabled,
+      parentClassEnabled: true,
+      children: [],
+    })
+  }
+
+  const rows = Array.from(rowsByKey.values()).sort(
+    (left, right) => left.sort_order - right.sort_order,
+  )
+
+  for (const row of rows) {
+    if (!row.parent_key) continue
+
+    rowsByKey.get(row.parent_key)?.children.push(row)
+  }
+
+  function applyParentClassState(
+    row: ClassFeatureRow,
+    parentClassEnabled: boolean,
+  ) {
+    row.parentClassEnabled = parentClassEnabled
+
+    for (const child of row.children) {
+      applyParentClassState(child, parentClassEnabled && row.checked)
+    }
+  }
+
+  const topLevelRows = rows.filter((row) => !row.parent_key)
+
+  for (const row of topLevelRows) {
+    applyParentClassState(row, true)
+  }
+
+  return topLevelRows
+}
+
+function getOrganizationEffectiveMap(
+  definitions: FeatureDefinition[],
+  settings: FeatureSetting[],
+) {
+  const settingsByKey = new Map(
+    settings.map((setting) => [setting.feature_key, setting.enabled]),
+  )
+  const definitionsByKey = new Map(
+    definitions.map((definition) => [definition.key, definition]),
+  )
+  const enabledByKey = new Map<string, boolean>()
+
+  function isEnabled(definition: FeatureDefinition): boolean {
+    const existing = enabledByKey.get(definition.key)
+    if (existing !== undefined) return existing
+
+    const ownEnabled =
+      settingsByKey.get(definition.key) ?? definition.default_enabled
+    const parentEnabled = definition.parent_key
+      ? isEnabled(definitionsByKey.get(definition.parent_key)!)
+      : true
+    const enabled = parentEnabled && ownEnabled
+    enabledByKey.set(definition.key, enabled)
+    return enabled
+  }
+
+  for (const definition of definitions) {
+    isEnabled(definition)
+  }
+
+  return enabledByKey
 }

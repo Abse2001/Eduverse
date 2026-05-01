@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/client"
 import type { Class } from "@/lib/mock-data"
+import {
+  loadClassExtensionSettings,
+  loadClassFeatureSettings,
+  type ClassExtensionSetting,
+  type FeatureSetting,
+} from "@/lib/supabase/features"
 
 export type ClassRole = "teacher" | "student" | "ta"
 
@@ -32,9 +38,18 @@ export type OrganizationClass = {
   memberships: ClassMembership[]
   teacher: ClassProfile | null
   students: ClassProfile[]
+  featureSettings: FeatureSetting[]
+  extensionSettings: ClassExtensionSetting[]
 }
 
-type ClassRow = Omit<OrganizationClass, "memberships" | "teacher" | "students">
+type ClassRow = Omit<
+  OrganizationClass,
+  | "memberships"
+  | "teacher"
+  | "students"
+  | "featureSettings"
+  | "extensionSettings"
+>
 
 export async function loadOrganizationClasses(organizationId: string) {
   const supabase = createClient()
@@ -126,6 +141,8 @@ async function hydrateClasses(classRows: ClassRow[]) {
     ]),
   )
   const membershipsByClass = new Map<string, ClassMembership[]>()
+  const featureSettingsByClass = await loadClassFeatureSettings(classIds)
+  const extensionSettingsByClass = await loadClassExtensionSettings(classIds)
 
   for (const membership of memberships) {
     const existing = membershipsByClass.get(membership.class_id) ?? []
@@ -154,6 +171,8 @@ async function hydrateClasses(classRows: ClassRow[]) {
       memberships: classMemberships,
       teacher,
       students,
+      featureSettings: featureSettingsByClass.get(classRow.id) ?? [],
+      extensionSettings: extensionSettingsByClass.get(classRow.id) ?? [],
     }
   })
 }
