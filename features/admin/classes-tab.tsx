@@ -281,7 +281,6 @@ export function ClassesTab() {
       setClassFeatureValues({})
       setClassExtensionValues({})
       await loadClasses()
-      setSuccessMessage(editingClass ? "Class updated." : "Class created.")
     })
   }
 
