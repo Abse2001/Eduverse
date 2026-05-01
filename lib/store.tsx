@@ -48,6 +48,7 @@ export type OrganizationMemberRow = {
   id: string
   user_id: string
   role: OrganizationUserRole
+  roles: OrganizationMembershipRoleRecord[]
   status: "active" | "invited" | "suspended"
   profile?: {
     display_name: string
@@ -699,7 +700,26 @@ async function loadOrganizationUsers(organizationId: string) {
     role: OrganizationUserRole
     status: "active" | "invited" | "suspended"
   }>
+  const membershipIds = typedMemberships.map((membership) => membership.id)
   const userIds = typedMemberships.map((membership) => membership.user_id)
+
+  const { data: membershipRoleData, error: membershipRoleError } =
+    membershipIds.length > 0
+      ? await supabase
+          .from("organization_membership_roles")
+          .select("id, organization_membership_id, role, status")
+          .in("organization_membership_id", membershipIds)
+      : { data: [], error: null }
+
+  if (membershipRoleError) throw membershipRoleError
+
+  const rolesByMembership = groupMembershipRoles(
+    (membershipRoleData ?? []) as Array<
+      OrganizationMembershipRoleRecord & {
+        organization_membership_id: string
+      }
+    >,
+  )
 
   const { data: profileData, error: profileError } =
     userIds.length > 0
@@ -724,10 +744,21 @@ async function loadOrganizationUsers(organizationId: string) {
     ]),
   )
 
-  const members = typedMemberships.map((membership) => ({
-    ...membership,
-    profile: profileMap.get(membership.user_id),
-  }))
+  const members = typedMemberships.map((membership) => {
+    const roles = rolesByMembership.get(membership.id) ?? [
+      {
+        id: "",
+        role: membership.role,
+        status: membership.status,
+      },
+    ]
+
+    return {
+      ...membership,
+      roles,
+      profile: profileMap.get(membership.user_id),
+    }
+  })
 
   const { data: inviteData, error: inviteError } = await supabase
     .from("organization_invites")

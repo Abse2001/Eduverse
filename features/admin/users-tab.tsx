@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils"
 type OrgRole = OrganizationUserRole
 type RoleFilter = "all" | "org_admin" | "teacher" | "student"
 
+const ROLE_ORDER: OrgRole[] = ["org_owner", "org_admin", "teacher", "student"]
+
 const ROLE_BADGE_COLOR_MAP: Record<OrgRole, string> = {
   org_owner: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
   org_admin:
@@ -75,6 +77,15 @@ function getInviteLink(token: string) {
   if (typeof window === "undefined") return null
 
   return `${window.location.origin}/invite/${token}`
+}
+
+function getActiveMemberRoles(member: OrganizationMemberRow) {
+  const activeRoles = member.roles
+    .filter((roleRecord) => roleRecord.status === "active")
+    .map((roleRecord) => roleRecord.role)
+    .sort((left, right) => ROLE_ORDER.indexOf(left) - ROLE_ORDER.indexOf(right))
+
+  return activeRoles.length > 0 ? activeRoles : [member.role]
 }
 
 export function UsersTab() {
@@ -144,7 +155,7 @@ export function UsersTab() {
       await loadUsers()
 
       if (data?.result === "membership") {
-        setSuccessMessage("Existing user added to this organization.")
+        setSuccessMessage(`Role granted to ${inviteEmail}.`)
         return
       }
 
@@ -160,8 +171,8 @@ export function UsersTab() {
       setLastInviteLink(inviteLink)
       setSuccessMessage(
         inviteLink
-          ? "Invite created. Send the invite link to the user."
-          : "Invite created for this organization.",
+          ? "Role invite created. Send the invite link to the user."
+          : "Role invite created for this organization.",
       )
     })
   }
@@ -215,7 +226,7 @@ export function UsersTab() {
       await loadUsers()
 
       if (data?.result === "membership") {
-        setSuccessMessage("Existing user added to this organization.")
+        setSuccessMessage(`Role granted to ${invite.email}.`)
         setBusyInviteId(null)
         return
       }
@@ -255,7 +266,8 @@ export function UsersTab() {
     const matchesSearch =
       name.toLowerCase().includes(search.toLowerCase()) ||
       email.toLowerCase().includes(search.toLowerCase())
-    const matchesFilter = filter === "all" || member.role === filter
+    const roles = getActiveMemberRoles(member)
+    const matchesFilter = filter === "all" || roles.includes(filter)
 
     return matchesSearch && matchesFilter
   })
@@ -307,7 +319,7 @@ export function UsersTab() {
                 onClick={() => setIsDialogOpen(true)}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
-                Add User
+                Grant Role
               </Button>
             </div>
           </div>
@@ -359,6 +371,7 @@ export function UsersTab() {
               {visibleMembers.map((member) => {
                 const name = member.profile?.display_name ?? "User"
                 const email = member.profile?.email ?? "No email"
+                const roles = getActiveMemberRoles(member)
 
                 return (
                   <div
@@ -378,15 +391,20 @@ export function UsersTab() {
                         {email}
                       </p>
                     </div>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        "text-[10px] border-0 capitalize shrink-0",
-                        ROLE_BADGE_COLOR_MAP[member.role],
-                      )}
-                    >
-                      {roleLabel(member.role)}
-                    </Badge>
+                    <div className="flex max-w-[14rem] flex-wrap justify-end gap-1">
+                      {roles.map((role) => (
+                        <Badge
+                          key={role}
+                          variant="secondary"
+                          className={cn(
+                            "text-[10px] border-0 capitalize shrink-0",
+                            ROLE_BADGE_COLOR_MAP[role],
+                          )}
+                        >
+                          {roleLabel(role)}
+                        </Badge>
+                      ))}
+                    </div>
                     <div className="hidden md:block text-xs text-muted-foreground shrink-0 capitalize">
                       {member.status}
                     </div>
@@ -507,9 +525,9 @@ export function UsersTab() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add user to organization</DialogTitle>
+            <DialogTitle>Grant organization role</DialogTitle>
             <DialogDescription>
-              If the email already belongs to a user, they are added directly.
+              If the email already belongs to a user, this grants another role.
               Otherwise an invite is recorded for this organization.
             </DialogDescription>
           </DialogHeader>
@@ -526,7 +544,7 @@ export function UsersTab() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Role</Label>
+              <Label>Role to grant</Label>
               <Select
                 value={inviteRole}
                 onValueChange={(value) =>
@@ -555,10 +573,10 @@ export function UsersTab() {
                 {isInviting ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Adding...
+                    Granting...
                   </>
                 ) : (
-                  "Add user"
+                  "Grant role"
                 )}
               </Button>
             </DialogFooter>
