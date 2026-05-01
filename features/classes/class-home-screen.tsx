@@ -37,6 +37,7 @@ import {
   type OrganizationClass,
 } from "@/lib/supabase/classes"
 import { hasClassAccessForRole } from "@/lib/education/classes"
+import type { User } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/client"
 import {
   getClassNavFeatures,
@@ -106,7 +107,9 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     (classItem) => classItem.id === classId,
   )
   const accessibleCachedClass =
-    cachedClass && hasClassAccessForRole(cachedClass, currentUser)
+    cachedClass &&
+    activeOrganization &&
+    canOpenClass(cachedClass, activeOrganization.id, currentUser)
       ? cachedClass
       : null
   const [classItem, setClassItem] = useState<OrganizationClass | null>(
@@ -160,7 +163,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         return
       }
 
-      if (!hasClassAccessForRole(nextClass, currentUser)) {
+      if (
+        !activeOrganization ||
+        !canOpenClass(nextClass, activeOrganization.id, currentUser)
+      ) {
         setClassItem(null)
         setErrorMessage("This class is not available for your selected role.")
         return
@@ -183,7 +189,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     )
 
     if (cachedClass) {
-      if (!hasClassAccessForRole(cachedClass, currentUser)) {
+      if (
+        !activeOrganization ||
+        !canOpenClass(cachedClass, activeOrganization.id, currentUser)
+      ) {
         setClassItem(null)
         setIsLoading(false)
         setErrorMessage("This class is not available for your selected role.")
@@ -214,6 +223,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     void refreshClass(false)
   }, [
     classId,
+    activeOrganization,
     currentUser,
     organizationClasses,
     organizationClassesError,
@@ -620,5 +630,16 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function canOpenClass(
+  classItem: OrganizationClass,
+  activeOrganizationId: string,
+  currentUser: User,
+) {
+  return (
+    classItem.organization_id === activeOrganizationId &&
+    hasClassAccessForRole(classItem, currentUser)
   )
 }

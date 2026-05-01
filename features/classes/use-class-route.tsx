@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { hasClassAccessForRole } from "@/lib/education/classes"
-import { getClassById, type Class } from "@/lib/mock-data"
+import type { Class, User } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import {
   loadClass,
@@ -17,44 +17,45 @@ import {
 import { Button } from "@/components/ui/button"
 
 export function useClassRoute(classId: string) {
-  const { currentUser, organizationClasses, organizationClassesStatus } =
-    useApp()
+  const {
+    activeOrganization,
+    currentUser,
+    organizationClasses,
+    organizationClassesStatus,
+  } = useApp()
   const cachedClass = organizationClasses.find(
     (classItem) => classItem.id === classId,
   )
   const accessibleCachedClass =
-    cachedClass && hasClassAccessForRole(cachedClass, currentUser)
+    cachedClass &&
+    activeOrganization &&
+    canOpenClass(cachedClass, activeOrganization.id, currentUser)
       ? cachedClass
       : null
-  const [cls, setCls] = useState<Class | null>(
-    () =>
-      getClassById(classId) ??
-      (accessibleCachedClass ? toLegacyClass(accessibleCachedClass) : null),
+  const [cls, setCls] = useState<Class | null>(() =>
+    accessibleCachedClass ? toLegacyClass(accessibleCachedClass) : null,
   )
   const [classRow, setClassRow] = useState<OrganizationClass | null>(
     accessibleCachedClass,
   )
-  const [isLoading, setIsLoading] = useState(
-    () => !getClassById(classId) && !accessibleCachedClass,
-  )
+  const [isLoading, setIsLoading] = useState(() => !accessibleCachedClass)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    const mockClass = getClassById(classId)
     const cachedClass = organizationClasses.find(
       (classItem) => classItem.id === classId,
     )
 
-    if (mockClass) {
-      setCls(mockClass)
-      setClassRow(cachedClass ?? null)
+    if (!activeOrganization) {
+      setCls(null)
+      setClassRow(null)
       setIsLoading(false)
-      setErrorMessage(null)
+      setErrorMessage("Select an organization to open this class.")
       return
     }
 
     if (cachedClass) {
-      if (!hasClassAccessForRole(cachedClass, currentUser)) {
+      if (!canOpenClass(cachedClass, activeOrganization.id, currentUser)) {
         setCls(null)
         setClassRow(null)
         setIsLoading(false)
@@ -82,7 +83,7 @@ export function useClassRoute(classId: string) {
     loadClass(classId)
       .then((classRow) => {
         if (cancelled) return
-        if (!hasClassAccessForRole(classRow, currentUser)) {
+        if (!canOpenClass(classRow, activeOrganization.id, currentUser)) {
           setCls(null)
           setClassRow(null)
           setErrorMessage("This class is not available for your selected role.")
@@ -108,9 +109,26 @@ export function useClassRoute(classId: string) {
     return () => {
       cancelled = true
     }
-  }, [classId, currentUser, organizationClasses, organizationClassesStatus])
+  }, [
+    activeOrganization?.id,
+    classId,
+    currentUser,
+    organizationClasses,
+    organizationClassesStatus,
+  ])
 
   return { cls, classRow, isLoading, errorMessage }
+}
+
+function canOpenClass(
+  classRow: OrganizationClass,
+  activeOrganizationId: string,
+  currentUser: User,
+) {
+  return (
+    classRow.organization_id === activeOrganizationId &&
+    hasClassAccessForRole(classRow, currentUser)
+  )
 }
 
 export function useClassFeatureRoute(classId: string, featureKey: FeatureKey) {
