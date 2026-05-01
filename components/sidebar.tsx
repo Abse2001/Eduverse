@@ -4,20 +4,18 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   BookOpen,
-  ChartColumn,
-  MessageSquare,
-  FileText,
-  FlaskConical,
   GraduationCap,
   ChevronLeft,
   ChevronRight,
-  Video,
-  ClipboardList,
-  Terminal,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/lib/store"
 import { getClassesForUser } from "@/lib/education/classes"
+import {
+  getClassNavFeatures,
+  resolveClassFeatures,
+  type ResolvedClassFeature,
+} from "@/lib/features/feature-registry"
 import {
   Tooltip,
   TooltipContent,
@@ -43,17 +41,6 @@ const NAV_ITEMS_ADMIN: Array<{
   href: string
 }> = []
 
-const CLASS_NAV_ITEMS = [
-  { label: "Home", icon: BookOpen, segment: "home" },
-  { label: "Chat", icon: MessageSquare, segment: "chat" },
-  { label: "Materials", icon: FileText, segment: "materials" },
-  { label: "Assignments", icon: FlaskConical, segment: "assignments" },
-  { label: "Session", icon: Video, segment: "session" },
-  { label: "Exam", icon: ClipboardList, segment: "exam" },
-  { label: "IDE", icon: Terminal, segment: "ide" },
-  { label: "Results", icon: ChartColumn, segment: "leaderboard" },
-]
-
 interface SidebarProps {
   collapsed: boolean
   setCollapsed: (v: boolean) => void
@@ -61,7 +48,12 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const pathname = usePathname()
-  const { activeOrganization, currentUser, organizationClasses } = useApp()
+  const {
+    activeOrganization,
+    currentUser,
+    featureDefinitions,
+    organizationClasses,
+  } = useApp()
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
 
@@ -159,12 +151,25 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               </p>
               {userClasses.map((cls) => {
                 const isActiveClass = activeClassId === cls.id
+                const classNavFeatures = activeOrganization
+                  ? getClassNavFeatures(
+                      resolveClassFeatures({
+                        definitions: featureDefinitions,
+                        organizationSettings:
+                          activeOrganization.featureSettings,
+                        classSettings: cls.featureSettings,
+                      }),
+                    )
+                  : []
+                const landingSegment =
+                  getFirstClassNavRouteSegment(classNavFeatures) ?? "home"
+
                 return (
                   <div key={cls.id}>
                     <NavItem
                       label={cls.name}
                       icon={BookOpen}
-                      href={`/classes/${cls.id}/home`}
+                      href={`/classes/${cls.id}/${landingSegment}`}
                       active={isActiveClass}
                       collapsed={collapsed}
                       colorDot={cls.color ?? undefined}
@@ -176,20 +181,13 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                           collapsed && "opacity-0 pointer-events-none",
                         )}
                       >
-                        {CLASS_NAV_ITEMS.map((sub) => (
-                          <Link
-                            key={sub.segment}
-                            href={`/classes/${cls.id}/${sub.segment}`}
-                            className={cn(
-                              "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
-                              activeSegment === sub.segment
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
-                            )}
-                          >
-                            <sub.icon className="w-3.5 h-3.5 shrink-0" />
-                            {sub.label}
-                          </Link>
+                        {classNavFeatures.map((feature) => (
+                          <ClassFeatureNavItem
+                            key={feature.key}
+                            classId={cls.id}
+                            feature={feature}
+                            activeSegment={activeSegment}
+                          />
                         ))}
                       </div>
                     )}
@@ -202,6 +200,97 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       </aside>
     </TooltipProvider>
   )
+}
+
+function ClassFeatureNavItem({
+  classId,
+  feature,
+  activeSegment,
+}: {
+  classId: string
+  feature: ResolvedClassFeature
+  activeSegment?: string
+}) {
+  const isActive =
+    feature.routeSegment === activeSegment ||
+    feature.children.some((child) => child.routeSegment === activeSegment)
+
+  if (!feature.routeSegment) {
+    return (
+      <div>
+        <div
+          className={cn(
+            "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium",
+            isActive
+              ? "text-sidebar-accent-foreground"
+              : "text-muted-foreground",
+          )}
+        >
+          <feature.icon className="w-3.5 h-3.5 shrink-0" />
+          {feature.label}
+        </div>
+        <div className="ml-4 pl-2 border-l border-sidebar-border/70 space-y-0.5">
+          {feature.children.map((child) => (
+            <ClassFeatureNavLink
+              key={child.key}
+              classId={classId}
+              feature={child}
+              active={activeSegment === child.routeSegment}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ClassFeatureNavLink
+      classId={classId}
+      feature={feature}
+      active={activeSegment === feature.routeSegment}
+    />
+  )
+}
+
+function ClassFeatureNavLink({
+  classId,
+  feature,
+  active,
+}: {
+  classId: string
+  feature: ResolvedClassFeature
+  active: boolean
+}) {
+  if (!feature.routeSegment) return null
+
+  return (
+    <Link
+      href={`/classes/${classId}/${feature.routeSegment}`}
+      className={cn(
+        "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+      )}
+    >
+      <feature.icon className="w-3.5 h-3.5 shrink-0" />
+      {feature.label}
+    </Link>
+  )
+}
+
+function getFirstClassNavRouteSegment(features: ResolvedClassFeature[]) {
+  for (const feature of features) {
+    if (feature.routeSegment) return feature.routeSegment
+
+    const childRouteSegment = feature.children.find(
+      (child) => child.routeSegment,
+    )?.routeSegment
+
+    if (childRouteSegment) return childRouteSegment
+  }
+
+  return null
 }
 
 interface NavItemProps {

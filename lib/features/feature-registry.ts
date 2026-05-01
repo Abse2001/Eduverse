@@ -221,10 +221,22 @@ export function resolveClassFeatures({
 }
 
 export function getClassNavFeatures(features: ResolvedClassFeature[]) {
-  return features.filter(
-    (feature) =>
-      feature.enabled && feature.renderInClassNav && feature.parentKey === null,
-  )
+  return features
+    .filter(
+      (feature) =>
+        feature.enabled &&
+        feature.renderInClassNav &&
+        feature.parentKey === null,
+    )
+    .map((feature) => ({
+      ...feature,
+      children: feature.children.filter(
+        (child) => child.enabled && child.renderInClassNav,
+      ),
+    }))
+    .filter(
+      (feature) => feature.routeSegment !== null || feature.children.length > 0,
+    )
 }
 
 export function getFeatureByRouteSegment(
