@@ -324,11 +324,6 @@ export default function MaterialsPage({
                 onChange={(event) => selectUploadFile(event.target.files?.[0])}
                 disabled={isUploading}
               />
-              {selectedFile && (
-                <p className="text-xs text-muted-foreground">
-                  {selectedFile.name} &middot; {formatBytes(selectedFile.size)}
-                </p>
-              )}
             </div>
 
             <div className="space-y-2">
