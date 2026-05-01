@@ -105,6 +105,7 @@ interface AppContextValue {
   ) => void
   refreshCurrentUser: () => Promise<void>
   setDefaultOrganization: (organizationId: string) => Promise<void>
+  setActiveOrganizationRole: (role: OrganizationUserRole) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -385,6 +386,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshCurrentUser()
   }
 
+  async function setActiveOrganizationRole(role: OrganizationUserRole) {
+    if (!authUser || !activeOrganization) return
+
+    const supabase = createClient()
+    const { error } = await supabase.rpc("set_selected_organization_role", {
+      target_org_id: activeOrganization.id,
+      target_role: role,
+    })
+
+    if (error) throw error
+
+    await refreshCurrentUser()
+  }
+
   async function signOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -653,6 +668,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         upsertOrganizationExtension,
         refreshCurrentUser,
         setDefaultOrganization,
+        setActiveOrganizationRole,
         signOut,
       }}
     >
