@@ -145,9 +145,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     string | null
   >(null)
   const classesRequestRef = useRef<Promise<OrganizationClass[]> | null>(null)
-  const featureDefinitionsRequestRef = useRef<
-    Promise<FeatureDefinition[]> | null
-  >(null)
+  const featureDefinitionsRequestRef = useRef<Promise<
+    FeatureDefinition[]
+  > | null>(null)
   const usersRequestRef = useRef<Promise<{
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
@@ -241,15 +241,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         organizationResult,
         organizationFeatureSettings,
         organizationExtensions,
-      ] =
-        await Promise.all([
-          supabase
-            .from("organizations")
-            .select("id, slug, name")
-            .in("id", organizationIds),
-          loadOrganizationFeatureSettings(organizationIds),
-          loadOrganizationExtensions(organizationIds),
-        ])
+      ] = await Promise.all([
+        supabase
+          .from("organizations")
+          .select("id, slug, name")
+          .in("id", organizationIds),
+        loadOrganizationFeatureSettings(organizationIds),
+        loadOrganizationExtensions(organizationIds),
+      ])
 
       const { data: organizationData } = organizationResult
       featureSettingsByOrganization = organizationFeatureSettings

@@ -179,7 +179,8 @@ export function resolveClassFeatures({
     if (existing) return existing
 
     const definition = definitionsByKey.get(feature.key) ?? null
-    const organizationSetting = organizationSettingsByKey.get(feature.key) ?? null
+    const organizationSetting =
+      organizationSettingsByKey.get(feature.key) ?? null
     const classSetting = classSettingsByKey.get(feature.key) ?? null
     const parent = feature.parentKey
       ? resolveFeature(FEATURE_REGISTRY_BY_KEY.get(feature.parentKey)!)

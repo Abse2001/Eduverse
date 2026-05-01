@@ -26,7 +26,9 @@ export default function ExamPage({
   }
 
   if (isFeatureDisabled) {
-    return <ClassFeatureDisabledFallback classId={classId} featureLabel="Exam" />
+    return (
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="Exam" />
+    )
   }
 
   if (!exam) {

@@ -4,10 +4,7 @@ import {
   getFeatureByRouteSegment,
   resolveClassFeatures,
 } from "@/lib/features/feature-registry"
-import type {
-  FeatureDefinition,
-  FeatureSetting,
-} from "@/lib/supabase/features"
+import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
 
 const definitions: FeatureDefinition[] = [
   createDefinition("home", "Home", null, "home", true, 10),
@@ -77,7 +74,9 @@ describe("getClassNavFeatures", () => {
       ],
     })
     const navFeatures = getClassNavFeatures(features)
-    const extensions = navFeatures.find((feature) => feature.key === "extensions")
+    const extensions = navFeatures.find(
+      (feature) => feature.key === "extensions",
+    )
 
     expect(
       navFeatures.some((feature) => feature.key === "extensions.ide"),

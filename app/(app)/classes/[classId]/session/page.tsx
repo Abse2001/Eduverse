@@ -25,10 +25,7 @@ export default function SessionPage({
 
   if (isFeatureDisabled) {
     return (
-      <ClassFeatureDisabledFallback
-        classId={classId}
-        featureLabel="Sessions"
-      />
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="Sessions" />
     )
   }
 

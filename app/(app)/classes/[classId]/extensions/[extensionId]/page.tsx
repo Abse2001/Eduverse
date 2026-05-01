@@ -36,9 +36,7 @@ export default function CustomExtensionPage({
   }).find((feature) => feature.customExtension?.id === extensionId)
 
   if (!extensionFeature?.customExtension) {
-    return (
-      <div className="p-6 text-muted-foreground">Extension not found.</div>
-    )
+    return <div className="p-6 text-muted-foreground">Extension not found.</div>
   }
 
   if (!extensionFeature.enabled) {

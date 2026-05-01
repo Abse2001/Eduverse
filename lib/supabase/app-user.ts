@@ -65,7 +65,8 @@ export function toOrganizations(
       isDefault: profile.default_organization_id === membership.organization_id,
       featureSettings:
         featureSettingsByOrganization.get(membership.organization_id) ?? [],
-      extensions: extensionsByOrganization.get(membership.organization_id) ?? [],
+      extensions:
+        extensionsByOrganization.get(membership.organization_id) ?? [],
     }))
 }
 

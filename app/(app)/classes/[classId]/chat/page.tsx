@@ -24,7 +24,9 @@ export default function ChatPage({
   }
 
   if (isFeatureDisabled) {
-    return <ClassFeatureDisabledFallback classId={classId} featureLabel="Chat" />
+    return (
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="Chat" />
+    )
   }
 
   return <ChatScreen cls={cls} />

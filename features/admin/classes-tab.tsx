@@ -86,8 +86,9 @@ export function ClassesTab() {
     refreshOrganizationClasses,
   } = useApp()
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
-  const [classFeatureValues, setClassFeatureValues] =
-    useState<FeatureValueMap>({})
+  const [classFeatureValues, setClassFeatureValues] = useState<FeatureValueMap>(
+    {},
+  )
   const [classExtensionValues, setClassExtensionValues] =
     useState<ExtensionValueMap>({})
   const [editingClass, setEditingClass] = useState<OrganizationClass | null>(
@@ -247,7 +248,8 @@ export function ClassesTab() {
 
       const savedClassId =
         editingClass?.id ??
-        ((data as { class_id?: string } | null | undefined)?.class_id ?? null)
+        (data as { class_id?: string } | null | undefined)?.class_id ??
+        null
 
       if (savedClassId) {
         const featureError = await saveClassFeatureSettings(
@@ -683,8 +685,8 @@ export function ClassesTab() {
                 <div>
                   <Label>Custom extensions</Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    These organization extensions appear under Extensions in
-                    the class sidebar.
+                    These organization extensions appear under Extensions in the
+                    class sidebar.
                   </p>
                 </div>
                 <div className="divide-y divide-border">
@@ -869,7 +871,9 @@ function ClassExtensionSettingRow({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{extension.name}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {extension.description || extension.launch_url || "No description provided."}
+          {extension.description ||
+            extension.launch_url ||
+            "No description provided."}
         </p>
       </div>
       <Switch
@@ -1001,7 +1005,9 @@ function buildClassFeatureRows(
 
     rowsByKey.set(definition.key, {
       ...definition,
-      checked: orgEnabled ? (classFeatureValues[definition.key] ?? true) : false,
+      checked: orgEnabled
+        ? (classFeatureValues[definition.key] ?? true)
+        : false,
       orgEnabled,
       parentClassEnabled: true,
       children: [],

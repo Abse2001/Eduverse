@@ -263,7 +263,7 @@ function ClassFeatureNavLink({
 }: {
   classId: string
   feature: ResolvedClassFeature
-      active: boolean
+  active: boolean
 }) {
   if (!feature.routeSegment) return null
 
@@ -289,7 +289,10 @@ function isFeatureRouteActive(
 ) {
   if (!routeSegment || !activeSegment) return false
 
-  return activeSegment === routeSegment || activeSegment.startsWith(`${routeSegment}/`)
+  return (
+    activeSegment === routeSegment ||
+    activeSegment.startsWith(`${routeSegment}/`)
+  )
 }
 
 function getFirstClassNavRouteSegment(features: ResolvedClassFeature[]) {

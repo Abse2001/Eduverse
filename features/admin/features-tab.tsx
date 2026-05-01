@@ -166,39 +166,39 @@ export function FeaturesTab() {
           <CardTitle className="text-sm">Organization Features</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-        {displayedErrorMessage ? (
-          <div className="p-4">
-            <Alert variant="destructive">
-              <AlertTitle>Feature update failed</AlertTitle>
-              <AlertDescription>{displayedErrorMessage}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
+          {displayedErrorMessage ? (
+            <div className="p-4">
+              <Alert variant="destructive">
+                <AlertTitle>Feature update failed</AlertTitle>
+                <AlertDescription>{displayedErrorMessage}</AlertDescription>
+              </Alert>
+            </div>
+          ) : null}
 
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Loading features...
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {featureRows.map((feature) => (
-              <FeatureSettingRow
-                key={feature.key}
-                feature={feature}
-                busyFeatureKey={busyFeatureKey}
-                isPending={isPending}
-                onToggle={toggleFeature}
-              />
-            ))}
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              Loading features...
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {featureRows.map((feature) => (
+                <FeatureSettingRow
+                  key={feature.key}
+                  feature={feature}
+                  busyFeatureKey={busyFeatureKey}
+                  isPending={isPending}
+                  onToggle={toggleFeature}
+                />
+              ))}
 
-            {featureRows.length === 0 ? (
-              <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-                No features found.
-              </div>
-            ) : null}
-          </div>
-        )}
+              {featureRows.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No features found.
+                </div>
+              ) : null}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -232,7 +232,9 @@ export function FeaturesTab() {
                     {extension.name}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {extension.description || extension.launch_url || "No description provided."}
+                    {extension.description ||
+                      extension.launch_url ||
+                      "No description provided."}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
