@@ -1,7 +1,7 @@
 "use client"
 
 import { LoaderCircle } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { TopBar } from "@/components/top-bar"
@@ -9,14 +9,29 @@ import { useApp } from "@/lib/store"
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
+  const pathname = usePathname()
   const router = useRouter()
-  const { isAuthLoading, isAuthenticated } = useApp()
+  const { activeOrganization, isAuthLoading, isAuthenticated } = useApp()
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
       router.replace("/auth")
     }
   }, [isAuthLoading, isAuthenticated, router])
+
+  useEffect(() => {
+    const canRenderWithoutOrganization =
+      pathname === "/dashboard" || pathname === "/organizations/create"
+
+    if (
+      !isAuthLoading &&
+      isAuthenticated &&
+      !activeOrganization &&
+      !canRenderWithoutOrganization
+    ) {
+      router.replace("/dashboard")
+    }
+  }, [activeOrganization, isAuthLoading, isAuthenticated, pathname, router])
 
   if (isAuthLoading) {
     return (
@@ -37,6 +52,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     )
+  }
+
+  const canRenderWithoutOrganization =
+    pathname === "/dashboard" || pathname === "/organizations/create"
+
+  if (!activeOrganization && !canRenderWithoutOrganization) {
+    return null
   }
 
   return (
