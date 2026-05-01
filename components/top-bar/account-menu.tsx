@@ -1,7 +1,7 @@
 "use client"
 
+import { ChevronDown, CircleHelp, LogOut, UserRound } from "lucide-react"
 import Link from "next/link"
-import { ChevronDown, LogOut, UserRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -47,6 +47,12 @@ export function AccountMenu() {
           <Link href="/profile">
             <UserRound className="mr-2 h-4 w-4" />
             Profile
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href="/help">
+            <CircleHelp className="mr-2 h-4 w-4" />
+            Help
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem

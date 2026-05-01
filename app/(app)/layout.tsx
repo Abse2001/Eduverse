@@ -21,7 +21,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const canRenderWithoutOrganization =
-      pathname === "/dashboard" || pathname === "/organizations/create"
+      pathname === "/dashboard" ||
+      pathname === "/help" ||
+      pathname === "/organizations/create"
 
     if (
       !isAuthLoading &&
@@ -55,7 +57,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const canRenderWithoutOrganization =
-    pathname === "/dashboard" || pathname === "/organizations/create"
+    pathname === "/dashboard" ||
+    pathname === "/help" ||
+    pathname === "/organizations/create"
 
   if (!activeOrganization && !canRenderWithoutOrganization) {
     return null
