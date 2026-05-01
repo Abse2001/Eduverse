@@ -1,7 +1,7 @@
 "use client"
 
 import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
-import { LoaderCircle, PlusCircle, Puzzle, RotateCcw } from "lucide-react"
+import { LoaderCircle, PlusCircle, Puzzle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,11 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
-import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
+import type {
+  FeatureDefinition,
+  FeatureSetting,
+  OrganizationExtension,
+} from "@/lib/supabase/features"
 
 export function FeaturesTab() {
   const {
@@ -29,10 +33,10 @@ export function FeaturesTab() {
     featureDefinitionsStatus,
     featureDefinitionsError,
     refreshFeatureDefinitions,
-    refreshCurrentUser,
+    updateOrganizationFeatureSetting,
+    upsertOrganizationExtension,
   } = useApp()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [busyFeatureKey, setBusyFeatureKey] = useState<string | null>(null)
   const [isExtensionDialogOpen, setIsExtensionDialogOpen] = useState(false)
   const [extensionName, setExtensionName] = useState("")
@@ -59,7 +63,6 @@ export function FeaturesTab() {
     if (!activeOrganization) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
     setBusyFeatureKey(featureKey)
 
     startTransition(async () => {
@@ -81,8 +84,11 @@ export function FeaturesTab() {
         return
       }
 
-      await refreshCurrentUser()
-      setSuccessMessage("Organization features updated.")
+      updateOrganizationFeatureSetting(activeOrganization.id, {
+        feature_key: featureKey,
+        enabled,
+        config: {},
+      })
       setBusyFeatureKey(null)
     })
   }
@@ -92,10 +98,9 @@ export function FeaturesTab() {
     if (!activeOrganization) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     startTransition(async () => {
-      const { error } = await createClient()
+      const { data, error } = await createClient()
         .from("organization_extensions")
         .insert({
           organization_id: activeOrganization.id,
@@ -105,6 +110,10 @@ export function FeaturesTab() {
           launch_url: extensionUrl || null,
           enabled: true,
         })
+        .select(
+          "id, organization_id, name, slug, description, launch_url, enabled, sort_order, config",
+        )
+        .single()
 
       if (error) {
         setErrorMessage(error.message)
@@ -115,21 +124,26 @@ export function FeaturesTab() {
       setExtensionDescription("")
       setExtensionUrl("")
       setIsExtensionDialogOpen(false)
-      await refreshCurrentUser()
-      setSuccessMessage("Custom extension added.")
+      upsertOrganizationExtension(
+        activeOrganization.id,
+        data as OrganizationExtension,
+      )
     })
   }
 
   function toggleExtension(extensionId: string, enabled: boolean) {
     setErrorMessage(null)
-    setSuccessMessage(null)
     setBusyFeatureKey(extensionId)
 
     startTransition(async () => {
-      const { error } = await createClient()
+      const { data, error } = await createClient()
         .from("organization_extensions")
         .update({ enabled })
         .eq("id", extensionId)
+        .select(
+          "id, organization_id, name, slug, description, launch_url, enabled, sort_order, config",
+        )
+        .single()
 
       if (error) {
         setErrorMessage(error.message)
@@ -137,8 +151,10 @@ export function FeaturesTab() {
         return
       }
 
-      await refreshCurrentUser()
-      setSuccessMessage("Custom extension updated.")
+      upsertOrganizationExtension(
+        data.organization_id,
+        data as OrganizationExtension,
+      )
       setBusyFeatureKey(null)
     })
   }
@@ -147,18 +163,7 @@ export function FeaturesTab() {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-sm">Organization Features</CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => void refreshFeatureDefinitions({ force: true })}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-        </div>
         </CardHeader>
         <CardContent className="p-0">
         {displayedErrorMessage ? (
@@ -166,15 +171,6 @@ export function FeaturesTab() {
             <Alert variant="destructive">
               <AlertTitle>Feature update failed</AlertTitle>
               <AlertDescription>{displayedErrorMessage}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-
-        {successMessage ? (
-          <div className="p-4">
-            <Alert>
-              <AlertTitle>Updated</AlertTitle>
-              <AlertDescription>{successMessage}</AlertDescription>
             </Alert>
           </div>
         ) : null}

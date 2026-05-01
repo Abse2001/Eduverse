@@ -96,6 +96,14 @@ interface AppContextValue {
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
   }>
+  updateOrganizationFeatureSetting: (
+    organizationId: string,
+    setting: FeatureSetting,
+  ) => void
+  upsertOrganizationExtension: (
+    organizationId: string,
+    extension: OrganizationExtension,
+  ) => void
   refreshCurrentUser: () => Promise<void>
   setDefaultOrganization: (organizationId: string) => Promise<void>
   signOut: () => Promise<void>
@@ -355,6 +363,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrganizationUsersStatus("idle")
   }
 
+  function updateOrganizationFeatureSetting(
+    organizationId: string,
+    setting: FeatureSetting,
+  ) {
+    setOrganizations((currentOrganizations) =>
+      currentOrganizations.map((organization) => {
+        if (organization.id !== organizationId) return organization
+
+        const existingSettings = organization.featureSettings.filter(
+          (featureSetting) =>
+            featureSetting.feature_key !== setting.feature_key,
+        )
+
+        return {
+          ...organization,
+          featureSettings: [...existingSettings, setting],
+        }
+      }),
+    )
+  }
+
+  function upsertOrganizationExtension(
+    organizationId: string,
+    extension: OrganizationExtension,
+  ) {
+    setOrganizations((currentOrganizations) =>
+      currentOrganizations.map((organization) => {
+        if (organization.id !== organizationId) return organization
+
+        const existingExtensions = organization.extensions.filter(
+          (currentExtension) => currentExtension.id !== extension.id,
+        )
+
+        return {
+          ...organization,
+          extensions: [...existingExtensions, extension].sort(
+            (left, right) => left.sort_order - right.sort_order,
+          ),
+        }
+      }),
+    )
+  }
+
   const activeOrganization =
     organizations.find((organization) => organization.isDefault) ?? null
 
@@ -559,6 +610,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshOrganizationClasses,
         refreshFeatureDefinitions,
         refreshOrganizationUsers,
+        updateOrganizationFeatureSetting,
+        upsertOrganizationExtension,
         refreshCurrentUser,
         setDefaultOrganization,
         signOut,
