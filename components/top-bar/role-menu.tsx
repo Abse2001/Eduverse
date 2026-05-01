@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -35,6 +35,7 @@ const ROLE_ICONS: Record<OrganizationUserRole, typeof UserRound> = {
 
 export function RoleMenu() {
   const router = useRouter()
+  const pathname = usePathname()
   const {
     activeOrganization,
     activeOrganizationRole,
@@ -49,6 +50,28 @@ export function RoleMenu() {
   const ActiveIcon = ROLE_ICONS[activeRole]
   const roles = activeOrganization?.roles ?? []
 
+  if (!activeOrganization || roles.length === 0) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground opacity-60">
+        <ActiveIcon className="h-4 w-4 shrink-0" />
+        <span className="hidden sm:inline">
+          {organizationRoleLabel(activeRole)}
+        </span>
+      </div>
+    )
+  }
+
+  if (roles.length === 1) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-foreground">
+        <ActiveIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="hidden sm:inline">
+          {organizationRoleLabel(activeRole)}
+        </span>
+      </div>
+    )
+  }
+
   async function selectRole(role: OrganizationUserRole) {
     if (!activeOrganization || role === activeOrganizationRole) return
 
@@ -57,7 +80,9 @@ export function RoleMenu() {
 
     try {
       await setActiveOrganizationRole(role)
-      router.replace("/dashboard")
+      if (isRoleSensitiveRoute(pathname)) {
+        router.replace("/dashboard")
+      }
       router.refresh()
       setIsOpen(false)
     } catch (error) {
@@ -70,10 +95,7 @@ export function RoleMenu() {
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
-        <button
-          className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!activeOrganization || roles.length === 0}
-        >
+        <button className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60">
           <ActiveIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="hidden sm:inline">
             {organizationRoleLabel(activeRole)}
@@ -123,4 +145,8 @@ export function RoleMenu() {
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+function isRoleSensitiveRoute(pathname: string) {
+  return pathname.startsWith("/classes/")
 }
