@@ -51,17 +51,32 @@ export function MessageBubble({
   message,
   isOwn,
   isFocused = false,
+  searchQuery = "",
 }: {
   message: ChatMessage
   isOwn: boolean
   isFocused?: boolean
+  searchQuery?: string
 }) {
   if (message.kind === "announcement") {
-    return <AnnouncementBubble message={message} isFocused={isFocused} />
+    return (
+      <AnnouncementBubble
+        message={message}
+        isFocused={isFocused}
+        searchQuery={searchQuery}
+      />
+    )
   }
 
   if (message.kind === "media") {
-    return <MediaBubble message={message} isOwn={isOwn} isFocused={isFocused} />
+    return (
+      <MediaBubble
+        message={message}
+        isOwn={isOwn}
+        isFocused={isFocused}
+        searchQuery={searchQuery}
+      />
+    )
   }
 
   return (
@@ -74,7 +89,7 @@ export function MessageBubble({
             : "bg-muted text-foreground rounded-bl-sm",
         )}
       >
-        {message.content}
+        <HighlightedText text={message.content} query={searchQuery} />
       </div>
     </MessageShell>
   )
@@ -83,9 +98,11 @@ export function MessageBubble({
 function AnnouncementBubble({
   message,
   isFocused,
+  searchQuery,
 }: {
   message: ChatMessage
   isFocused: boolean
+  searchQuery: string
 }) {
   return (
     <div
@@ -115,7 +132,7 @@ function AnnouncementBubble({
           </span>
         </div>
         <p className="text-sm text-foreground leading-relaxed">
-          {message.content}
+          <HighlightedText text={message.content} query={searchQuery} />
         </p>
       </div>
     </div>
@@ -126,10 +143,12 @@ function MediaBubble({
   message,
   isOwn,
   isFocused,
+  searchQuery,
 }: {
   message: ChatMessage
   isOwn: boolean
   isFocused: boolean
+  searchQuery: string
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [isUnavailable, setIsUnavailable] = useState(message.isMaterialDeleted)
@@ -234,7 +253,12 @@ function MediaBubble({
             <Icon className="w-9 h-9 shrink-0 opacity-70" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">
-                {message.originalFilename ?? message.mediaTitle ?? "Media"}
+                <HighlightedText
+                  text={
+                    message.originalFilename ?? message.mediaTitle ?? "Media"
+                  }
+                  query={searchQuery}
+                />
               </p>
               <p className="text-xs text-muted-foreground">
                 {isUnavailable
@@ -245,7 +269,9 @@ function MediaBubble({
           </button>
         )}
         {message.content && !isDefaultMediaContent(message.content) ? (
-          <p className="text-xs px-1 pt-1 text-foreground">{message.content}</p>
+          <p className="text-xs px-1 pt-1 text-foreground">
+            <HighlightedText text={message.content} query={searchQuery} />
+          </p>
         ) : null}
         {!isUnavailable ? (
           <Button
@@ -318,6 +344,26 @@ function isDefaultMediaContent(content: string) {
     "Shared a video",
     "Shared slides",
   ].includes(content)
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  if (!query) return text
+
+  const normalizedText = text.toLowerCase()
+  const normalizedQuery = query.toLowerCase()
+  const index = normalizedText.indexOf(normalizedQuery)
+
+  if (index === -1) return text
+
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-yellow-200 px-0.5 text-yellow-950">
+        {text.slice(index, index + query.length)}
+      </mark>
+      {text.slice(index + query.length)}
+    </>
+  )
 }
 
 function formatBytes(bytes: number | null) {
