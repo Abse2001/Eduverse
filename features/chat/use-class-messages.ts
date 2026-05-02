@@ -107,6 +107,7 @@ export function useClassMessages({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             content: trimmed,
+            senderRole: currentUserRole,
             kind:
               canSendAnnouncement && isAnnouncementMode
                 ? "announcement"
@@ -180,6 +181,7 @@ export function useClassMessages({
       const formData = new FormData()
       formData.set("file", file)
       formData.set("content", input.trim())
+      formData.set("senderRole", currentUserRole)
 
       const response = await fetch(
         `/api/classes/${encodeURIComponent(classId)}/messages/media`,

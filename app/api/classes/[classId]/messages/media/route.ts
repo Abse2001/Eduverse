@@ -17,6 +17,7 @@ type MessageRow = {
   organization_id: string
   class_id: string
   sender_user_id: string
+  sender_role: "student" | "teacher" | "admin"
   content: string
   kind: "media"
   material_id: string | null
@@ -40,6 +41,7 @@ export async function POST(request: Request, context: RouteContext) {
   const formData = await request.formData().catch(() => null)
   const file = formData?.get("file")
   const content = formData?.get("content")
+  const senderRole = parseSenderRole(formData?.get("senderRole"))
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "A file is required." }, { status: 400 })
@@ -109,6 +111,7 @@ export async function POST(request: Request, context: RouteContext) {
         organization_id: classRow.organization_id,
         class_id: classRow.id,
         sender_user_id: user.id,
+        sender_role: senderRole,
         content:
           typeof content === "string" && content.trim()
             ? content.trim()
@@ -122,7 +125,7 @@ export async function POST(request: Request, context: RouteContext) {
         material_type: validated.type,
       })
       .select(
-        "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
+        "id, organization_id, class_id, sender_user_id, sender_role, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
       )
       .single()
 
@@ -150,6 +153,7 @@ export async function POST(request: Request, context: RouteContext) {
         organizationId: (messageData as MessageRow).organization_id,
         classId: (messageData as MessageRow).class_id,
         senderId: (messageData as MessageRow).sender_user_id,
+        senderRole: (messageData as MessageRow).sender_role,
         senderName,
         senderAvatar: initials(senderName),
         content: (messageData as MessageRow).content,
@@ -179,6 +183,10 @@ export async function POST(request: Request, context: RouteContext) {
       { status: 500 },
     )
   }
+}
+
+function parseSenderRole(value: unknown): "student" | "teacher" | "admin" {
+  return value === "teacher" || value === "admin" ? value : "student"
 }
 
 function titleFromFileName(fileName: string) {

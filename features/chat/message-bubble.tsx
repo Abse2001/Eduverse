@@ -22,6 +22,7 @@ export type ChatMessage = {
   organizationId: string
   classId: string
   senderId: string
+  senderRole: "student" | "teacher" | "admin"
   senderName: string
   senderAvatar: string
   content: string

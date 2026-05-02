@@ -12,6 +12,7 @@ type MessageRow = {
   organization_id: string
   class_id: string
   sender_user_id: string
+  sender_role: "student" | "teacher" | "admin"
   content: string
   kind: "text" | "announcement" | "media"
   material_id: string | null
@@ -46,7 +47,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { data, error } = await supabase
     .from("class_messages")
     .select(
-      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
+      "id, organization_id, class_id, sender_user_id, sender_role, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
     )
     .eq("class_id", classId)
     .order("created_at", { ascending: true })
@@ -123,11 +124,13 @@ export async function POST(request: Request, context: RouteContext) {
   const payload = (await request.json().catch(() => null)) as {
     content?: unknown
     kind?: unknown
+    senderRole?: unknown
   } | null
   const content =
     typeof payload?.content === "string" ? payload.content.trim() : ""
   const requestedKind =
     payload?.kind === "announcement" ? "announcement" : "text"
+  const senderRole = parseSenderRole(payload?.senderRole)
 
   if (!content) {
     return NextResponse.json(
@@ -176,11 +179,12 @@ export async function POST(request: Request, context: RouteContext) {
       organization_id: classRow.organization_id,
       class_id: classRow.id,
       sender_user_id: user.id,
+      sender_role: senderRole,
       content,
       kind: requestedKind,
     })
     .select(
-      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
+      "id, organization_id, class_id, sender_user_id, sender_role, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
     )
     .single()
 
@@ -216,6 +220,7 @@ function toMessageResponse(
     organizationId: row.organization_id,
     classId: row.class_id,
     senderId: row.sender_user_id,
+    senderRole: row.sender_role,
     senderName,
     senderAvatar: initials(senderName),
     content: row.content,
@@ -233,6 +238,10 @@ function toMessageResponse(
       : false,
     createdAt: row.created_at,
   }
+}
+
+function parseSenderRole(value: unknown): "student" | "teacher" | "admin" {
+  return value === "teacher" || value === "admin" ? value : "student"
 }
 
 function initials(name: string) {

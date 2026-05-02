@@ -98,7 +98,10 @@ export function ChatScreen({ cls }: { cls: Class }) {
             <MessageBubble
               key={message.id}
               message={message}
-              isOwn={message.senderId === currentUser.id}
+              isOwn={
+                message.senderId === currentUser.id &&
+                message.senderRole === currentUser.role
+              }
               isFocused={focusedMessageId === message.id}
             />
           ))
