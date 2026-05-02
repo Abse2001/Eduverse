@@ -36,6 +36,13 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Table,
@@ -125,6 +132,25 @@ const EMPTY_CREATE_FORM: CreateForm = {
   files: [],
 }
 
+const TIME_OPTIONS = [
+  ...Array.from({ length: 48 }, (_, index) => {
+    const minutes = index * 30
+    const hour = Math.floor(minutes / 60)
+    const minute = minutes % 60
+    const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(
+      2,
+      "0",
+    )}`
+    const label = new Date(2000, 0, 1, hour, minute).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+
+    return { value, label }
+  }),
+  { value: "23:59", label: "11:59 PM" },
+]
+
 export default function AssignmentsPage({
   params,
 }: {
@@ -136,13 +162,13 @@ export default function AssignmentsPage({
     useClassFeatureRoute(classId, "assignments")
   const canManage =
     currentUser.role === "admin" ||
-    currentUser.role === "teacher" ||
-    classRow?.teacher_user_id === currentUser.id ||
-    classRow?.memberships.some(
-      (membership) =>
-        membership.user_id === currentUser.id &&
-        (membership.role === "teacher" || membership.role === "ta"),
-    ) === true
+    (currentUser.role === "teacher" &&
+      (classRow?.teacher_user_id === currentUser.id ||
+        classRow?.memberships.some(
+          (membership) =>
+            membership.user_id === currentUser.id &&
+            (membership.role === "teacher" || membership.role === "ta"),
+        ) === true))
   const {
     assignments,
     counts,
@@ -506,17 +532,12 @@ export default function AssignmentsPage({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="assignment-due">Deadline</Label>
-                <Input
-                  id="assignment-due"
-                  type="datetime-local"
+              <div className="space-y-2 sm:col-span-2">
+                <DeadlineFields
+                  idPrefix="assignment"
                   value={createForm.dueAt}
-                  onChange={(event) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      dueAt: event.target.value,
-                    }))
+                  onChange={(dueAt) =>
+                    setCreateForm((prev) => ({ ...prev, dueAt }))
                   }
                   disabled={isMutating}
                 />
@@ -1140,6 +1161,59 @@ function CheckRow({
   )
 }
 
+function DeadlineFields({
+  idPrefix,
+  value,
+  onChange,
+  disabled,
+}: {
+  idPrefix: string
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+}) {
+  const date = getDeadlineDatePart(value)
+  const time = getDeadlineTimePart(value)
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-[1fr_9.5rem]">
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
+        <Input
+          id={`${idPrefix}-due-date`}
+          type="date"
+          value={date}
+          onChange={(event) =>
+            onChange(combineDeadlineParts(event.target.value, time))
+          }
+          disabled={disabled}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-due-time`}>Time</Label>
+        <Select
+          value={time}
+          onValueChange={(nextTime) =>
+            onChange(combineDeadlineParts(date, nextTime))
+          }
+          disabled={disabled}
+        >
+          <SelectTrigger id={`${idPrefix}-due-time`} className="w-full">
+            <SelectValue placeholder="Choose time" />
+          </SelectTrigger>
+          <SelectContent>
+            {TIME_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+}
+
 function AssignmentFormFields({
   form,
   setForm,
@@ -1178,15 +1252,11 @@ function AssignmentFormFields({
             rows={4}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="edit-assignment-due">Deadline</Label>
-          <Input
-            id="edit-assignment-due"
-            type="datetime-local"
+        <div className="space-y-2 sm:col-span-2">
+          <DeadlineFields
+            idPrefix="edit-assignment"
             value={form.dueAt}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, dueAt: event.target.value }))
-            }
+            onChange={(dueAt) => setForm((prev) => ({ ...prev, dueAt }))}
             disabled={isMutating}
           />
         </div>
@@ -1263,6 +1333,20 @@ function toDatetimeLocalValue(value: string) {
 
   const offsetMs = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
+function getDeadlineDatePart(value: string) {
+  return value.split("T")[0] ?? ""
+}
+
+function getDeadlineTimePart(value: string) {
+  const time = value.split("T")[1]?.slice(0, 5)
+  return TIME_OPTIONS.some((option) => option.value === time) ? time : "23:59"
+}
+
+function combineDeadlineParts(date: string, time: string) {
+  if (!date) return ""
+  return `${date}T${time || "23:59"}`
 }
 
 function RosterStatus({

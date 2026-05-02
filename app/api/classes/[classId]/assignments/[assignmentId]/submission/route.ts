@@ -78,24 +78,27 @@ export async function POST(request: Request, context: RouteContext) {
     )
   }
 
-  const { data: canManage, error: manageError } = await supabase.rpc(
-    "can_manage_class",
-    {
-      target_org_id: assignment.organization_id,
-      target_class_id: assignment.class_id,
-    },
+  const selectedRole = await loadSelectedOrganizationRole(
+    supabase,
+    assignment.organization_id,
+    user.id,
   )
+  if ("response" in selectedRole) return selectedRole.response
 
-  if (manageError) {
-    return NextResponse.json({ error: manageError.message }, { status: 500 })
-  }
-
-  if (canManage) {
+  if (selectedRole.role !== "student") {
     return NextResponse.json(
-      { error: "Teachers cannot submit work for assignments." },
+      { error: "Switch to the student role to submit assignment work." },
       { status: 403 },
     )
   }
+
+  const studentMembership = await loadStudentClassMembership(
+    supabase,
+    assignment.organization_id,
+    assignment.class_id,
+    user.id,
+  )
+  if ("response" in studentMembership) return studentMembership.response
 
   const formData = await request.formData().catch(() => null)
   const textResponseValue = formData?.get("textResponse")
@@ -257,4 +260,106 @@ function toSubmissionResponse(row: SubmissionRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+async function loadSelectedOrganizationRole(
+  supabase: NonNullable<
+    Awaited<ReturnType<typeof requireRouteUser>>["supabase"]
+  >,
+  organizationId: string,
+  userId: string,
+) {
+  const { data: membership, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("id, role, selected_role_id")
+    .eq("organization_id", organizationId)
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .maybeSingle()
+
+  if (membershipError) {
+    return {
+      response: NextResponse.json(
+        { error: membershipError.message },
+        { status: 500 },
+      ),
+    }
+  }
+
+  if (!membership) {
+    return {
+      response: NextResponse.json(
+        { error: "Active organization membership required." },
+        { status: 403 },
+      ),
+    }
+  }
+
+  if (membership.selected_role_id) {
+    const { data: selectedRole, error: selectedRoleError } = await supabase
+      .from("organization_membership_roles")
+      .select("role")
+      .eq("id", membership.selected_role_id)
+      .eq("organization_membership_id", membership.id)
+      .eq("status", "active")
+      .maybeSingle()
+
+    if (selectedRoleError) {
+      return {
+        response: NextResponse.json(
+          { error: selectedRoleError.message },
+          { status: 500 },
+        ),
+      }
+    }
+
+    if (selectedRole?.role) {
+      return {
+        role: selectedRole.role as
+          | "org_owner"
+          | "org_admin"
+          | "teacher"
+          | "student",
+      }
+    }
+  }
+
+  return {
+    role: membership.role as "org_owner" | "org_admin" | "teacher" | "student",
+  }
+}
+
+async function loadStudentClassMembership(
+  supabase: NonNullable<
+    Awaited<ReturnType<typeof requireRouteUser>>["supabase"]
+  >,
+  organizationId: string,
+  classId: string,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("class_memberships")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("class_id", classId)
+    .eq("user_id", userId)
+    .eq("role", "student")
+    .maybeSingle()
+
+  if (error) {
+    return {
+      response: NextResponse.json({ error: error.message }, { status: 500 }),
+    }
+  }
+
+  if (!data) {
+    return {
+      response: NextResponse.json(
+        { error: "Student class membership required." },
+        { status: 403 },
+      ),
+    }
+  }
+
+  return { ok: true }
 }

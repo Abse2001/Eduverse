@@ -149,9 +149,10 @@ function buildStorageKey(input: {
   const id = crypto.randomUUID()
 
   return [
-    "class-assignments",
+    "class-materials",
     input.organizationId,
     input.classId,
+    "assignments",
     input.assignmentId,
     input.kind,
     extension ? `${id}-${safeName}` : id,

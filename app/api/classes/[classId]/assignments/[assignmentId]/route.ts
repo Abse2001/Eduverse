@@ -145,11 +145,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   )
   if ("response" in assignment) return assignment.response
 
-  const { error } = await supabase
-    .from("class_assignments")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", assignmentId)
-    .eq("class_id", classId)
+  const { error } = await supabase.rpc("soft_delete_class_assignment", {
+    target_class_id: classId,
+    target_assignment_id: assignmentId,
+  })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
