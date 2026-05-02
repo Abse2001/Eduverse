@@ -121,9 +121,12 @@ export async function POST(request: Request, context: RouteContext) {
 
   const payload = (await request.json().catch(() => null)) as {
     content?: unknown
+    kind?: unknown
   } | null
   const content =
     typeof payload?.content === "string" ? payload.content.trim() : ""
+  const requestedKind =
+    payload?.kind === "announcement" ? "announcement" : "text"
 
   if (!content) {
     return NextResponse.json(
@@ -159,6 +162,13 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: manageError.message }, { status: 500 })
   }
 
+  if (requestedKind === "announcement" && !canManage) {
+    return NextResponse.json(
+      { error: "Only teachers can post announcements." },
+      { status: 403 },
+    )
+  }
+
   const { data: messageData, error: messageError } = await supabase
     .from("class_messages")
     .insert({
@@ -166,7 +176,7 @@ export async function POST(request: Request, context: RouteContext) {
       class_id: classRow.id,
       sender_user_id: user.id,
       content,
-      kind: canManage ? "announcement" : "text",
+      kind: requestedKind,
     })
     .select(
       "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, created_at",

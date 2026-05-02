@@ -1,8 +1,9 @@
 "use client"
 
 import { useRef } from "react"
-import { Image, Paperclip, Send } from "lucide-react"
+import { Image, Megaphone, Paperclip, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 interface ChatComposerProps {
   input: string
@@ -12,6 +13,9 @@ interface ChatComposerProps {
   onSelectImage: (file?: File) => Promise<void>
   placeholder: string
   disabled?: boolean
+  canSendAnnouncement?: boolean
+  isAnnouncementMode?: boolean
+  onToggleAnnouncementMode?: () => void
 }
 
 export function ChatComposer({
@@ -22,6 +26,9 @@ export function ChatComposer({
   onSelectImage,
   placeholder,
   disabled = false,
+  canSendAnnouncement = false,
+  isAnnouncementMode = false,
+  onToggleAnnouncementMode,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -78,7 +85,21 @@ export function ChatComposer({
             }}
           />
           <div className="flex items-center gap-1 shrink-0">
+            {canSendAnnouncement ? (
+              <Button
+                type="button"
+                variant={isAnnouncementMode ? "secondary" : "ghost"}
+                size="icon"
+                className={cn("w-7 h-7", isAnnouncementMode && "text-primary")}
+                onClick={onToggleAnnouncementMode}
+                disabled={disabled}
+                title="Announcement mode"
+              >
+                <Megaphone className="w-3.5 h-3.5" />
+              </Button>
+            ) : null}
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="w-7 h-7"
@@ -88,6 +109,7 @@ export function ChatComposer({
               <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
             </Button>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="w-7 h-7"

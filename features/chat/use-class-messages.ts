@@ -29,6 +29,7 @@ export function useClassMessages({
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isAnnouncementMode, setIsAnnouncementMode] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -76,7 +77,16 @@ export function useClassMessages({
     [messages],
   )
 
-  const pinnedMessages: ChatMessage[] = []
+  const announcements = useMemo(
+    () =>
+      messages
+        .filter((message) => message.kind === "announcement")
+        .slice()
+        .reverse(),
+    [messages],
+  )
+  const canSendAnnouncement =
+    currentUserRole === "teacher" || currentUserRole === "admin"
 
   async function sendMessage() {
     const trimmed = input.trim()
@@ -91,7 +101,13 @@ export function useClassMessages({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: trimmed }),
+          body: JSON.stringify({
+            content: trimmed,
+            kind:
+              canSendAnnouncement && isAnnouncementMode
+                ? "announcement"
+                : "text",
+          }),
         },
       )
       const payload = (await response
@@ -104,12 +120,41 @@ export function useClassMessages({
 
       setMessages((prev) => [...prev, payload.message as ChatMessage])
       setInput("")
+      setIsAnnouncementMode(false)
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not send message.",
       )
     } finally {
       setIsSending(false)
+    }
+  }
+
+  async function deleteAnnouncement(messageId: string) {
+    setErrorMessage(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(
+          classId,
+        )}/messages/${encodeURIComponent(messageId)}`,
+        { method: "DELETE" },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string
+      } | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Could not delete announcement.")
+      }
+
+      setMessages((prev) => prev.filter((message) => message.id !== messageId))
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not delete announcement.",
+      )
     }
   }
 
@@ -156,16 +201,18 @@ export function useClassMessages({
     messages,
     enrichedMessages: messages,
     mediaItems,
-    pinnedMessages,
+    announcements,
     bottomRef,
     isLoading,
     isSending,
     errorMessage,
+    isAnnouncementMode,
+    setIsAnnouncementMode,
     sendMessage,
     sendFile: sendMedia,
     sendImage: sendMedia,
-    canSendAnnouncement:
-      currentUserRole === "teacher" || currentUserRole === "admin",
+    deleteAnnouncement,
+    canSendAnnouncement,
     currentUserId,
   }
 }
