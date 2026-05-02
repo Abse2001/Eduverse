@@ -20,6 +20,7 @@ import { useClassMessages } from "./use-class-messages"
 
 export function ChatScreen({ cls }: { cls: Class }) {
   const { currentUser } = useApp()
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
   const {
     input,
     setInput,
@@ -73,6 +74,13 @@ export function ChatScreen({ cls }: { cls: Class }) {
         announcements={announcements}
         canDelete={canSendAnnouncement}
         onDelete={deleteAnnouncement}
+        onOpen={(messageId) => {
+          document
+            .getElementById(`chat-message-${messageId}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" })
+          setFocusedMessageId(messageId)
+          window.setTimeout(() => setFocusedMessageId(null), 1400)
+        }}
       />
 
       <div className="flex-1 overflow-y-auto py-4 space-y-3">
@@ -91,6 +99,7 @@ export function ChatScreen({ cls }: { cls: Class }) {
               key={message.id}
               message={message}
               isOwn={message.senderId === currentUser.id}
+              isFocused={focusedMessageId === message.id}
             />
           ))
         )}
@@ -123,10 +132,12 @@ function AnnouncementBar({
   announcements,
   canDelete,
   onDelete,
+  onOpen,
 }: {
   announcements: ChatMessage[]
   canDelete: boolean
   onDelete: (messageId: string) => Promise<void>
+  onOpen: (messageId: string) => void
 }) {
   const [index, setIndex] = useState(0)
 
@@ -149,12 +160,16 @@ function AnnouncementBar({
 
   return (
     <div className="px-4 py-2 bg-primary/5 border-b border-primary/10 shrink-0">
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        onClick={() => onOpen(announcement.id)}
+      >
         <Megaphone className="w-3.5 h-3.5 text-primary shrink-0" />
         <p className="text-xs font-medium text-primary shrink-0">
           Announcement
         </p>
-        <p className="text-xs text-muted-foreground truncate">
+        <p className="min-w-0 flex-1 truncate text-xs text-foreground">
           {announcement.content}
         </p>
         <div className="ml-auto flex items-center gap-1 shrink-0">
@@ -166,7 +181,10 @@ function AnnouncementBar({
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => move(-1)}
+            onClick={(event) => {
+              event.stopPropagation()
+              move(-1)
+            }}
             disabled={announcements.length < 2}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -176,7 +194,10 @@ function AnnouncementBar({
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => move(1)}
+            onClick={(event) => {
+              event.stopPropagation()
+              move(1)
+            }}
             disabled={announcements.length < 2}
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -187,13 +208,16 @@ function AnnouncementBar({
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={() => onDelete(announcement.id)}
+              onClick={(event) => {
+                event.stopPropagation()
+                onDelete(announcement.id)
+              }}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </Button>
           ) : null}
         </div>
-      </div>
+      </button>
     </div>
   )
 }

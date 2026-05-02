@@ -48,20 +48,22 @@ const MEDIA_ICON = {
 export function MessageBubble({
   message,
   isOwn,
+  isFocused = false,
 }: {
   message: ChatMessage
   isOwn: boolean
+  isFocused?: boolean
 }) {
   if (message.kind === "announcement") {
-    return <AnnouncementBubble message={message} />
+    return <AnnouncementBubble message={message} isFocused={isFocused} />
   }
 
   if (message.kind === "media") {
-    return <MediaBubble message={message} isOwn={isOwn} />
+    return <MediaBubble message={message} isOwn={isOwn} isFocused={isFocused} />
   }
 
   return (
-    <MessageShell message={message} isOwn={isOwn}>
+    <MessageShell message={message} isOwn={isOwn} isFocused={isFocused}>
       <div
         className={cn(
           "px-3 py-2 rounded-2xl text-sm leading-relaxed",
@@ -76,9 +78,21 @@ export function MessageBubble({
   )
 }
 
-function AnnouncementBubble({ message }: { message: ChatMessage }) {
+function AnnouncementBubble({
+  message,
+  isFocused,
+}: {
+  message: ChatMessage
+  isFocused: boolean
+}) {
   return (
-    <div className="flex items-start gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20 mx-2">
+    <div
+      id={`chat-message-${message.id}`}
+      className={cn(
+        "flex items-start gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20 mx-2 transition-shadow",
+        isFocused && "shadow-[0_0_0_3px_hsl(var(--primary)/0.25)]",
+      )}
+    >
       <Megaphone className="w-4 h-4 text-primary mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
@@ -109,9 +123,11 @@ function AnnouncementBubble({ message }: { message: ChatMessage }) {
 function MediaBubble({
   message,
   isOwn,
+  isFocused,
 }: {
   message: ChatMessage
   isOwn: boolean
+  isFocused: boolean
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [isUnavailable, setIsUnavailable] = useState(message.isMaterialDeleted)
@@ -180,7 +196,12 @@ function MediaBubble({
       : FileIcon
 
   return (
-    <MessageShell message={message} isOwn={isOwn} maxWidth="max-w-sm">
+    <MessageShell
+      message={message}
+      isOwn={isOwn}
+      isFocused={isFocused}
+      maxWidth="max-w-sm"
+    >
       <div
         className={cn(
           "p-1.5 rounded-2xl border",
@@ -244,17 +265,24 @@ function MediaBubble({
 function MessageShell({
   message,
   isOwn,
+  isFocused,
   maxWidth = "max-w-sm",
   children,
 }: {
   message: ChatMessage
   isOwn: boolean
+  isFocused: boolean
   maxWidth?: string
   children: ReactNode
 }) {
   return (
     <div
-      className={cn("flex items-end gap-2 px-2", isOwn && "flex-row-reverse")}
+      id={`chat-message-${message.id}`}
+      className={cn(
+        "flex items-end gap-2 px-2 transition-shadow",
+        isOwn && "flex-row-reverse",
+        isFocused && "rounded-xl shadow-[0_0_0_3px_hsl(var(--primary)/0.25)]",
+      )}
     >
       {!isOwn ? (
         <Avatar className="w-7 h-7 mb-0.5">
