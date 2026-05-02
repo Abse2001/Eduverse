@@ -9,6 +9,7 @@ import {
   Loader2,
   PlusCircle,
   Search,
+  Trash2,
   Upload,
   Video,
 } from "lucide-react"
@@ -39,6 +40,10 @@ import {
   type ClassMaterial,
   useClassMaterials,
 } from "@/features/materials/use-class-materials"
+import {
+  downloadCachedMedia,
+  loadCachedMedia,
+} from "@/features/chat/media-cache"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -89,7 +94,7 @@ export default function MaterialsPage({
     isUploading,
     errorMessage: materialsError,
     uploadMaterial,
-    getDownloadUrl,
+    deleteMaterial,
   } = useClassMaterials({
     classId,
     uploaderUserId: authUser?.id ?? currentUser.id ?? null,
@@ -195,8 +200,30 @@ export default function MaterialsPage({
   ) {
     try {
       setOpeningMaterialId(material.id)
-      const url = await getDownloadUrl(material.id, disposition)
-      window.open(url, "_blank", "noopener,noreferrer")
+      if (disposition === "attachment") {
+        await downloadCachedMedia({
+          classId,
+          materialId: material.id,
+          fileName: material.originalFilename,
+        })
+      } else {
+        const media = await loadCachedMedia({
+          classId,
+          materialId: material.id,
+        })
+        window.open(media.objectUrl, "_blank", "noopener,noreferrer")
+      }
+    } finally {
+      setOpeningMaterialId(null)
+    }
+  }
+
+  async function removeMaterial(material: ClassMaterial) {
+    if (!window.confirm(`Delete ${material.title}?`)) return
+
+    try {
+      setOpeningMaterialId(material.id)
+      await deleteMaterial(material.id)
     } finally {
       setOpeningMaterialId(null)
     }
@@ -286,6 +313,7 @@ export default function MaterialsPage({
               isOpening={openingMaterialId === material.id}
               onOpen={() => openMaterial(material)}
               onDownload={() => openMaterial(material, "attachment")}
+              onDelete={canUpload ? () => removeMaterial(material) : undefined}
             />
           ))}
         </div>
@@ -384,11 +412,13 @@ function MaterialCard({
   isOpening,
   onOpen,
   onDownload,
+  onDelete,
 }: {
   material: ClassMaterial
   isOpening: boolean
   onOpen: () => void
   onDownload: () => void
+  onDelete?: () => void
 }) {
   const cfg = TYPE_CONFIG[material.type]
   const Icon = cfg.icon
@@ -460,22 +490,35 @@ function MaterialCard({
             variant="secondary"
             className={cn("text-[10px] border-0", cfg.bg, cfg.color)}
           >
-            {cfg.label}
+            {material.source === "chat" ? "Chat" : cfg.label}
           </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs gap-1.5 h-7"
-            onClick={onDownload}
-            disabled={isOpening}
-          >
-            {isOpening ? (
-              <Spinner className="w-3 h-3" />
-            ) : (
-              <Download className="w-3 h-3" />
-            )}
-            Download
-          </Button>
+          <div className="flex items-center gap-1">
+            {onDelete ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={onDelete}
+                disabled={isOpening}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs gap-1.5 h-7"
+              onClick={onDownload}
+              disabled={isOpening}
+            >
+              {isOpening ? (
+                <Spinner className="w-3 h-3" />
+              ) : (
+                <Download className="w-3 h-3" />
+              )}
+              Download
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

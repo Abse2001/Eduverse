@@ -23,6 +23,9 @@ export function ChatScreen({ cls }: { cls: Class }) {
     sendMessage,
     sendFile,
     sendImage,
+    isLoading,
+    isSending,
+    errorMessage,
   } = useClassMessages({
     classId: cls.id,
     currentUserId: currentUser.id,
@@ -70,13 +73,24 @@ export function ChatScreen({ cls }: { cls: Class }) {
       <ChatMediaStrip items={mediaItems} />
 
       <div className="flex-1 overflow-y-auto py-4 space-y-3">
-        {enrichedMessages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            isOwn={message.senderId === currentUser.id}
-          />
-        ))}
+        {errorMessage ? (
+          <div className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {errorMessage}
+          </div>
+        ) : null}
+        {isLoading ? (
+          <p className="px-4 text-sm text-muted-foreground">
+            Loading messages...
+          </p>
+        ) : (
+          enrichedMessages.map((message) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isOwn={message.senderId === currentUser.id}
+            />
+          ))
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -86,6 +100,7 @@ export function ChatScreen({ cls }: { cls: Class }) {
         onSend={sendMessage}
         onSelectFile={sendFile}
         onSelectImage={sendImage}
+        disabled={isSending}
         placeholder={
           currentUser.role === "teacher"
             ? "Post an announcement or attach media..."

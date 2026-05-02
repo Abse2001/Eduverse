@@ -1,14 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import {
-  appendStoredClassMessage,
-  loadStoredClassMessages,
-} from "@/lib/class-chat-storage"
-import { mergeMessagesById } from "@/lib/education/selectors"
-import { getMessagesByClass, getUserById, type Message } from "@/lib/mock-data"
-import { formatFileSize, readFileAsDataUrl } from "./file-utils"
-import type { EnrichedMessage } from "./message-bubble"
+import type { ChatMessage } from "./message-bubble"
 
 interface UseClassMessagesOptions {
   classId: string
@@ -16,125 +9,163 @@ interface UseClassMessagesOptions {
   currentUserRole: "student" | "teacher" | "admin"
 }
 
+type MessagesResponse = {
+  messages?: ChatMessage[]
+  error?: string
+}
+
+type MessageResponse = {
+  message?: ChatMessage
+  error?: string
+}
+
 export function useClassMessages({
   classId,
   currentUserId,
   currentUserRole,
 }: UseClassMessagesOptions) {
-  const rawMessages = useMemo(() => getMessagesByClass(classId), [classId])
-  const [messages, setMessages] = useState(rawMessages)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSending, setIsSending] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const storedMessages = loadStoredClassMessages(classId)
-    if (storedMessages.length === 0) return
+    let cancelled = false
+    setIsLoading(true)
+    setErrorMessage(null)
 
-    setMessages(mergeMessagesById(rawMessages, storedMessages))
-  }, [classId, rawMessages])
+    fetch(`/api/classes/${encodeURIComponent(classId)}/messages`)
+      .then(async (response) => {
+        const payload = (await response
+          .json()
+          .catch(() => null)) as MessagesResponse | null
+
+        if (!response.ok || !payload?.messages) {
+          throw new Error(payload?.error ?? "Could not load messages.")
+        }
+
+        if (!cancelled) setMessages(payload.messages)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setMessages([])
+        setErrorMessage(
+          error instanceof Error ? error.message : "Could not load messages.",
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [classId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const enrichedMessages: EnrichedMessage[] = messages.map((message) => {
-    const sender = getUserById(message.senderId)
-
-    return {
-      ...message,
-      senderName: sender?.name ?? "Unknown",
-      senderAvatar: sender?.avatar ?? "??",
-    }
-  })
-
   const mediaItems = useMemo(
     () =>
-      enrichedMessages
-        .filter(
-          (message) =>
-            (message.type === "image" || message.type === "file") &&
-            message.mediaUrl,
-        )
+      messages
+        .filter((message) => message.kind === "media" && message.materialId)
         .reverse(),
-    [enrichedMessages],
+    [messages],
   )
 
-  const pinnedMessages = enrichedMessages.filter((message) => message.pinned)
+  const pinnedMessages: ChatMessage[] = []
 
-  function addMessage(message: Message) {
-    setMessages((prev) => [...prev, message])
-    appendStoredClassMessage(classId, message)
-  }
-
-  function sendMessage() {
+  async function sendMessage() {
     const trimmed = input.trim()
-    if (!trimmed) return
+    if (!trimmed || isSending) return
 
-    const message: Message = {
-      id: `m_${Date.now()}`,
-      classId,
-      senderId: currentUserId,
-      content: trimmed,
-      timestamp: new Date().toISOString(),
-      type: currentUserRole === "teacher" ? "announcement" : "text",
+    setIsSending(true)
+    setErrorMessage(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: trimmed }),
+        },
+      )
+      const payload = (await response
+        .json()
+        .catch(() => null)) as MessageResponse | null
+
+      if (!response.ok || !payload?.message) {
+        throw new Error(payload?.error ?? "Could not send message.")
+      }
+
+      setMessages((prev) => [...prev, payload.message as ChatMessage])
+      setInput("")
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not send message.",
+      )
+    } finally {
+      setIsSending(false)
     }
-
-    addMessage(message)
-    setInput("")
   }
 
-  async function sendImage(file?: File) {
-    if (!file) return
+  async function sendMedia(file?: File) {
+    if (!file || isSending) return
 
-    const dataUrl = await readFileAsDataUrl(file)
-    const message: Message = {
-      id: `m_${Date.now()}`,
-      classId,
-      senderId: currentUserId,
-      content: input.trim() || "Shared an image",
-      timestamp: new Date().toISOString(),
-      type: "image",
-      fileName: file.name,
-      fileSize: formatFileSize(file.size),
-      mediaUrl: dataUrl,
-      mimeType: file.type,
+    setIsSending(true)
+    setErrorMessage(null)
+
+    try {
+      const formData = new FormData()
+      formData.set("file", file)
+      formData.set("content", input.trim())
+
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/messages/media`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      )
+      const payload = (await response
+        .json()
+        .catch(() => null)) as MessageResponse | null
+
+      if (!response.ok || !payload?.message) {
+        throw new Error(payload?.error ?? "Could not share media.")
+      }
+
+      setMessages((prev) => [...prev, payload.message as ChatMessage])
+      setInput("")
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not share media.",
+      )
+    } finally {
+      setIsSending(false)
     }
-
-    addMessage(message)
-    setInput("")
-  }
-
-  async function sendFile(file?: File) {
-    if (!file) return
-
-    const dataUrl = await readFileAsDataUrl(file)
-    const message: Message = {
-      id: `m_${Date.now()}`,
-      classId,
-      senderId: currentUserId,
-      content: input.trim() || "Shared a file",
-      timestamp: new Date().toISOString(),
-      type: "file",
-      fileName: file.name,
-      fileSize: formatFileSize(file.size),
-      mediaUrl: dataUrl,
-      mimeType: file.type,
-    }
-
-    addMessage(message)
-    setInput("")
   }
 
   return {
     input,
     setInput,
     messages,
-    enrichedMessages,
+    enrichedMessages: messages,
     mediaItems,
     pinnedMessages,
     bottomRef,
+    isLoading,
+    isSending,
+    errorMessage,
     sendMessage,
-    sendFile,
-    sendImage,
+    sendFile: sendMedia,
+    sendImage: sendMedia,
+    canSendAnnouncement:
+      currentUserRole === "teacher" || currentUserRole === "admin",
+    currentUserId,
   }
 }

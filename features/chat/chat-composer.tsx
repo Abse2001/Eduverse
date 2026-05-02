@@ -11,6 +11,7 @@ interface ChatComposerProps {
   onSelectFile: (file?: File) => Promise<void>
   onSelectImage: (file?: File) => Promise<void>
   placeholder: string
+  disabled?: boolean
 }
 
 export function ChatComposer({
@@ -20,6 +21,7 @@ export function ChatComposer({
   onSelectFile,
   onSelectImage,
   placeholder,
+  disabled = false,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -29,11 +31,14 @@ export function ChatComposer({
       <input
         ref={fileInputRef}
         type="file"
+        accept="image/*,application/pdf,video/*,.ppt,.pptx,.odp,.key"
         className="hidden"
+        disabled={disabled}
         onChange={async (event) => {
+          const input = event.currentTarget
           const file = event.target.files?.[0]
           await onSelectFile(file)
-          event.currentTarget.value = ""
+          input.value = ""
         }}
       />
       <input
@@ -41,10 +46,12 @@ export function ChatComposer({
         type="file"
         accept="image/*"
         className="hidden"
+        disabled={disabled}
         onChange={async (event) => {
+          const input = event.currentTarget
           const file = event.target.files?.[0]
           await onSelectImage(file)
-          event.currentTarget.value = ""
+          input.value = ""
         }}
       />
 
@@ -61,6 +68,7 @@ export function ChatComposer({
               }
             }}
             placeholder={placeholder}
+            disabled={disabled}
             className="flex-1 resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none leading-relaxed min-h-[24px] max-h-32"
             style={{ height: "24px", overflow: "hidden" }}
             onInput={(event) => {
@@ -75,6 +83,7 @@ export function ChatComposer({
               size="icon"
               className="w-7 h-7"
               onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
             >
               <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />
             </Button>
@@ -83,6 +92,7 @@ export function ChatComposer({
               size="icon"
               className="w-7 h-7"
               onClick={() => imageInputRef.current?.click()}
+              disabled={disabled}
             >
               <Image className="w-3.5 h-3.5 text-muted-foreground" />
             </Button>
@@ -90,7 +100,7 @@ export function ChatComposer({
         </div>
         <Button
           onClick={onSend}
-          disabled={!input.trim()}
+          disabled={disabled || !input.trim()}
           size="icon"
           className="shrink-0 w-9 h-9"
         >

@@ -20,6 +20,8 @@ type MaterialRow = {
   title: string
   description: string
   type: "image" | "pdf" | "video" | "slide"
+  source: "manual" | "chat"
+  chat_message_id: string | null
   storage_bucket: string
   storage_key: string
   original_filename: string
@@ -120,9 +122,10 @@ export async function POST(request: Request, context: RouteContext) {
         original_filename: validated.fileName,
         mime_type: validated.mimeType,
         size_bytes: validated.sizeBytes,
+        source: "manual",
       })
       .select(
-        "id, organization_id, class_id, uploaded_by_user_id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
+        "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
       )
       .single()
 
@@ -154,6 +157,8 @@ function toMaterialResponse(row: MaterialRow) {
     title: row.title,
     description: row.description,
     type: row.type,
+    source: row.source ?? "manual",
+    chatMessageId: row.chat_message_id ?? null,
     storageBucket: row.storage_bucket,
     storageKey: row.storage_key,
     originalFilename: row.original_filename,

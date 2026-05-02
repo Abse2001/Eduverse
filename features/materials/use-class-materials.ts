@@ -13,6 +13,8 @@ export type ClassMaterial = {
   title: string
   description: string
   type: ClassMaterialType
+  source: "manual" | "chat"
+  chatMessageId: string | null
   storageBucket: string
   storageKey: string
   originalFilename: string
@@ -31,6 +33,8 @@ type ClassMaterialRow = {
   title: string
   description: string
   type: ClassMaterialType
+  source: "manual" | "chat"
+  chat_message_id: string | null
   storage_bucket: string
   storage_key: string
   original_filename: string
@@ -201,6 +205,26 @@ export function useClassMaterials({
     }
   }
 
+  async function deleteMaterial(materialId: string) {
+    const response = await fetch(
+      `/api/classes/${encodeURIComponent(
+        classId,
+      )}/materials/${encodeURIComponent(materialId)}`,
+      { method: "DELETE" },
+    )
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string
+    } | null
+
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "Could not delete material.")
+    }
+
+    setMaterials((prev) =>
+      prev.filter((material) => material.id !== materialId),
+    )
+  }
+
   return {
     materials,
     isLoading,
@@ -208,6 +232,7 @@ export function useClassMaterials({
     errorMessage,
     refreshMaterials,
     uploadMaterial,
+    deleteMaterial,
     getDownloadUrl,
   }
 }
@@ -223,7 +248,7 @@ async function loadMaterialsWithThumbnails(
   const { data, error } = await supabase
     .from("class_materials")
     .select(
-      "id, organization_id, class_id, uploaded_by_user_id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
+      "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
     )
     .eq("class_id", classId)
     .is("deleted_at", null)
@@ -240,7 +265,9 @@ async function loadMaterialsWithThumbnails(
       try {
         return {
           ...material,
-          thumbnailUrl: await getDownloadUrl(material.id, "inline"),
+          thumbnailUrl: `/api/classes/${encodeURIComponent(
+            classId,
+          )}/materials/${encodeURIComponent(material.id)}/content`,
         }
       } catch {
         return material
@@ -258,6 +285,8 @@ function toMaterial(row: ClassMaterialRow): ClassMaterial {
     title: row.title,
     description: row.description,
     type: row.type,
+    source: row.source ?? "manual",
+    chatMessageId: row.chat_message_id ?? null,
     storageBucket: row.storage_bucket,
     storageKey: row.storage_key,
     originalFilename: row.original_filename,
