@@ -596,7 +596,7 @@ export default function AssignmentsPage({
                 }
               />
               <CheckRow
-                label="Accept one file"
+                label="Accept file"
                 checked={createForm.allowFileSubmission}
                 onCheckedChange={(checked) =>
                   setCreateForm((prev) => ({
@@ -818,15 +818,15 @@ export default function AssignmentsPage({
         }}
       >
         {reviewAssignment && classRow && (
-          <DialogContent className="max-w-5xl">
+          <DialogContent className="max-w-[calc(100vw-2rem)] lg:max-w-5xl">
             <DialogHeader>
               <DialogTitle>{reviewAssignment.title}</DialogTitle>
               <DialogDescription>
                 Review submissions from the class roster.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-lg border">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+              <div className="min-w-0 rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -885,7 +885,7 @@ export default function AssignmentsPage({
                 </Table>
               </div>
 
-              <div className="rounded-lg border p-4">
+              <div className="min-w-0 rounded-lg border p-4">
                 {selectedSubmission ? (
                   <form onSubmit={submitGrade} className="space-y-4">
                     {formError && (
@@ -905,7 +905,7 @@ export default function AssignmentsPage({
                       <Button
                         type="button"
                         variant="outline"
-                        className="gap-2"
+                        className="w-full justify-start gap-2"
                         onClick={() =>
                           openSubmissionFile(
                             reviewAssignment,
@@ -913,8 +913,10 @@ export default function AssignmentsPage({
                           )
                         }
                       >
-                        <Download className="w-4 h-4" />
-                        {selectedSubmission.fileOriginalFilename}
+                        <Download className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 truncate">
+                          {selectedSubmission.fileOriginalFilename}
+                        </span>
                       </Button>
                     )}
                     <div className="space-y-2">
@@ -954,8 +956,10 @@ export default function AssignmentsPage({
                     </Button>
                   </form>
                 ) : (
-                  <div className="grid min-h-64 place-items-center text-center text-sm text-muted-foreground">
-                    Select a submitted student to review their work.
+                  <div className="grid min-h-64 min-w-0 place-items-center px-4 text-center text-sm text-muted-foreground">
+                    <p className="max-w-48 text-wrap leading-6">
+                      Select a submitted student to review their work.
+                    </p>
                   </div>
                 )}
               </div>
@@ -1299,7 +1303,7 @@ function AssignmentFormFields({
           }
         />
         <CheckRow
-          label="Accept one file"
+          label="Accept file"
           checked={form.allowFileSubmission}
           onCheckedChange={(checked) =>
             setForm((prev) => ({ ...prev, allowFileSubmission: checked }))
