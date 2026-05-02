@@ -160,10 +160,17 @@ function AnnouncementBar({
 
   return (
     <div className="px-4 py-2 bg-primary/5 border-b border-primary/10 shrink-0">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         onClick={() => onOpen(announcement.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            onOpen(announcement.id)
+          }
+        }}
       >
         <Megaphone className="w-3.5 h-3.5 text-primary shrink-0" />
         <p className="text-xs font-medium text-primary shrink-0">
@@ -217,7 +224,7 @@ function AnnouncementBar({
             </Button>
           ) : null}
         </div>
-      </button>
+      </div>
     </div>
   )
 }

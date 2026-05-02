@@ -20,6 +20,7 @@ type MessageRow = {
   mime_type: string | null
   size_bytes: number | null
   material_type: "image" | "pdf" | "video" | "slide" | null
+  show_in_announcement_carousel: boolean
   created_at: string
 }
 
@@ -45,7 +46,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { data, error } = await supabase
     .from("class_messages")
     .select(
-      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, created_at",
+      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
     )
     .eq("class_id", classId)
     .order("created_at", { ascending: true })
@@ -179,7 +180,7 @@ export async function POST(request: Request, context: RouteContext) {
       kind: requestedKind,
     })
     .select(
-      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, created_at",
+      "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
     )
     .single()
 
@@ -225,6 +226,7 @@ function toMessageResponse(
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
     materialType: row.material_type,
+    showInAnnouncementCarousel: row.show_in_announcement_carousel,
     isMaterialDeleted: row.material_id
       ? (materialStates.get(row.material_id)?.deleted_at ?? null) !== null ||
         !materialStates.has(row.material_id)

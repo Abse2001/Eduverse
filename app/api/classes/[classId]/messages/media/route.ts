@@ -25,6 +25,7 @@ type MessageRow = {
   mime_type: string | null
   size_bytes: number | null
   material_type: "image" | "pdf" | "video" | "slide" | null
+  show_in_announcement_carousel: boolean
   created_at: string
 }
 
@@ -121,7 +122,7 @@ export async function POST(request: Request, context: RouteContext) {
         material_type: validated.type,
       })
       .select(
-        "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, created_at",
+        "id, organization_id, class_id, sender_user_id, content, kind, material_id, media_title, original_filename, mime_type, size_bytes, material_type, show_in_announcement_carousel, created_at",
       )
       .single()
 
@@ -159,6 +160,8 @@ export async function POST(request: Request, context: RouteContext) {
         mimeType: (messageData as MessageRow).mime_type,
         sizeBytes: (messageData as MessageRow).size_bytes,
         materialType: (messageData as MessageRow).material_type,
+        showInAnnouncementCarousel: (messageData as MessageRow)
+          .show_in_announcement_carousel,
         isMaterialDeleted: false,
         createdAt: (messageData as MessageRow).created_at,
       },

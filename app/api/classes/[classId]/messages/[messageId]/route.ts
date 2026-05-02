@@ -14,7 +14,7 @@ type MessageRecord = {
   kind: "text" | "announcement" | "media"
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+export async function PATCH(request: Request, context: RouteContext) {
   const { classId, messageId } = await context.params
   const { user, supabase, error: authError } = await requireRouteUser(request)
 
@@ -56,20 +56,20 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   if (!canManage) {
     return NextResponse.json(
-      { error: "Only teachers can delete announcements." },
+      { error: "Only teachers can remove announcements from the carousel." },
       { status: 403 },
     )
   }
 
-  const { error: deleteError } = await supabase
+  const { error: updateError } = await supabase
     .from("class_messages")
-    .delete()
+    .update({ show_in_announcement_carousel: false })
     .eq("id", message.id)
     .eq("class_id", classId)
     .eq("kind", "announcement")
 
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 })
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })

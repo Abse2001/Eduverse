@@ -80,7 +80,11 @@ export function useClassMessages({
   const announcements = useMemo(
     () =>
       messages
-        .filter((message) => message.kind === "announcement")
+        .filter(
+          (message) =>
+            message.kind === "announcement" &&
+            message.showInAnnouncementCarousel,
+        )
         .slice()
         .reverse(),
     [messages],
@@ -138,22 +142,30 @@ export function useClassMessages({
         `/api/classes/${encodeURIComponent(
           classId,
         )}/messages/${encodeURIComponent(messageId)}`,
-        { method: "DELETE" },
+        { method: "PATCH" },
       )
       const payload = (await response.json().catch(() => null)) as {
         error?: string
       } | null
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Could not delete announcement.")
+        throw new Error(
+          payload?.error ?? "Could not remove announcement from carousel.",
+        )
       }
 
-      setMessages((prev) => prev.filter((message) => message.id !== messageId))
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId
+            ? { ...message, showInAnnouncementCarousel: false }
+            : message,
+        ),
+      )
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Could not delete announcement.",
+          : "Could not remove announcement from carousel.",
       )
     }
   }

@@ -32,6 +32,7 @@ export type ChatMessage = {
   mimeType: string | null
   sizeBytes: number | null
   materialType: "image" | "pdf" | "video" | "slide" | null
+  showInAnnouncementCarousel: boolean
   isMaterialDeleted: boolean
   createdAt: string
 }
