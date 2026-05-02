@@ -469,14 +469,20 @@ async function loadAssignments({
   canManage: boolean
 }) {
   const supabase = createClient()
-  const { data: assignmentData, error: assignmentError } = await supabase
+  let assignmentQuery = supabase
     .from("class_assignments")
     .select(
       "id, organization_id, class_id, created_by_user_id, title, description, due_at, max_score, status, allow_late_submissions, allow_text_submission, allow_file_submission, created_at, updated_at",
     )
     .eq("class_id", classId)
     .is("deleted_at", null)
-    .order("due_at", { ascending: true })
+
+  if (!canManage) {
+    assignmentQuery = assignmentQuery.eq("status", "published")
+  }
+
+  const { data: assignmentData, error: assignmentError } =
+    await assignmentQuery.order("due_at", { ascending: true })
 
   if (assignmentError) throw assignmentError
 

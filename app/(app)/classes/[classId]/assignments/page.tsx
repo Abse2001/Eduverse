@@ -1340,17 +1340,21 @@ function toDatetimeLocalValue(value: string) {
 }
 
 function getDeadlineDatePart(value: string) {
-  return value.split("T")[0] ?? ""
+  return toDatetimeLocalValue(value).split("T")[0] ?? ""
 }
 
 function getDeadlineTimePart(value: string) {
-  const time = value.split("T")[1]?.slice(0, 5)
+  const time = toDatetimeLocalValue(value).split("T")[1]?.slice(0, 5)
   return TIME_OPTIONS.some((option) => option.value === time) ? time : "23:59"
 }
 
 function combineDeadlineParts(date: string, time: string) {
   if (!date) return ""
-  return `${date}T${time || "23:59"}`
+  const [year, month, day] = date.split("-").map(Number)
+  const [hour, minute] = (time || "23:59").split(":").map(Number)
+  const deadline = new Date(year, month - 1, day, hour, minute)
+
+  return Number.isNaN(deadline.getTime()) ? "" : deadline.toISOString()
 }
 
 function RosterStatus({

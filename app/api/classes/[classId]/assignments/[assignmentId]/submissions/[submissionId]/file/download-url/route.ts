@@ -36,6 +36,28 @@ export async function GET(request: Request, context: RouteContext) {
       ? "inline"
       : "attachment"
 
+  const { data: assignment, error: assignmentError } = await supabase
+    .from("class_assignments")
+    .select("id")
+    .eq("id", assignmentId)
+    .eq("class_id", classId)
+    .is("deleted_at", null)
+    .maybeSingle()
+
+  if (assignmentError) {
+    return NextResponse.json(
+      { error: assignmentError.message },
+      { status: 500 },
+    )
+  }
+
+  if (!assignment) {
+    return NextResponse.json(
+      { error: "Assignment not found." },
+      { status: 404 },
+    )
+  }
+
   const { data, error } = await supabase
     .from("class_assignment_submissions")
     .select(
