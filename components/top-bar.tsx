@@ -1,15 +1,12 @@
 "use client"
 
-import { Bell, Moon, Search, Sun } from "lucide-react"
+import { Bell, Search } from "lucide-react"
 import { AccountMenu } from "@/components/top-bar/account-menu"
 import { OrganizationMenu } from "@/components/top-bar/organization-menu"
 import { RoleMenu } from "@/components/top-bar/role-menu"
-import { useApp } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 
 export function TopBar() {
-  const { isDarkMode, toggleDarkMode } = useApp()
-
   return (
     <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-card/80 backdrop-blur-sm">
       <div className="relative flex-1 max-w-sm hidden md:block">
@@ -29,15 +26,6 @@ export function TopBar() {
           <Bell className="w-4 h-4" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
           <span className="sr-only">Notifications</span>
-        </Button>
-
-        <Button variant="ghost" size="icon" onClick={toggleDarkMode}>
-          {isDarkMode ? (
-            <Sun className="w-4 h-4" />
-          ) : (
-            <Moon className="w-4 h-4" />
-          )}
-          <span className="sr-only">Toggle dark mode</span>
         </Button>
 
         <AccountMenu />

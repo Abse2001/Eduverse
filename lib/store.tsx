@@ -41,6 +41,7 @@ import {
 const FALLBACK_USER = USERS[0]
 
 type DataStatus = "idle" | "loading" | "ready" | "error"
+type ThemeMode = "light" | "dark" | "system"
 
 export type { OrganizationUserRole } from "@/lib/supabase/app-user"
 
@@ -69,6 +70,8 @@ interface AppContextValue {
   setCurrentUser: (user: User) => void
   allUsers: User[]
   isDarkMode: boolean
+  themeMode: ThemeMode
+  setThemeMode: (mode: ThemeMode) => void
   toggleDarkMode: () => void
   authUser: SupabaseAuthUser | null
   isAuthLoading: boolean
@@ -115,6 +118,7 @@ const AppContext = createContext<AppContextValue | null>(null)
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>(FALLBACK_USER)
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>("system")
   const [authUser, setAuthUser] = useState<SupabaseAuthUser | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [organizations, setOrganizations] = useState<AppOrganization[]>([])
@@ -155,16 +159,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }> | null>(null)
   const activeOrganizationIdRef = useRef<string | null>(null)
 
+  useEffect(() => {
+    const storedThemeMode = window.localStorage.getItem("theme-mode")
+    if (
+      storedThemeMode === "light" ||
+      storedThemeMode === "dark" ||
+      storedThemeMode === "system"
+    ) {
+      setThemeMode(storedThemeMode)
+    }
+  }, [])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const applyTheme = () => {
+      const nextIsDark =
+        themeMode === "dark" || (themeMode === "system" && mediaQuery.matches)
+
+      document.documentElement.classList.toggle("dark", nextIsDark)
+      setIsDarkMode(nextIsDark)
+    }
+
+    window.localStorage.setItem("theme-mode", themeMode)
+    applyTheme()
+
+    if (themeMode !== "system") return
+
+    mediaQuery.addEventListener("change", applyTheme)
+    return () => mediaQuery.removeEventListener("change", applyTheme)
+  }, [themeMode])
+
   function toggleDarkMode() {
-    setIsDarkMode((prev) => {
-      const next = !prev
-      if (next) {
-        document.documentElement.classList.add("dark")
-      } else {
-        document.documentElement.classList.remove("dark")
-      }
-      return next
-    })
+    setThemeMode(isDarkMode ? "light" : "dark")
   }
 
   async function loadUser(user: SupabaseAuthUser | null) {
@@ -648,6 +674,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentUser,
         allUsers: USERS,
         isDarkMode,
+        themeMode,
+        setThemeMode,
         toggleDarkMode,
         authUser,
         isAuthLoading,

@@ -1,7 +1,15 @@
 "use client"
 
-import { type FormEvent, useEffect, useState } from "react"
-import { Building, Mail } from "lucide-react"
+import { useState } from "react"
+import {
+  Building,
+  ChevronRight,
+  Languages,
+  LockKeyhole,
+  Mail,
+  Palette,
+} from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   ORGANIZATION_ROLE_BADGES,
@@ -10,9 +18,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { createClient } from "@/lib/supabase/client"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { type OrganizationUserRole, useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { ROLE_BADGE_COLOR_MAP } from "@/lib/view-config"
@@ -29,36 +35,20 @@ export function ProfileScreen() {
   const {
     activeOrganization,
     activeOrganizationRole,
-    authUser,
     currentUser,
-    refreshCurrentUser,
     setActiveOrganizationRole,
+    setThemeMode,
+    themeMode,
   } = useApp()
   const [switchingRole, setSwitchingRole] =
     useState<OrganizationUserRole | null>(null)
   const [roleErrorMessage, setRoleErrorMessage] = useState<string | null>(null)
-  const [displayName, setDisplayName] = useState(currentUser.name)
-  const [profileMessage, setProfileMessage] = useState<string | null>(null)
-  const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(
-    null,
-  )
-  const [isSavingProfile, setIsSavingProfile] = useState(false)
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [passwordMessage, setPasswordMessage] = useState<string | null>(null)
-  const [passwordErrorMessage, setPasswordErrorMessage] = useState<
-    string | null
-  >(null)
-  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [languagePreference, setLanguagePreference] = useState("en")
   const organizationRoles = [...(activeOrganization?.roles ?? [])].sort(
     (left, right) =>
       ORGANIZATION_ROLE_PRIORITY.indexOf(left) -
       ORGANIZATION_ROLE_PRIORITY.indexOf(right),
   )
-
-  useEffect(() => {
-    setDisplayName(currentUser.name)
-  }, [currentUser.name])
 
   async function selectRole(role: OrganizationUserRole) {
     if (!activeOrganization || role === activeOrganizationRole) return
@@ -75,89 +65,6 @@ export function ProfileScreen() {
       )
     } finally {
       setSwitchingRole(null)
-    }
-  }
-
-  async function saveDisplayName(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    const nextDisplayName = displayName.trim()
-    if (!authUser) {
-      setProfileMessage(null)
-      setProfileErrorMessage("You need to be signed in to update your profile.")
-      return
-    }
-
-    if (!nextDisplayName) {
-      setProfileMessage(null)
-      setProfileErrorMessage("Username is required.")
-      return
-    }
-
-    setIsSavingProfile(true)
-    setProfileMessage(null)
-    setProfileErrorMessage(null)
-
-    try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from("profiles")
-        .update({ display_name: nextDisplayName })
-        .eq("id", authUser.id)
-
-      if (error) throw error
-
-      await refreshCurrentUser()
-      setProfileMessage("Username updated.")
-    } catch (error) {
-      setProfileErrorMessage(
-        error instanceof Error ? error.message : "Could not update username.",
-      )
-    } finally {
-      setIsSavingProfile(false)
-    }
-  }
-
-  async function savePassword(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    setPasswordMessage(null)
-    setPasswordErrorMessage(null)
-
-    if (!authUser) {
-      setPasswordErrorMessage("You need to be signed in to update password.")
-      return
-    }
-
-    if (newPassword.length < 6) {
-      setPasswordErrorMessage("Password must be at least 6 characters.")
-      return
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordErrorMessage("Passwords do not match.")
-      return
-    }
-
-    setIsSavingPassword(true)
-
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      })
-
-      if (error) throw error
-
-      setNewPassword("")
-      setConfirmPassword("")
-      setPasswordMessage("Password updated.")
-    } catch (error) {
-      setPasswordErrorMessage(
-        error instanceof Error ? error.message : "Could not update password.",
-      )
-    } finally {
-      setIsSavingPassword(false)
     }
   }
 
@@ -230,75 +137,95 @@ export function ProfileScreen() {
       </Card>
 
       <Card>
-        <CardContent className="space-y-8 p-6">
-          <form className="space-y-3" onSubmit={saveDisplayName}>
-            <div className="space-y-1.5">
-              <Label htmlFor="display-name">Username</Label>
-              <Input
-                id="display-name"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                disabled={isSavingProfile}
-              />
+        <CardContent className="divide-y divide-border p-0">
+          <div className="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Palette className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Theme</p>
+                <p className="text-xs text-muted-foreground">
+                  {themeMode === "system"
+                    ? "System default"
+                    : themeMode === "dark"
+                      ? "Dark"
+                      : "Light"}
+                </p>
+              </div>
             </div>
-            {profileErrorMessage ? (
-              <p className="text-sm text-destructive">{profileErrorMessage}</p>
-            ) : null}
-            {profileMessage ? (
-              <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                {profileMessage}
-              </p>
-            ) : null}
-            <Button
-              type="submit"
-              disabled={
-                isSavingProfile || displayName.trim() === currentUser.name
-              }
+            <ToggleGroup
+              type="single"
+              value={themeMode}
+              onValueChange={(value) => {
+                if (
+                  value === "light" ||
+                  value === "dark" ||
+                  value === "system"
+                ) {
+                  setThemeMode(value)
+                }
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full md:w-auto"
             >
-              {isSavingProfile ? "Saving..." : "Save username"}
-            </Button>
-          </form>
+              <ToggleGroupItem value="light">Light</ToggleGroupItem>
+              <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
+              <ToggleGroupItem value="system">System</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
 
-          <form className="space-y-3" onSubmit={savePassword}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="new-password">New password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  disabled={isSavingPassword}
-                  autoComplete="new-password"
-                />
+          <div className="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Languages className="h-4 w-4" />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="confirm-password">Confirm password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  disabled={isSavingPassword}
-                  autoComplete="new-password"
-                />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Language
+                </p>
+                <p className="text-xs text-muted-foreground">English</p>
               </div>
             </div>
-            {passwordErrorMessage ? (
-              <p className="text-sm text-destructive">{passwordErrorMessage}</p>
-            ) : null}
-            {passwordMessage ? (
-              <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                {passwordMessage}
-              </p>
-            ) : null}
-            <Button
-              type="submit"
-              disabled={isSavingPassword || !newPassword || !confirmPassword}
+            <ToggleGroup
+              type="single"
+              value={languagePreference}
+              onValueChange={(value) => {
+                if (value) setLanguagePreference(value)
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full md:w-auto"
+              disabled
             >
-              {isSavingPassword ? "Updating..." : "Change password"}
+              <ToggleGroupItem value="en">English</ToggleGroupItem>
+              <ToggleGroupItem value="es">Spanish</ToggleGroupItem>
+              <ToggleGroupItem value="fr">French</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div className="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <LockKeyhole className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Password
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Manage your sign-in password
+                </p>
+              </div>
+            </div>
+            <Button asChild variant="outline" className="justify-between">
+              <Link href="/profile/password">
+                Change password
+                <ChevronRight className="h-4 w-4" />
+              </Link>
             </Button>
-          </form>
+          </div>
         </CardContent>
       </Card>
     </div>
