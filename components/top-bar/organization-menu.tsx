@@ -25,6 +25,8 @@ import {
   organizationRoleLabel,
 } from "./organization-menu-helpers"
 
+const ROLE_PRIORITY = ["org_owner", "org_admin", "teacher", "student"]
+
 export function OrganizationMenu() {
   const router = useRouter()
   const { activeOrganization, organizations, setDefaultOrganization } = useApp()
@@ -72,6 +74,11 @@ export function OrganizationMenu() {
           organizations.map((organization) => {
             const isActive = organization.id === activeOrganization?.id
             const isSwitching = switchingOrganizationId === organization.id
+            const primaryRole =
+              [...organization.roles].sort(
+                (left, right) =>
+                  ROLE_PRIORITY.indexOf(left) - ROLE_PRIORITY.indexOf(right),
+              )[0] ?? organization.selectedRole
 
             return (
               <DropdownMenuItem
@@ -88,11 +95,9 @@ export function OrganizationMenu() {
                     </p>
                     <Badge
                       variant="secondary"
-                      className={cn(
-                        ORGANIZATION_ROLE_BADGES[organization.selectedRole],
-                      )}
+                      className={cn(ORGANIZATION_ROLE_BADGES[primaryRole])}
                     >
-                      {organizationRoleLabel(organization.selectedRole)}
+                      {organizationRoleLabel(primaryRole)}
                     </Badge>
                     {organization.roles.length > 1 ? (
                       <span className="shrink-0 text-[11px] text-muted-foreground">
