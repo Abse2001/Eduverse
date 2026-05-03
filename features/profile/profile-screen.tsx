@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   BarChart3,
   Building,
@@ -13,7 +14,12 @@ import {
   Users,
 } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { StatCard } from "@/components/shared/stat-card"
+import {
+  ORGANIZATION_ROLE_BADGES,
+  organizationRoleLabel,
+} from "@/components/top-bar/organization-menu-helpers"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,7 +33,7 @@ import {
   getStudentRankSummary,
 } from "@/lib/education/selectors"
 import { getAssignmentsByClass, getLeaderboardByClass } from "@/lib/mock-data"
-import { useApp } from "@/lib/store"
+import { type OrganizationUserRole, useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import {
@@ -46,6 +52,13 @@ type AcademicPeriodStats = {
   progress: number
   gpa: number | null
 }
+
+const ORGANIZATION_ROLE_PRIORITY: OrganizationUserRole[] = [
+  "org_owner",
+  "org_admin",
+  "teacher",
+  "student",
+]
 
 const MOCK_PREVIOUS_ACADEMIC_PERIODS: AcademicPeriodStats[] = [
   {
@@ -90,9 +103,24 @@ function getAverageScorePercentage(
 }
 
 export function ProfileScreen() {
-  const { currentUser, organizationClasses } = useApp()
+  const router = useRouter()
+  const {
+    activeOrganization,
+    activeOrganizationRole,
+    currentUser,
+    organizationClasses,
+    setActiveOrganizationRole,
+  } = useApp()
+  const [switchingRole, setSwitchingRole] =
+    useState<OrganizationUserRole | null>(null)
+  const [roleErrorMessage, setRoleErrorMessage] = useState<string | null>(null)
   const isStudent = currentUser.role === "student"
   const isTeacher = currentUser.role === "teacher"
+  const organizationRoles = [...(activeOrganization?.roles ?? [])].sort(
+    (left, right) =>
+      ORGANIZATION_ROLE_PRIORITY.indexOf(left) -
+      ORGANIZATION_ROLE_PRIORITY.indexOf(right),
+  )
   const myClasses = getClassesForUser(organizationClasses, currentUser).map(
     toLegacyClass,
   )
@@ -147,6 +175,24 @@ export function ProfileScreen() {
     ...MOCK_PREVIOUS_ACADEMIC_PERIODS,
   ]
 
+  async function selectRole(role: OrganizationUserRole) {
+    if (!activeOrganization || role === activeOrganizationRole) return
+
+    setRoleErrorMessage(null)
+    setSwitchingRole(role)
+
+    try {
+      await setActiveOrganizationRole(role)
+      router.refresh()
+    } catch (error) {
+      setRoleErrorMessage(
+        error instanceof Error ? error.message : "Could not switch role",
+      )
+    } finally {
+      setSwitchingRole(null)
+    }
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <Card>
@@ -161,15 +207,46 @@ export function ProfileScreen() {
               <h1 className="text-2xl font-bold text-foreground">
                 {currentUser.name}
               </h1>
-              <span
-                className={cn(
-                  "text-xs font-semibold px-2.5 py-1 rounded-full capitalize mt-1",
-                  ROLE_BADGE_COLOR_MAP[currentUser.role],
-                )}
-              >
-                {currentUser.role}
-              </span>
+              {organizationRoles.length > 0 ? (
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {organizationRoles.map((role) => {
+                    const isActive = role === activeOrganizationRole
+
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-pressed={isActive}
+                        disabled={switchingRole !== null}
+                        onClick={() => void selectRole(role)}
+                        className={cn(
+                          "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-70",
+                          ORGANIZATION_ROLE_BADGES[role],
+                          isActive &&
+                            "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                        )}
+                      >
+                        {organizationRoleLabel(role)}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <span
+                  className={cn(
+                    "mt-1 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-2 ring-primary ring-offset-2 ring-offset-background",
+                    ROLE_BADGE_COLOR_MAP[currentUser.role],
+                  )}
+                >
+                  {currentUser.role}
+                </span>
+              )}
             </div>
+            {roleErrorMessage ? (
+              <p className="mt-2 text-xs text-destructive">
+                {roleErrorMessage}
+              </p>
+            ) : null}
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" />
