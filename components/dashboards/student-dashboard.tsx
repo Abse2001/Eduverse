@@ -3,7 +3,9 @@
 import Link from "next/link"
 import { format, isPast } from "date-fns"
 import {
+  BarChart3,
   BookOpen,
+  Calendar,
   CheckCircle2,
   Clock,
   Star,
@@ -21,12 +23,66 @@ import {
   getAssignmentProgress,
   getAssignmentsWithClassInfo,
   getAverageAssignmentScore,
+  getBestRank,
   getStudentRankSummary,
   getUpcomingAssignments,
 } from "@/lib/education/selectors"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
+
+type AcademicPeriodStats = {
+  label: string
+  timeframe: string
+  classes: number
+  avgScore: number
+  gradedAssignments: number
+  bestRank: number | null
+  progress: number
+  gpa: number | null
+}
+
+const MOCK_PREVIOUS_ACADEMIC_PERIODS: AcademicPeriodStats[] = [
+  {
+    label: "Fall 2025",
+    timeframe: "Previous period",
+    classes: 4,
+    avgScore: 89,
+    gradedAssignments: 18,
+    bestRank: 2,
+    progress: 100,
+    gpa: 3.8,
+  },
+  {
+    label: "2024-2025 Academic Year",
+    timeframe: "Completed year",
+    classes: 8,
+    avgScore: 86,
+    gradedAssignments: 42,
+    bestRank: 3,
+    progress: 100,
+    gpa: 3.6,
+  },
+]
+
+function getAverageScorePercentage(
+  assignments: ReturnType<typeof getAssignmentsByClass>,
+) {
+  const graded = assignments.filter(
+    (assignment) =>
+      assignment.status === "graded" && assignment.score !== undefined,
+  )
+
+  if (graded.length === 0) return 0
+
+  return Math.round(
+    graded.reduce(
+      (sum, assignment) =>
+        sum + ((assignment.score ?? 0) / assignment.maxScore) * 100,
+      0,
+    ) / graded.length,
+  )
+}
 
 export function StudentDashboard() {
   const { currentUser, organizationClasses } = useApp()
@@ -47,6 +103,43 @@ export function StudentDashboard() {
     currentUser.id,
     getLeaderboardByClass,
   )
+  const bestRank = getBestRank(classRanks)
+  const currentAcademicPeriods = Array.from(
+    myClasses
+      .reduce((periods, cls) => {
+        const label = cls.semester || currentUser.semester || "Current Period"
+        const existing = periods.get(label) ?? []
+
+        periods.set(label, [...existing, cls])
+        return periods
+      }, new Map<string, typeof myClasses>())
+      .entries(),
+  ).map(([label, classes]) => {
+    const classIds = new Set(classes.map((cls) => cls.id))
+    const assignments = allAssignments.filter((assignment) =>
+      classIds.has(assignment.classId),
+    )
+    const progress = getAssignmentProgress(assignments)
+    const ranks = classRanks.filter((rank) => classIds.has(rank.cls.id))
+
+    return {
+      label,
+      timeframe: "Current period",
+      classes: classes.length,
+      avgScore: getAverageScorePercentage(assignments),
+      gradedAssignments: assignments.filter(
+        (assignment) =>
+          assignment.status === "graded" && assignment.score !== undefined,
+      ).length,
+      bestRank: getBestRank(ranks),
+      progress: progress.progress,
+      gpa: currentUser.gpa ?? null,
+    } satisfies AcademicPeriodStats
+  })
+  const academicPeriods = [
+    ...currentAcademicPeriods,
+    ...MOCK_PREVIOUS_ACADEMIC_PERIODS,
+  ]
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -59,7 +152,7 @@ export function StudentDashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           label="Enrolled Classes"
           value={String(myClasses.length)}
@@ -83,6 +176,18 @@ export function StudentDashboard() {
           value={String(currentUser.gpa ?? "—")}
           icon={Star}
           color="violet"
+        />
+        <StatCard
+          label="Periods"
+          value={String(academicPeriods.length)}
+          icon={Calendar}
+          color="indigo"
+        />
+        <StatCard
+          label="Best Rank"
+          value={bestRank ? `#${bestRank}` : "—"}
+          icon={Trophy}
+          color="amber"
         />
       </div>
 
@@ -207,6 +312,83 @@ export function StudentDashboard() {
               )
             })
           )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="font-semibold text-foreground">Academic Periods</h2>
+        <div className="grid gap-3">
+          {academicPeriods.map((period) => (
+            <Card key={period.label}>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <BarChart3 className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-foreground truncate">
+                          {period.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {period.timeframe}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 md:min-w-[520px]">
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Classes
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {period.classes}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Avg Score
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {period.avgScore}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Graded
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {period.gradedAssignments}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Best Rank
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {period.bestRank ? `#${period.bestRank}` : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        GPA
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {period.gpa ?? "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <Progress value={period.progress} className="h-1.5" />
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {period.progress}%
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     </div>
