@@ -4,6 +4,7 @@ import {
   uploadMaterialObject,
   validateMaterialUpload,
 } from "@/lib/api/s3-materials"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -133,6 +134,26 @@ export async function POST(request: Request, context: RouteContext) {
       await deleteMaterialObject(uploadedObject).catch(() => null)
       throw materialError
     }
+
+    await sendNotification({
+      supabase,
+      organizationId: classRow.organization_id,
+      actorUserId: user.id,
+      target: { type: "class", classId: classRow.id },
+      notificationType: "material_added",
+      title: "New class material",
+      body: title.trim(),
+      href: notificationHref({
+        classId: classRow.id,
+        section: "materials",
+        itemId: materialData.id,
+      }),
+      metadata: {
+        materialId: materialData.id,
+        materialType: validated.type,
+      },
+      eventKey: `material_added:${materialData.id}`,
+    }).catch(() => null)
 
     return NextResponse.json({
       material: toMaterialResponse(materialData as MaterialRow),

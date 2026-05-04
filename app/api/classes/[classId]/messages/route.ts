@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -190,6 +191,27 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (messageError) {
     return NextResponse.json({ error: messageError.message }, { status: 500 })
+  }
+
+  if (requestedKind === "announcement") {
+    await sendNotification({
+      supabase,
+      organizationId: classRow.organization_id,
+      actorUserId: user.id,
+      target: { type: "class", classId: classRow.id },
+      notificationType: "chat_announcement",
+      title: "New class announcement",
+      body: content,
+      href: notificationHref({
+        classId: classRow.id,
+        section: "chat",
+        itemId: messageData.id,
+      }),
+      metadata: {
+        messageId: messageData.id,
+      },
+      eventKey: `chat_announcement:${messageData.id}`,
+    }).catch(() => null)
   }
 
   const { data: profileData } = await supabase

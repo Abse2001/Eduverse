@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -73,6 +74,28 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (validated.status === "published") {
+    await sendNotification({
+      supabase,
+      organizationId: classResult.classRow.organization_id,
+      actorUserId: user.id,
+      target: { type: "class", classId: classResult.classRow.id },
+      notificationType: "assignment_published",
+      title: "New assignment published",
+      body: validated.title,
+      href: notificationHref({
+        classId: classResult.classRow.id,
+        section: "assignments",
+        itemId: data.id,
+      }),
+      metadata: {
+        assignmentId: data.id,
+        dueAt: validated.dueAt,
+      },
+      eventKey: `assignment_published:${data.id}`,
+    }).catch(() => null)
   }
 
   return NextResponse.json({
