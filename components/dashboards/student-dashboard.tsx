@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  GraduationCap,
   MessageSquare,
   Star,
   TrendingUp,
@@ -116,13 +117,21 @@ export function StudentDashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground text-balance">
-          Good morning, {currentUser.name.split(" ")[0]}
-        </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          {currentUser.institution} &middot; Spring 2026
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground text-balance">
+            Good morning, {currentUser.name.split(" ")[0]}
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {currentUser.institution} &middot; Spring 2026
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 dark:border-indigo-800 dark:bg-indigo-900/20">
+          <GraduationCap className="h-4 w-4 text-indigo-500" />
+          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+            Student
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">

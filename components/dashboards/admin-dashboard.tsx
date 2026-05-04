@@ -79,13 +79,21 @@ export function AdminDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground text-balance">
-          Welcome back, {currentUser.name.split(" ")[0]}
-        </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          {currentUser.institution} &middot; Spring 2026
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground text-balance">
+            Welcome back, {currentUser.name.split(" ")[0]}
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {currentUser.institution} &middot; Spring 2026
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-800 dark:bg-amber-900/20">
+          <ShieldCheck className="h-4 w-4 text-amber-500" />
+          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+            Administrator
+          </span>
+        </div>
       </div>
 
       <AdminOverviewStats

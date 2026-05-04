@@ -8,6 +8,7 @@ import {
   FileText,
   MessageSquare,
   PlusCircle,
+  School,
   TrendingUp,
   Upload,
   Users,
@@ -105,7 +106,7 @@ export function TeacherDashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div>
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground text-balance">
             Welcome back, {currentUser.name.split(" ")[0]}
@@ -113,6 +114,12 @@ export function TeacherDashboard() {
           <p className="text-muted-foreground text-sm mt-0.5">
             {currentUser.institution} &middot; Spring 2026
           </p>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
+          <School className="h-4 w-4 text-emerald-500" />
+          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+            Teacher
+          </span>
         </div>
       </div>
 
