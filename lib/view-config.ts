@@ -11,6 +11,9 @@ export const CLASS_HEADER_GRADIENT_MAP: Record<string, string> = {
   indigo: "from-indigo-600 to-indigo-400",
   emerald: "from-emerald-600 to-emerald-400",
   violet: "from-violet-600 to-violet-400",
+  amber: "from-amber-600 to-amber-400",
+  rose: "from-rose-600 to-rose-400",
+  sky: "from-sky-600 to-sky-400",
 }
 
 export const CLASS_BADGE_COLOR_MAP: Record<string, string> = {
