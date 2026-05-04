@@ -1,20 +1,25 @@
 "use client"
 
-import { BarChart3, BookOpen, GraduationCap, School } from "lucide-react"
+import type { ElementType } from "react"
+import { BookOpen, GraduationCap, School } from "lucide-react"
 import { StatCard } from "@/components/shared/stat-card"
 
 interface AdminOverviewStatsProps {
   studentCount: number
   teacherCount: number
   classCount: number
-  assignmentCount: number
+  pendingAccessCount: number
+  pendingAccessSublabel: string
+  pendingAccessIcon: ElementType
 }
 
 export function AdminOverviewStats({
   studentCount,
   teacherCount,
   classCount,
-  assignmentCount,
+  pendingAccessCount,
+  pendingAccessSublabel,
+  pendingAccessIcon,
 }: AdminOverviewStatsProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -40,11 +45,11 @@ export function AdminOverviewStats({
         sublabel="This semester"
       />
       <StatCard
-        label="Assignments"
-        value={String(assignmentCount)}
-        icon={BarChart3}
+        label="Pending Requests"
+        value={String(pendingAccessCount)}
+        icon={pendingAccessIcon}
         color="amber"
-        sublabel="Total"
+        sublabel={pendingAccessSublabel}
       />
     </div>
   )
