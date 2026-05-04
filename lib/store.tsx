@@ -65,6 +65,18 @@ export type OrganizationInviteRow = {
   token: string
 }
 
+export type ClassLiveSessionRow = {
+  id: string
+  organization_id: string
+  class_id: string
+  room_name: string
+  started_by_user_id: string
+  status: "live" | "ended"
+  started_at: string
+  last_seen_at: string
+  ended_at: string | null
+}
+
 interface AppContextValue {
   currentUser: User
   setCurrentUser: (user: User) => void
@@ -89,6 +101,9 @@ interface AppContextValue {
   organizationInvites: OrganizationInviteRow[]
   organizationUsersStatus: DataStatus
   organizationUsersError: string | null
+  classLiveSessions: ClassLiveSessionRow[]
+  classLiveSessionsStatus: DataStatus
+  classLiveSessionsError: string | null
   refreshOrganizationClasses: (options?: {
     force?: boolean
   }) => Promise<OrganizationClass[]>
@@ -99,6 +114,9 @@ interface AppContextValue {
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
   }>
+  refreshClassLiveSessions: (options?: {
+    force?: boolean
+  }) => Promise<ClassLiveSessionRow[]>
   updateOrganizationFeatureSetting: (
     organizationId: string,
     setting: FeatureSetting,
@@ -149,6 +167,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [organizationUsersError, setOrganizationUsersError] = useState<
     string | null
   >(null)
+  const [classLiveSessions, setClassLiveSessions] = useState<
+    ClassLiveSessionRow[]
+  >([])
+  const [classLiveSessionsStatus, setClassLiveSessionsStatus] =
+    useState<DataStatus>("idle")
+  const [classLiveSessionsError, setClassLiveSessionsError] = useState<
+    string | null
+  >(null)
   const classesRequestRef = useRef<Promise<OrganizationClass[]> | null>(null)
   const featureDefinitionsRequestRef = useRef<Promise<
     FeatureDefinition[]
@@ -157,6 +183,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
   }> | null>(null)
+  const liveSessionsRequestRef = useRef<Promise<ClassLiveSessionRow[]> | null>(
+    null,
+  )
+  const classLiveSessionsRef = useRef<ClassLiveSessionRow[]>([])
+  const classLiveSessionsStatusRef = useRef<DataStatus>("idle")
   const activeOrganizationIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -192,6 +223,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   function toggleDarkMode() {
     setThemeMode(isDarkMode ? "light" : "dark")
   }
+
+  useEffect(() => {
+    classLiveSessionsRef.current = classLiveSessions
+  }, [classLiveSessions])
+
+  useEffect(() => {
+    classLiveSessionsStatusRef.current = classLiveSessionsStatus
+  }, [classLiveSessionsStatus])
 
   async function loadUser(user: SupabaseAuthUser | null) {
     const supabase = createClient()
@@ -440,9 +479,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrganizationClasses([])
     setOrganizationMembers([])
     setOrganizationInvites([])
+    setClassLiveSessions([])
     setOrganizationClassesStatus("idle")
     setFeatureDefinitionsStatus("idle")
     setOrganizationUsersStatus("idle")
+    setClassLiveSessionsStatus("idle")
   }
 
   function updateOrganizationFeatureSetting(
@@ -649,23 +690,110 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const refreshClassLiveSessions = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      const organizationId = activeOrganization?.id
+
+      if (!organizationId) {
+        setClassLiveSessions([])
+        setClassLiveSessionsStatus("idle")
+        setClassLiveSessionsError(null)
+        return []
+      }
+
+      if (!force && classLiveSessionsStatusRef.current === "ready") {
+        return classLiveSessionsRef.current
+      }
+
+      if (!force && liveSessionsRequestRef.current) {
+        return liveSessionsRequestRef.current
+      }
+
+      setClassLiveSessionsStatus("loading")
+      setClassLiveSessionsError(null)
+
+      const request = loadClassLiveSessions(organizationId)
+        .then((sessions) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setClassLiveSessions(sessions)
+            setClassLiveSessionsStatus("ready")
+          }
+
+          return sessions
+        })
+        .catch((error) => {
+          if (activeOrganizationIdRef.current === organizationId) {
+            setClassLiveSessions([])
+            setClassLiveSessionsStatus("error")
+            setClassLiveSessionsError(
+              error instanceof Error
+                ? error.message
+                : "Could not load live sessions",
+            )
+          }
+
+          throw error
+        })
+        .finally(() => {
+          if (liveSessionsRequestRef.current === request) {
+            liveSessionsRequestRef.current = null
+          }
+        })
+
+      liveSessionsRequestRef.current = request
+      return request
+    },
+    [activeOrganization?.id],
+  )
+
   useEffect(() => {
     activeOrganizationIdRef.current = activeOrganization?.id ?? null
     classesRequestRef.current = null
     usersRequestRef.current = null
+    liveSessionsRequestRef.current = null
     setOrganizationClasses([])
     setOrganizationMembers([])
     setOrganizationInvites([])
+    setClassLiveSessions([])
     setOrganizationClassesError(null)
     setOrganizationUsersError(null)
+    setClassLiveSessionsError(null)
     setOrganizationClassesStatus("idle")
     setOrganizationUsersStatus("idle")
+    setClassLiveSessionsStatus("idle")
 
     if (activeOrganization) {
       void refreshFeatureDefinitions()
       void refreshOrganizationClasses({ force: true })
+      void refreshClassLiveSessions({ force: true })
     }
   }, [activeOrganization?.id])
+
+  useEffect(() => {
+    if (!activeOrganization) return
+
+    const supabase = createClient()
+    const organizationId = activeOrganization.id
+    const channel = supabase
+      .channel(`class-live-sessions:${organizationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "class_live_sessions",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        () => {
+          void refreshClassLiveSessions({ force: true }).catch(() => {})
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [activeOrganization?.id, refreshClassLiveSessions])
 
   return (
     <AppContext.Provider
@@ -693,9 +821,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         organizationInvites,
         organizationUsersStatus,
         organizationUsersError,
+        classLiveSessions,
+        classLiveSessionsStatus,
+        classLiveSessionsError,
         refreshOrganizationClasses,
         refreshFeatureDefinitions,
         refreshOrganizationUsers,
+        refreshClassLiveSessions,
         updateOrganizationFeatureSetting,
         upsertOrganizationExtension,
         refreshCurrentUser,
@@ -713,6 +845,25 @@ export function useApp() {
   const ctx = useContext(AppContext)
   if (!ctx) throw new Error("useApp must be used within AppProvider")
   return ctx
+}
+
+async function loadClassLiveSessions(organizationId: string) {
+  const supabase = createClient()
+  const staleBefore = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from("class_live_sessions")
+    .select(
+      "id, organization_id, class_id, room_name, started_by_user_id, status, started_at, last_seen_at, ended_at",
+    )
+    .eq("organization_id", organizationId)
+    .eq("status", "live")
+    .is("ended_at", null)
+    .gt("last_seen_at", staleBefore)
+    .order("last_seen_at", { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []) as ClassLiveSessionRow[]
 }
 
 async function loadOrganizationUsers(organizationId: string) {

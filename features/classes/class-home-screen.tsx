@@ -7,6 +7,7 @@ import {
   Calendar,
   LoaderCircle,
   PlusCircle,
+  Radio,
   Trash2,
   Users,
   Video,
@@ -96,6 +97,7 @@ function getClassHomeFeatureDescription(feature: ResolvedClassFeature) {
 export function ClassHomeScreen({ classId }: { classId: string }) {
   const {
     activeOrganization,
+    classLiveSessions,
     currentUser,
     featureDefinitions,
     organizationClasses,
@@ -149,6 +151,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     (feature) => feature.key === "sessions",
   )
   const SessionIcon = sessionsFeature?.icon ?? Video
+  const liveSession = classLiveSessions.find(
+    (session) => session.class_id === classItem?.id,
+  )
+  const isLive = Boolean(liveSession)
 
   async function refreshClass(force = true) {
     setIsLoading(true)
@@ -383,9 +389,15 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               <p className="text-white/80 text-sm mt-2 leading-relaxed max-w-xl">
                 {classItem.description || "No description yet."}
               </p>
+              {isLive ? (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1.5 text-sm font-semibold text-white">
+                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                  Live session in progress
+                </div>
+              ) : null}
             </div>
-            {canManageClass ? (
-              <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              {canManageClass ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -395,22 +407,37 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   <PlusCircle className="w-4 h-4" />
                   Add member
                 </Button>
-                {sessionsFeature?.routeSegment ? (
-                  <Link
-                    href={`/classes/${classItem.id}/${sessionsFeature.routeSegment}`}
+              ) : null}
+              {sessionsFeature?.routeSegment ? (
+                <Link
+                  href={`/classes/${classItem.id}/${sessionsFeature.routeSegment}`}
+                >
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className={cn(
+                      "gap-2 shrink-0 border-0",
+                      isLive && !canManageClass
+                        ? "bg-white text-foreground hover:bg-white/90"
+                        : "bg-white/20 hover:bg-white/30 text-white",
+                    )}
                   >
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="gap-2 shrink-0 bg-white/20 hover:bg-white/30 text-white border-0"
-                    >
+                    {canManageClass || !isLive ? (
                       <SessionIcon className="w-4 h-4" />
-                      Start Session
-                    </Button>
-                  </Link>
-                ) : null}
-              </div>
-            ) : null}
+                    ) : (
+                      <Radio className="w-4 h-4 text-emerald-600" />
+                    )}
+                    {canManageClass
+                      ? isLive
+                        ? "Open Session"
+                        : "Start Session"
+                      : isLive
+                        ? "Join Live Session"
+                        : "Join Session"}
+                  </Button>
+                </Link>
+              ) : null}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-6 mt-4 pt-4 border-t border-white/20">
             <div className="flex items-center gap-1.5">

@@ -130,6 +130,33 @@ export async function POST(request: Request) {
     canPublishData: true,
   })
 
+  if (canManage) {
+    const now = new Date().toISOString()
+
+    const { error: liveSessionError } = await supabase
+      .from("class_live_sessions")
+      .upsert(
+        {
+          organization_id: classData.organization_id,
+          class_id: classId,
+          room_name: roomName,
+          started_by_user_id: user.id,
+          status: "live",
+          started_at: now,
+          last_seen_at: now,
+          ended_at: null,
+        },
+        { onConflict: "class_id" },
+      )
+
+    if (liveSessionError) {
+      return NextResponse.json(
+        { error: liveSessionError.message },
+        { status: 500 },
+      )
+    }
+  }
+
   if (classData.teacher_user_id === user.id) {
     const cooldownBucket = Math.floor(Date.now() / (10 * 60 * 1000))
 

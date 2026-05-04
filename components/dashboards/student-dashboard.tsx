@@ -12,6 +12,7 @@ import {
   FileText,
   GraduationCap,
   MessageSquare,
+  Radio,
   Star,
   TrendingUp,
 } from "lucide-react"
@@ -33,7 +34,8 @@ import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function StudentDashboard() {
-  const { authUser, currentUser, organizationClasses } = useApp()
+  const { authUser, classLiveSessions, currentUser, organizationClasses } =
+    useApp()
   const classRows = getClassesForUser(organizationClasses, currentUser)
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")
@@ -72,6 +74,9 @@ export function StudentDashboard() {
   const overallProgress = getStudentAssignmentProgress(allAssignments)
   const currentUserId = authUser?.id ?? currentUser.id ?? null
   const classById = new Map(myClasses.map((cls) => [cls.id, cls]))
+  const liveClassIds = new Set(
+    classLiveSessions.map((session) => session.class_id),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -183,6 +188,7 @@ export function StudentDashboard() {
           {myClasses.map((cls) => {
             const assignments = assignmentsByClass[cls.id] ?? []
             const progress = getStudentAssignmentProgress(assignments)
+            const isLive = liveClassIds.has(cls.id)
 
             return (
               <Card key={cls.id} className="hover:shadow-md transition-shadow">
@@ -197,9 +203,17 @@ export function StudentDashboard() {
                       {cls.code.slice(0, 2)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm text-foreground truncate">
-                        {cls.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm text-foreground truncate">
+                          {cls.name}
+                        </p>
+                        {isLive ? (
+                          <Badge className="shrink-0 border-0 bg-emerald-100 text-[10px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Live now
+                          </Badge>
+                        ) : null}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {cls.code} &middot; {cls.schedule}
                       </p>
@@ -212,6 +226,16 @@ export function StudentDashboard() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                    <Link href={`/classes/${cls.id}/session`}>
+                      <Button
+                        size="sm"
+                        variant={isLive ? "default" : "outline"}
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <Radio className="w-3 h-3" />{" "}
+                        {isLive ? "Join Live" : "Session"}
+                      </Button>
+                    </Link>
                     <Link href={`/classes/${cls.id}/home`}>
                       <Button
                         variant="outline"
@@ -228,15 +252,6 @@ export function StudentDashboard() {
                         className="w-full text-xs gap-1.5"
                       >
                         <MessageSquare className="w-3 h-3" /> Chat
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/assignments`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <CheckCircle2 className="w-3 h-3" /> Assignments
                       </Button>
                     </Link>
                     <Link href={`/classes/${cls.id}/materials`}>

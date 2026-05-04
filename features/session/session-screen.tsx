@@ -134,7 +134,7 @@ function SessionNoticeStack({
 }
 
 export function SessionScreen({ cls }: { cls: Class }) {
-  const { currentUser } = useApp()
+  const { currentUser, refreshClassLiveSessions } = useApp()
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
@@ -212,6 +212,19 @@ export function SessionScreen({ cls }: { cls: Class }) {
     : liveSession.screenSharing
       ? "Stop sharing"
       : "Share screen"
+
+  async function leaveSession() {
+    liveSession.disconnect()
+    setSessionActive(false)
+    setHasJoinedSession(true)
+
+    if (isTeacher) {
+      await fetch(`/api/classes/${encodeURIComponent(cls.id)}/live-session`, {
+        method: "DELETE",
+      }).catch(() => null)
+      await refreshClassLiveSessions({ force: true }).catch(() => null)
+    }
+  }
 
   useEffect(() => {
     setVideoAspectRatio(undefined)
@@ -347,11 +360,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
               size="sm"
               variant="destructive"
               className="gap-1.5 text-xs h-8"
-              onClick={() => {
-                liveSession.disconnect()
-                setSessionActive(false)
-                setHasJoinedSession(true)
-              }}
+              onClick={() => void leaveSession()}
             >
               <Phone className="w-3.5 h-3.5" />
               Leave

@@ -50,6 +50,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const pathname = usePathname()
   const {
     activeOrganization,
+    classLiveSessions,
     currentUser,
     featureDefinitions,
     organizationClasses,
@@ -60,6 +61,9 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const userClasses = activeOrganization
     ? getClassesForUser(organizationClasses, currentUser)
     : []
+  const liveClassIds = new Set(
+    classLiveSessions.map((session) => session.class_id),
+  )
 
   const mainNavItems = isAdmin
     ? NAV_ITEMS_ADMIN
@@ -175,6 +179,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       active={isActiveClass}
                       collapsed={collapsed}
                       colorDot={cls.color ?? undefined}
+                      live={liveClassIds.has(cls.id)}
                     />
                     {isActiveClass && (
                       <div
@@ -316,6 +321,7 @@ interface NavItemProps {
   active: boolean
   collapsed: boolean
   colorDot?: string
+  live?: boolean
 }
 
 const DOT_COLOR_MAP: Record<string, string> = {
@@ -334,6 +340,7 @@ function NavItem({
   active,
   collapsed,
   colorDot,
+  live = false,
 }: NavItemProps) {
   const content = (
     <Link
@@ -346,13 +353,16 @@ function NavItem({
       )}
     >
       {colorDot ? (
-        <span className="flex w-4 shrink-0 justify-center">
+        <span className="relative flex w-4 shrink-0 justify-center">
           <span
             className={cn(
               "w-2 h-2 rounded-full",
               DOT_COLOR_MAP[colorDot] ?? "bg-muted-foreground",
             )}
           />
+          {live ? (
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500 ring-1 ring-sidebar" />
+          ) : null}
         </span>
       ) : (
         <Icon className="w-4 h-4 shrink-0" />
@@ -365,6 +375,11 @@ function NavItem({
       >
         {label}
       </span>
+      {live && !collapsed ? (
+        <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+          Live
+        </span>
+      ) : null}
     </Link>
   )
 
