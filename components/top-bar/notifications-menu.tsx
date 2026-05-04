@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, CheckCheck, Inbox, LoaderCircle } from "lucide-react"
+import { Bell, CheckCheck, Inbox, LoaderCircle, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import type React from "react"
 import { useEffect, useState } from "react"
@@ -139,6 +139,21 @@ export function NotificationsMenu() {
     router.push(notification.href)
   }
 
+  async function deleteNotification(notification: AppNotification) {
+    setNotifications((current) =>
+      current.filter(
+        (currentNotification) => currentNotification.id !== notification.id,
+      ),
+    )
+    if (!notification.readAt) {
+      setUnreadCount((current) => Math.max(0, current - 1))
+    }
+
+    await fetch(`/api/notifications/${encodeURIComponent(notification.id)}`, {
+      method: "DELETE",
+    }).catch(() => null)
+  }
+
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
@@ -187,35 +202,49 @@ export function NotificationsMenu() {
               />
             ) : (
               notifications.map((notification) => (
-                <button
+                <div
                   key={notification.id}
-                  type="button"
                   className={cn(
-                    "flex w-full gap-3 rounded-sm px-2 py-2.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
+                    "group flex w-full gap-2 rounded-sm px-2 py-2.5 transition-colors hover:bg-accent",
                     !notification.readAt && "bg-primary/5",
                   )}
-                  onClick={() => void openNotification(notification)}
                 >
-                  <span
-                    className={cn(
-                      "mt-1 h-2 w-2 shrink-0 rounded-full",
-                      notification.readAt ? "bg-transparent" : "bg-primary",
-                    )}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {notification.title}
-                    </span>
-                    {notification.body ? (
-                      <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
-                        {notification.body}
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    onClick={() => void openNotification(notification)}
+                  >
+                    <span
+                      className={cn(
+                        "mt-1 h-2 w-2 shrink-0 rounded-full",
+                        notification.readAt ? "bg-transparent" : "bg-primary",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {notification.title}
                       </span>
-                    ) : null}
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {formatRelativeTime(notification.createdAt)}
+                      {notification.body ? (
+                        <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
+                          {notification.body}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {formatRelativeTime(notification.createdAt)}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => void deleteNotification(notification)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span className="sr-only">Delete notification</span>
+                  </Button>
+                </div>
               ))
             )}
           </div>

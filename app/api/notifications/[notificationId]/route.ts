@@ -27,3 +27,24 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   return NextResponse.json({ ok: true })
 }
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const { notificationId } = await context.params
+  const { user, supabase, error: authError } = await requireRouteUser(request)
+
+  if (authError || !user || !supabase) {
+    return NextResponse.json({ error: authError }, { status: 401 })
+  }
+
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("id", notificationId)
+    .eq("recipient_user_id", user.id)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true })
+}
