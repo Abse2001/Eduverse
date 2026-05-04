@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import {
+  BarChart3,
   BookOpen,
   FileText,
   MessageSquare,
@@ -16,11 +17,13 @@ import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
 import {
   type ClassAssignment,
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import { getClassesForUser } from "@/lib/education/classes"
+import { TEACHER_PREVIOUS_CLASSES } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
@@ -295,6 +298,75 @@ export function TeacherDashboard() {
               </Card>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="font-semibold text-foreground">Previous Classes</h2>
+        <div className="grid gap-3">
+          {TEACHER_PREVIOUS_CLASSES.map((classItem) => (
+            <Card key={classItem.id}>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        <BarChart3 className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {classItem.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {classItem.code} &middot; {classItem.semester}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Students
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {classItem.students}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Avg Score
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {classItem.avgScore}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Graded
+                      </p>
+                      <p className="text-sm font-bold text-foreground">
+                        {classItem.gradedAssignments}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Subject
+                      </p>
+                      <p className="truncate text-sm font-bold text-foreground">
+                        {classItem.subject}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <Progress value={classItem.completion} className="h-1.5" />
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {classItem.completion}%
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     </div>

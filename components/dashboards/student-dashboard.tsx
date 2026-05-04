@@ -25,20 +25,11 @@ import {
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import { getClassesForUser } from "@/lib/education/classes"
+import { STUDENT_PREVIOUS_ACADEMIC_PERIODS } from "@/lib/mock-data"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
-
-type AcademicPeriodStats = {
-  label: string
-  timeframe: string
-  classes: number
-  avgScore: number
-  gradedAssignments: number
-  progress: number
-  gpa: number | null
-}
 
 export function StudentDashboard() {
   const { authUser, currentUser, organizationClasses } = useApp()
@@ -80,46 +71,6 @@ export function StudentDashboard() {
   const overallProgress = getStudentAssignmentProgress(allAssignments)
   const currentUserId = authUser?.id ?? currentUser.id ?? null
   const classById = new Map(myClasses.map((cls) => [cls.id, cls]))
-  const currentAcademicPeriods = Array.from(
-    myClasses.reduce((periods, cls) => {
-      const label = cls.semester || "Spring 2026"
-      const existing = periods.get(label) ?? []
-
-      periods.set(label, [...existing, cls])
-      return periods
-    }, new Map<string, typeof myClasses>()),
-  ).map(([label, classes]) => {
-    const periodAssignments = classes.flatMap(
-      (cls) => assignmentsByClass[cls.id] ?? [],
-    )
-    const periodProgress = getStudentAssignmentProgress(periodAssignments)
-    const periodGradedSubmissions = periodAssignments.flatMap((assignment) =>
-      assignment.mySubmission?.gradedAt &&
-      assignment.mySubmission.score !== null
-        ? [{ assignment, score: assignment.mySubmission.score }]
-        : [],
-    )
-    const periodAvgScore =
-      periodGradedSubmissions.length > 0
-        ? Math.round(
-            periodGradedSubmissions.reduce(
-              (sum, submission) =>
-                sum + (submission.score / submission.assignment.maxScore) * 100,
-              0,
-            ) / periodGradedSubmissions.length,
-          )
-        : 0
-
-    return {
-      label,
-      timeframe: "Current period",
-      classes: classes.length,
-      avgScore: periodAvgScore,
-      gradedAssignments: periodGradedSubmissions.length,
-      progress: periodProgress,
-      gpa: currentUser.gpa ?? null,
-    } satisfies AcademicPeriodStats
-  })
 
   useEffect(() => {
     let cancelled = false
@@ -207,7 +158,7 @@ export function StudentDashboard() {
         />
         <StatCard
           label="Periods"
-          value={String(currentAcademicPeriods.length)}
+          value={String(STUDENT_PREVIOUS_ACADEMIC_PERIODS.length)}
           icon={Calendar}
           color="indigo"
         />
@@ -357,10 +308,12 @@ export function StudentDashboard() {
       </div>
 
       <div className="space-y-3">
-        <h2 className="font-semibold text-foreground">Academic Periods</h2>
+        <h2 className="font-semibold text-foreground">
+          Previous Academic Periods
+        </h2>
         <div className="grid gap-3">
-          {currentAcademicPeriods.map((period) => (
-            <Card key={period.label}>
+          {STUDENT_PREVIOUS_ACADEMIC_PERIODS.map((period) => (
+            <Card key={period.id}>
               <CardContent className="p-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">

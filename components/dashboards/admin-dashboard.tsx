@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import {
   Activity,
+  Archive,
   BookOpen,
   MailPlus,
   Puzzle,
@@ -13,6 +14,7 @@ import { useApp } from "@/lib/store"
 import { PENDING_ACCESS_REQUESTS } from "@/lib/mock-data"
 import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
+import { ClassHistoryTab } from "@/features/admin/class-history-tab"
 import { ClassesTab } from "@/features/admin/classes-tab"
 import { FeaturesTab } from "@/features/admin/features-tab"
 import { PendingRequestsTab } from "@/features/admin/pending-requests-tab"
@@ -101,6 +103,10 @@ export function AdminDashboard() {
             <BookOpen className="w-3.5 h-3.5" />
             Classes
           </TabsTrigger>
+          <TabsTrigger value="history" className="text-xs gap-1.5">
+            <Archive className="w-3.5 h-3.5" />
+            History
+          </TabsTrigger>
           <TabsTrigger value="users" className="text-xs gap-1.5">
             <Users className="w-3.5 h-3.5" />
             Users
@@ -121,6 +127,10 @@ export function AdminDashboard() {
 
         <TabsContent value="classes" className="mt-4">
           <ClassesTab />
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4">
+          <ClassHistoryTab />
         </TabsContent>
 
         <TabsContent value="users" className="mt-4">

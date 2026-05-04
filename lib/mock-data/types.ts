@@ -22,6 +22,30 @@ export interface PendingAccessRequest {
   requestedAt: string
 }
 
+export interface AcademicPeriodHistory {
+  id: string
+  label: string
+  timeframe: string
+  classes: number
+  avgScore: number
+  gradedAssignments: number
+  progress: number
+  gpa: number | null
+}
+
+export interface ClassHistoryRecord {
+  id: string
+  name: string
+  code: string
+  subject: string
+  teacherName: string
+  semester: string
+  students: number
+  avgScore: number
+  completion: number
+  gradedAssignments: number
+}
+
 export interface Class {
   id: string
   name: string

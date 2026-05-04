@@ -1,6 +1,7 @@
 export * from "./mock-data/classes"
 export * from "./mock-data/exams"
 export * from "./mock-data/helpers"
+export * from "./mock-data/history"
 export * from "./mock-data/invitations"
 export * from "./mock-data/leaderboard"
 export * from "./mock-data/messages"
