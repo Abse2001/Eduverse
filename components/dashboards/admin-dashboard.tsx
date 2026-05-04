@@ -9,7 +9,7 @@ import {
   Users,
 } from "lucide-react"
 import { useApp } from "@/lib/store"
-import { PENDING_ACCESS_REQUESTS, USERS } from "@/lib/mock-data"
+import { PENDING_ACCESS_REQUESTS } from "@/lib/mock-data"
 import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassesTab } from "@/features/admin/classes-tab"
@@ -19,7 +19,12 @@ import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function AdminDashboard() {
-  const { currentUser, organizationClasses, organizationInvites } = useApp()
+  const {
+    currentUser,
+    organizationClasses,
+    organizationInvites,
+    organizationMembers,
+  } = useApp()
 
   if (currentUser.role !== "admin") {
     return (
@@ -35,8 +40,21 @@ export function AdminDashboard() {
     )
   }
 
-  const students = USERS.filter((user) => user.role === "student")
-  const teachers = USERS.filter((user) => user.role === "teacher")
+  const activeMembers = organizationMembers.filter(
+    (member) => member.status === "active",
+  )
+  const students = activeMembers.filter((member) =>
+    member.roles.some(
+      (roleRecord) =>
+        roleRecord.status === "active" && roleRecord.role === "student",
+    ),
+  )
+  const teachers = activeMembers.filter((member) =>
+    member.roles.some(
+      (roleRecord) =>
+        roleRecord.status === "active" && roleRecord.role === "teacher",
+    ),
+  )
   const pendingMockInvites = PENDING_ACCESS_REQUESTS.filter(
     (request) => request.type === "invite",
   ).length
@@ -54,19 +72,13 @@ export function AdminDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            {currentUser.institution} &middot; Spring 2026
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <ShieldCheck className="w-4 h-4 text-amber-500" />
-          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-            Administrator
-          </span>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground text-balance">
+          Welcome back, {currentUser.name.split(" ")[0]}
+        </h1>
+        <p className="text-muted-foreground text-sm mt-0.5">
+          {currentUser.institution} &middot; Spring 2026
+        </p>
       </div>
 
       <AdminOverviewStats

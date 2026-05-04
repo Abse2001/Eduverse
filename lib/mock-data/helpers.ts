@@ -1,14 +1,7 @@
-import { ASSIGNMENTS } from "./assignments"
 import { CLASSES } from "./classes"
 import { LEADERBOARD } from "./leaderboard"
 import { MESSAGES } from "./messages"
-import type {
-  Assignment,
-  Class,
-  LeaderboardEntry,
-  Message,
-  User,
-} from "./types"
+import type { Class, LeaderboardEntry, Message, User } from "./types"
 import { USERS } from "./users"
 
 export function getUserById(id: string): User | undefined {
@@ -36,10 +29,6 @@ export function getMessagesByClass(classId: string): Message[] {
   return MESSAGES.filter((message) => message.classId === classId).sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   )
-}
-
-export function getAssignmentsByClass(classId: string): Assignment[] {
-  return ASSIGNMENTS.filter((assignment) => assignment.classId === classId)
 }
 
 export function getLeaderboardByClass(classId: string): LeaderboardEntry[] {

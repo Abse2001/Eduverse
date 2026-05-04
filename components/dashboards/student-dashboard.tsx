@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { format, isPast } from "date-fns"
 import {
   BarChart3,
@@ -8,25 +9,23 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  FileText,
+  MessageSquare,
   Star,
   TrendingUp,
-  Trophy,
 } from "lucide-react"
 import { StatCard } from "@/components/shared/stat-card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { getAssignmentsByClass, getLeaderboardByClass } from "@/lib/mock-data"
+import {
+  type ClassAssignment,
+  getAssignmentDerivedStatus,
+  loadClassAssignments,
+} from "@/features/assignments/use-class-assignments"
 import { getClassesForUser } from "@/lib/education/classes"
 import { toLegacyClass } from "@/lib/supabase/classes"
-import {
-  getAssignmentProgress,
-  getAssignmentsWithClassInfo,
-  getAverageAssignmentScore,
-  getBestRank,
-  getStudentRankSummary,
-  getUpcomingAssignments,
-} from "@/lib/education/selectors"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
@@ -37,109 +36,132 @@ type AcademicPeriodStats = {
   classes: number
   avgScore: number
   gradedAssignments: number
-  bestRank: number | null
   progress: number
   gpa: number | null
 }
 
-const MOCK_PREVIOUS_ACADEMIC_PERIODS: AcademicPeriodStats[] = [
-  {
-    label: "Fall 2025",
-    timeframe: "Previous period",
-    classes: 4,
-    avgScore: 89,
-    gradedAssignments: 18,
-    bestRank: 2,
-    progress: 100,
-    gpa: 3.8,
-  },
-  {
-    label: "2024-2025 Academic Year",
-    timeframe: "Completed year",
-    classes: 8,
-    avgScore: 86,
-    gradedAssignments: 42,
-    bestRank: 3,
-    progress: 100,
-    gpa: 3.6,
-  },
-]
-
-function getAverageScorePercentage(
-  assignments: ReturnType<typeof getAssignmentsByClass>,
-) {
-  const graded = assignments.filter(
-    (assignment) =>
-      assignment.status === "graded" && assignment.score !== undefined,
-  )
-
-  if (graded.length === 0) return 0
-
-  return Math.round(
-    graded.reduce(
-      (sum, assignment) =>
-        sum + ((assignment.score ?? 0) / assignment.maxScore) * 100,
-      0,
-    ) / graded.length,
-  )
-}
-
 export function StudentDashboard() {
-  const { currentUser, organizationClasses } = useApp()
-  const myClasses = getClassesForUser(organizationClasses, currentUser).map(
-    toLegacyClass,
+  const { authUser, currentUser, organizationClasses } = useApp()
+  const classRows = getClassesForUser(organizationClasses, currentUser)
+  const classIds = classRows.map((classItem) => classItem.id)
+  const classIdKey = classIds.join("|")
+  const [assignmentsByClass, setAssignmentsByClass] = useState<
+    Record<string, ClassAssignment[]>
+  >({})
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
+  const myClasses = classRows.map(toLegacyClass)
+  const allAssignments = classIds.flatMap(
+    (classId) => assignmentsByClass[classId] ?? [],
   )
-  const allAssignments = getAssignmentsWithClassInfo(
-    myClasses,
-    getAssignmentsByClass,
+  const pendingAssignments = allAssignments.filter((assignment) =>
+    ["pending", "overdue"].includes(getAssignmentDerivedStatus(assignment)),
   )
-  const pendingAssignments = allAssignments.filter(
-    (assignment) => assignment.status === "pending",
+  const gradedSubmissions = allAssignments.flatMap((assignment) =>
+    assignment.mySubmission?.gradedAt && assignment.mySubmission.score !== null
+      ? [{ assignment, score: assignment.mySubmission.score }]
+      : [],
   )
-  const avgScore = getAverageAssignmentScore(allAssignments)
-  const upcomingAssignments = getUpcomingAssignments(allAssignments).slice(0, 4)
-  const classRanks = getStudentRankSummary(
-    myClasses,
-    currentUser.id,
-    getLeaderboardByClass,
-  )
-  const bestRank = getBestRank(classRanks)
-  const currentAcademicPeriods = Array.from(
-    myClasses
-      .reduce((periods, cls) => {
-        const label = cls.semester || currentUser.semester || "Current Period"
-        const existing = periods.get(label) ?? []
-
-        periods.set(label, [...existing, cls])
-        return periods
-      }, new Map<string, typeof myClasses>())
-      .entries(),
-  ).map(([label, classes]) => {
-    const classIds = new Set(classes.map((cls) => cls.id))
-    const assignments = allAssignments.filter((assignment) =>
-      classIds.has(assignment.classId),
+  const avgScore =
+    gradedSubmissions.length > 0
+      ? Math.round(
+          gradedSubmissions.reduce(
+            (sum, submission) =>
+              sum + (submission.score / submission.assignment.maxScore) * 100,
+            0,
+          ) / gradedSubmissions.length,
+        )
+      : 0
+  const upcomingAssignments = allAssignments
+    .filter(
+      (assignment) => getAssignmentDerivedStatus(assignment) === "pending",
     )
-    const progress = getAssignmentProgress(assignments)
-    const ranks = classRanks.filter((rank) => classIds.has(rank.cls.id))
+    .sort((left, right) => Date.parse(left.dueAt) - Date.parse(right.dueAt))
+    .slice(0, 4)
+  const overallProgress = getStudentAssignmentProgress(allAssignments)
+  const currentUserId = authUser?.id ?? currentUser.id ?? null
+  const classById = new Map(myClasses.map((cls) => [cls.id, cls]))
+  const currentAcademicPeriods = Array.from(
+    myClasses.reduce((periods, cls) => {
+      const label = cls.semester || "Spring 2026"
+      const existing = periods.get(label) ?? []
+
+      periods.set(label, [...existing, cls])
+      return periods
+    }, new Map<string, typeof myClasses>()),
+  ).map(([label, classes]) => {
+    const periodAssignments = classes.flatMap(
+      (cls) => assignmentsByClass[cls.id] ?? [],
+    )
+    const periodProgress = getStudentAssignmentProgress(periodAssignments)
+    const periodGradedSubmissions = periodAssignments.flatMap((assignment) =>
+      assignment.mySubmission?.gradedAt &&
+      assignment.mySubmission.score !== null
+        ? [{ assignment, score: assignment.mySubmission.score }]
+        : [],
+    )
+    const periodAvgScore =
+      periodGradedSubmissions.length > 0
+        ? Math.round(
+            periodGradedSubmissions.reduce(
+              (sum, submission) =>
+                sum + (submission.score / submission.assignment.maxScore) * 100,
+              0,
+            ) / periodGradedSubmissions.length,
+          )
+        : 0
 
     return {
       label,
       timeframe: "Current period",
       classes: classes.length,
-      avgScore: getAverageScorePercentage(assignments),
-      gradedAssignments: assignments.filter(
-        (assignment) =>
-          assignment.status === "graded" && assignment.score !== undefined,
-      ).length,
-      bestRank: getBestRank(ranks),
-      progress: progress.progress,
+      avgScore: periodAvgScore,
+      gradedAssignments: periodGradedSubmissions.length,
+      progress: periodProgress,
       gpa: currentUser.gpa ?? null,
     } satisfies AcademicPeriodStats
   })
-  const academicPeriods = [
-    ...currentAcademicPeriods,
-    ...MOCK_PREVIOUS_ACADEMIC_PERIODS,
-  ]
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (classIds.length === 0) {
+      setAssignmentsByClass({})
+      setAssignmentsError(null)
+      return
+    }
+
+    Promise.all(
+      classIds.map(async (classId) => {
+        const assignments = await loadClassAssignments({
+          classId,
+          currentUserId,
+          canManage: false,
+        })
+
+        return [classId, assignments] as const
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return
+
+        setAssignmentsByClass(Object.fromEntries(entries))
+        setAssignmentsError(null)
+      })
+      .catch((error) => {
+        if (cancelled) return
+
+        setAssignmentsByClass({})
+        setAssignmentsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load assignment metrics.",
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [classIdKey, currentUserId])
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -148,7 +170,7 @@ export function StudentDashboard() {
           Good morning, {currentUser.name.split(" ")[0]}
         </h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          {currentUser.institution} &middot; {currentUser.semester}
+          {currentUser.institution} &middot; Spring 2026
         </p>
       </div>
 
@@ -172,6 +194,12 @@ export function StudentDashboard() {
           color="emerald"
         />
         <StatCard
+          label="Completion"
+          value={`${overallProgress}%`}
+          icon={CheckCircle2}
+          color="emerald"
+        />
+        <StatCard
           label="Current GPA"
           value={String(currentUser.gpa ?? "—")}
           icon={Star}
@@ -179,31 +207,27 @@ export function StudentDashboard() {
         />
         <StatCard
           label="Periods"
-          value={String(academicPeriods.length)}
+          value={String(currentAcademicPeriods.length)}
           icon={Calendar}
           color="indigo"
-        />
-        <StatCard
-          label="Best Rank"
-          value={bestRank ? `#${bestRank}` : "—"}
-          icon={Trophy}
-          color="amber"
         />
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-3">
           <h2 className="font-semibold text-foreground">My Classes</h2>
+          {assignmentsError ? (
+            <p className="text-xs text-destructive">{assignmentsError}</p>
+          ) : null}
 
           {myClasses.map((cls) => {
-            const assignments = getAssignmentsByClass(cls.id)
-            const { progress } = getAssignmentProgress(assignments)
-            const rankInfo = classRanks.find((rank) => rank.cls.id === cls.id)
+            const assignments = assignmentsByClass[cls.id] ?? []
+            const progress = getStudentAssignmentProgress(assignments)
 
             return (
-              <Link key={cls.id} href={`/classes/${cls.id}/home`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                  <CardContent className="p-4 flex items-center gap-4">
+              <Card key={cls.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-4">
                     <div
                       className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
@@ -213,7 +237,7 @@ export function StudentDashboard() {
                       {cls.code.slice(0, 2)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm text-foreground truncate group-hover:text-primary transition-colors">
+                      <p className="font-semibold text-sm text-foreground truncate">
                         {cls.name}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -226,22 +250,47 @@ export function StudentDashboard() {
                         </span>
                       </div>
                     </div>
-                    {rankInfo?.rank ? (
-                      <div className="shrink-0 text-center">
-                        <div className="flex items-center justify-center gap-0.5">
-                          <Trophy className="w-3 h-3 text-amber-500" />
-                          <span className="text-sm font-bold text-foreground">
-                            #{rankInfo.rank}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          rank
-                        </p>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </Link>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                    <Link href={`/classes/${cls.id}/home`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <BookOpen className="w-3 h-3" /> Class Home
+                      </Button>
+                    </Link>
+                    <Link href={`/classes/${cls.id}/chat`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <MessageSquare className="w-3 h-3" /> Chat
+                      </Button>
+                    </Link>
+                    <Link href={`/classes/${cls.id}/assignments`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3 h-3" /> Assignments
+                      </Button>
+                    </Link>
+                    <Link href={`/classes/${cls.id}/materials`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <FileText className="w-3 h-3" /> Materials
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
             )
           })}
         </div>
@@ -257,21 +306,21 @@ export function StudentDashboard() {
             </Card>
           ) : (
             upcomingAssignments.map((assignment) => {
-              const dueDate = new Date(assignment.dueDate)
+              const dueDate = new Date(assignment.dueAt)
               const overdue = isPast(dueDate)
+              const classInfo = classById.get(assignment.classId)
 
               return (
                 <Link
                   key={assignment.id}
-                  href={`/classes/${assignment.classInfo.id}/assignments`}
+                  href={`/classes/${assignment.classId}/assignments`}
                 >
                   <Card className="hover:shadow-md transition-shadow cursor-pointer">
                     <CardContent className="p-3 flex items-start gap-3">
                       <div
                         className={cn(
                           "w-1.5 rounded-full self-stretch mt-1 shrink-0",
-                          CLASS_COLOR_MAP[assignment.classInfo.color] ??
-                            "bg-muted",
+                          CLASS_COLOR_MAP[classInfo?.color ?? ""] ?? "bg-muted",
                         )}
                       />
                       <div className="flex-1 min-w-0">
@@ -279,7 +328,7 @@ export function StudentDashboard() {
                           {assignment.title}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {assignment.classInfo.code}
+                          {classInfo?.code ?? "Class"}
                         </p>
                         <p
                           className={cn(
@@ -294,17 +343,9 @@ export function StudentDashboard() {
                       </div>
                       <Badge
                         variant="secondary"
-                        className={cn(
-                          "text-[10px] shrink-0",
-                          assignment.type === "lab" &&
-                            "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-                          assignment.type === "quiz" &&
-                            "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                          assignment.type === "exam" &&
-                            "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-                        )}
+                        className="text-[10px] shrink-0"
                       >
-                        {assignment.type}
+                        assignment
                       </Badge>
                     </CardContent>
                   </Card>
@@ -318,7 +359,7 @@ export function StudentDashboard() {
       <div className="space-y-3">
         <h2 className="font-semibold text-foreground">Academic Periods</h2>
         <div className="grid gap-3">
-          {academicPeriods.map((period) => (
+          {currentAcademicPeriods.map((period) => (
             <Card key={period.label}>
               <CardContent className="p-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -337,7 +378,7 @@ export function StudentDashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 md:min-w-[520px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:min-w-[420px]">
                     <div>
                       <p className="text-[10px] uppercase text-muted-foreground">
                         Classes
@@ -364,14 +405,6 @@ export function StudentDashboard() {
                     </div>
                     <div>
                       <p className="text-[10px] uppercase text-muted-foreground">
-                        Best Rank
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {period.bestRank ? `#${period.bestRank}` : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
                         GPA
                       </p>
                       <p className="text-sm font-bold text-foreground">
@@ -393,4 +426,14 @@ export function StudentDashboard() {
       </div>
     </div>
   )
+}
+
+function getStudentAssignmentProgress(assignments: ClassAssignment[]) {
+  if (assignments.length === 0) return 0
+
+  const completed = assignments.filter((assignment) =>
+    Boolean(assignment.mySubmission),
+  ).length
+
+  return Math.round((completed / assignments.length) * 100)
 }

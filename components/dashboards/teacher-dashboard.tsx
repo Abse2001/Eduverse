@@ -21,8 +21,6 @@ import {
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import { getClassesForUser } from "@/lib/education/classes"
-import { getAssignmentProgress } from "@/lib/education/selectors"
-import { getAssignmentsByClass } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
@@ -160,8 +158,7 @@ export function TeacherDashboard() {
                 ).length,
               0,
             )
-            const legacyAssignments = getAssignmentsByClass(cls.id)
-            const { progress } = getAssignmentProgress(legacyAssignments)
+            const progress = getTeacherGradingProgress(assignments)
 
             return (
               <Card key={cls.id} className="hover:shadow-md transition-shadow">
@@ -302,6 +299,18 @@ export function TeacherDashboard() {
       </div>
     </div>
   )
+}
+
+function getTeacherGradingProgress(assignments: ClassAssignment[]) {
+  const submissions = assignments.flatMap(
+    (assignment) => assignment.submissions,
+  )
+
+  if (submissions.length === 0) return 0
+
+  const graded = submissions.filter((submission) => submission.gradedAt).length
+
+  return Math.round((graded / submissions.length) * 100)
 }
 
 function getInitials(name: string) {
