@@ -13,12 +13,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 type AppNotification = {
   id: string
   organizationId: string
   classId: string | null
+  recipientRole: "org_owner" | "org_admin" | "teacher" | "student"
   actorUserId: string | null
   type:
     | "chat_announcement"
@@ -43,6 +45,7 @@ type NotificationsResponse = {
 
 export function NotificationsMenu() {
   const router = useRouter()
+  const { activeOrganization } = useApp()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -54,9 +57,17 @@ export function NotificationsMenu() {
     setErrorMessage(null)
 
     try {
-      const response = await fetch("/api/notifications", {
-        cache: "no-store",
-      })
+      const params = new URLSearchParams()
+      if (activeOrganization?.id) {
+        params.set("organizationId", activeOrganization.id)
+      }
+      const query = params.toString()
+      const response = await fetch(
+        `/api/notifications${query ? `?${query}` : ""}`,
+        {
+          cache: "no-store",
+        },
+      )
       const payload = (await response
         .json()
         .catch(() => null)) as NotificationsResponse | null
@@ -82,7 +93,7 @@ export function NotificationsMenu() {
 
   useEffect(() => {
     void loadNotifications()
-  }, [])
+  }, [activeOrganization?.id, activeOrganization?.selectedRole])
 
   useEffect(() => {
     if (open) void loadNotifications()
@@ -115,6 +126,10 @@ export function NotificationsMenu() {
 
     await fetch("/api/notifications/read-all", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId: activeOrganization?.id ?? null,
+      }),
     }).catch(() => null)
   }
 

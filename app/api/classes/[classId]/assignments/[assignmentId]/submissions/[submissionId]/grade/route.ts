@@ -141,6 +141,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     target: {
       type: "person",
       userId: data.student_user_id,
+      role: "student",
       classId,
     },
     notificationType: "assignment_graded",

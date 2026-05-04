@@ -7,6 +7,7 @@ type NotificationRow = {
   id: string
   organization_id: string
   class_id: string | null
+  recipient_role: "org_owner" | "org_admin" | "teacher" | "student"
   actor_user_id: string | null
   type:
     | "chat_announcement"
@@ -30,20 +31,33 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
+  const url = new URL(request.url)
+  const organizationId = url.searchParams.get("organizationId")
+  let notificationsQuery = supabase
+    .from("notifications")
+    .select(
+      "id, organization_id, class_id, recipient_role, actor_user_id, type, title, body, href, metadata, read_at, created_at",
+    )
+    .eq("recipient_user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(30)
+  let unreadQuery = supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("recipient_user_id", user.id)
+    .is("read_at", null)
+
+  if (organizationId) {
+    notificationsQuery = notificationsQuery.eq(
+      "organization_id",
+      organizationId,
+    )
+    unreadQuery = unreadQuery.eq("organization_id", organizationId)
+  }
+
   const [notificationsResult, unreadResult] = await Promise.all([
-    supabase
-      .from("notifications")
-      .select(
-        "id, organization_id, class_id, actor_user_id, type, title, body, href, metadata, read_at, created_at",
-      )
-      .eq("recipient_user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("notifications")
-      .select("id", { count: "exact", head: true })
-      .eq("recipient_user_id", user.id)
-      .is("read_at", null),
+    notificationsQuery,
+    unreadQuery,
   ])
 
   if (notificationsResult.error) {
@@ -73,6 +87,7 @@ function toNotificationResponse(row: NotificationRow) {
     id: row.id,
     organizationId: row.organization_id,
     classId: row.class_id,
+    recipientRole: row.recipient_role,
     actorUserId: row.actor_user_id,
     type: row.type,
     title: row.title,

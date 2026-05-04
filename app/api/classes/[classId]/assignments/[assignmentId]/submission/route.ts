@@ -247,6 +247,7 @@ export async function POST(request: Request, context: RouteContext) {
         target: {
           type: "person",
           userId: teacherUserId,
+          role: "teacher",
           classId: assignment.class_id,
         },
         notificationType: "assignment_submitted",

@@ -16,6 +16,7 @@ type NotificationTarget =
   | {
       type: "person"
       userId: string
+      role: "org_owner" | "org_admin" | "teacher" | "student"
       classId?: string | null
     }
 
@@ -65,6 +66,7 @@ export async function sendNotification({
     target_org_id: organizationId,
     target_class_id: target.classId ?? null,
     target_recipient_user_id: target.userId,
+    target_recipient_role: target.role,
     notification_actor_user_id: actorUserId,
     notification_type: notificationType,
     notification_title: title,

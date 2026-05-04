@@ -10,11 +10,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  const { error } = await supabase
+  const body = (await request.json().catch(() => null)) as {
+    organizationId?: unknown
+  } | null
+  const organizationId =
+    typeof body?.organizationId === "string" ? body.organizationId : null
+  let query = supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_user_id", user.id)
     .is("read_at", null)
+
+  if (organizationId) {
+    query = query.eq("organization_id", organizationId)
+  }
+
+  const { error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
