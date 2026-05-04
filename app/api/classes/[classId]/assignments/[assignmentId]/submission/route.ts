@@ -4,6 +4,7 @@ import {
   uploadAssignmentObject,
   validateAssignmentFileUpload,
 } from "@/lib/api/s3-assignments"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -16,6 +17,7 @@ type AssignmentRecord = {
   id: string
   organization_id: string
   class_id: string
+  title: string
   due_at: string
   status: "draft" | "published"
   allow_late_submissions: boolean
@@ -56,7 +58,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { data: assignmentData, error: assignmentError } = await supabase
     .from("class_assignments")
     .select(
-      "id, organization_id, class_id, due_at, status, allow_late_submissions, allow_text_submission, allow_file_submission",
+      "id, organization_id, class_id, title, due_at, status, allow_late_submissions, allow_text_submission, allow_file_submission",
     )
     .eq("id", assignmentId)
     .eq("class_id", classId)
@@ -215,6 +217,52 @@ export async function POST(request: Request, context: RouteContext) {
       await deleteAssignmentObject({
         bucket: previousSubmission.file_storage_bucket,
         storageKey: previousSubmission.file_storage_key,
+      }).catch(() => null)
+    }
+
+    const [{ data: classData }, { data: profileData }] = await Promise.all([
+      supabase
+        .from("classes")
+        .select("teacher_user_id")
+        .eq("id", assignment.class_id)
+        .eq("organization_id", assignment.organization_id)
+        .maybeSingle(),
+      supabase
+        .from("profiles")
+        .select("display_name, email")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ])
+    const teacherUserId = classData?.teacher_user_id
+    const studentName =
+      profileData?.display_name ||
+      profileData?.email?.split("@")[0] ||
+      "A student"
+
+    if (teacherUserId) {
+      await sendNotification({
+        supabase,
+        organizationId: assignment.organization_id,
+        actorUserId: user.id,
+        target: {
+          type: "person",
+          userId: teacherUserId,
+          classId: assignment.class_id,
+        },
+        notificationType: "assignment_submitted",
+        title: "Assignment submitted",
+        body: `${studentName} submitted ${assignment.title}.`,
+        href: notificationHref({
+          classId: assignment.class_id,
+          section: "assignments",
+          itemId: assignment.id,
+        }),
+        metadata: {
+          assignmentId: assignment.id,
+          submissionId: data.id,
+          studentUserId: user.id,
+        },
+        eventKey: `assignment_submitted:${data.id}`,
       }).catch(() => null)
     }
 

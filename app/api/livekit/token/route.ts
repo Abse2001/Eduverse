@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { AccessToken } from "livekit-server-sdk"
-import { createClient as createSupabaseClient } from "@supabase/supabase-js"
-import { getClassById } from "@/lib/mock-data"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
+import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
 
@@ -15,42 +15,15 @@ interface TokenRequestBody {
   }
 }
 
-async function findClassId(classId: string) {
-  const mockClass = getClassById(classId)
-
-  if (mockClass) return mockClass.id
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
-
-  if (!supabaseUrl || !supabaseSecretKey) {
-    throw new Error(
-      "Supabase env vars are missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.",
-    )
-  }
-
-  const supabase = createSupabaseClient(supabaseUrl, supabaseSecretKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  })
-  const { data, error } = await supabase
-    .from("classes")
-    .select("id")
-    .eq("id", classId)
-    .eq("is_archived", false)
-    .maybeSingle()
-
-  if (error) throw error
-
-  return data?.id ?? null
-}
-
 export async function POST(request: Request) {
+  const { user, supabase, error: authError } = await requireRouteUser(request)
   const apiKey = process.env.LIVEKIT_API_KEY
   const apiSecret = process.env.LIVEKIT_API_SECRET
   const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
+
+  if (authError || !user || !supabase) {
+    return NextResponse.json({ error: authError }, { status: 401 })
+  }
 
   if (!apiKey || !apiSecret || !serverUrl) {
     return NextResponse.json(
@@ -76,21 +49,32 @@ export async function POST(request: Request) {
     )
   }
 
-  let classId: string | null
-
-  try {
-    classId = await findClassId(body.classId)
-  } catch (error) {
+  if (body.user.id !== user.id) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Could not verify class.",
+        error: "Live session user must match the authenticated user.",
+      },
+      { status: 403 },
+    )
+  }
+
+  const { data: classData, error: classError } = await supabase
+    .from("classes")
+    .select("id, organization_id, name, teacher_user_id")
+    .eq("id", body.classId)
+    .eq("is_archived", false)
+    .maybeSingle()
+
+  if (classError) {
+    return NextResponse.json(
+      {
+        error: classError.message,
       },
       { status: 500 },
     )
   }
 
-  if (!classId) {
+  if (!classData) {
     return NextResponse.json(
       {
         error: "Class not found.",
@@ -99,6 +83,32 @@ export async function POST(request: Request) {
     )
   }
 
+  const [{ data: canManage, error: manageError }, { data: isMember }] =
+    await Promise.all([
+      supabase.rpc("can_manage_class", {
+        target_org_id: classData.organization_id,
+        target_class_id: classData.id,
+      }),
+      supabase.rpc("is_class_member", {
+        target_org_id: classData.organization_id,
+        target_class_id: classData.id,
+      }),
+    ])
+
+  if (manageError) {
+    return NextResponse.json({ error: manageError.message }, { status: 500 })
+  }
+
+  if (!canManage && !isMember) {
+    return NextResponse.json(
+      {
+        error: "Class membership required to join this live session.",
+      },
+      { status: 403 },
+    )
+  }
+
+  const classId = classData.id
   const roomName = `class-${classId}`
   const metadata = JSON.stringify({
     avatar: body.user.avatar ?? body.user.name.slice(0, 2).toUpperCase(),
@@ -119,6 +129,25 @@ export async function POST(request: Request) {
     canSubscribe: true,
     canPublishData: true,
   })
+
+  if (classData.teacher_user_id === user.id) {
+    const cooldownBucket = Math.floor(Date.now() / (10 * 60 * 1000))
+
+    await sendNotification({
+      supabase,
+      organizationId: classData.organization_id,
+      actorUserId: user.id,
+      target: { type: "class", classId },
+      notificationType: "session_started",
+      title: "Live session started",
+      body: `${classData.name} is live now.`,
+      href: notificationHref({ classId, section: "session" }),
+      metadata: {
+        roomName,
+      },
+      eventKey: `session_started:${classId}:${cooldownBucket}`,
+    }).catch(() => null)
+  }
 
   return NextResponse.json({
     serverUrl,

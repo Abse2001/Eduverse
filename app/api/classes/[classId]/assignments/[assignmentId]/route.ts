@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -125,8 +126,34 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  const updatedAssignment = data as AssignmentRow
+  if (
+    assignment.assignment.status !== "published" &&
+    updatedAssignment.status === "published"
+  ) {
+    await sendNotification({
+      supabase,
+      organizationId: updatedAssignment.organization_id,
+      actorUserId: user.id,
+      target: { type: "class", classId: updatedAssignment.class_id },
+      notificationType: "assignment_published",
+      title: "New assignment published",
+      body: updatedAssignment.title,
+      href: notificationHref({
+        classId: updatedAssignment.class_id,
+        section: "assignments",
+        itemId: updatedAssignment.id,
+      }),
+      metadata: {
+        assignmentId: updatedAssignment.id,
+        dueAt: updatedAssignment.due_at,
+      },
+      eventKey: `assignment_published:${updatedAssignment.id}`,
+    }).catch(() => null)
+  }
+
   return NextResponse.json({
-    assignment: toAssignmentResponse(data as AssignmentRow),
+    assignment: toAssignmentResponse(updatedAssignment),
   })
 }
 
@@ -184,7 +211,7 @@ async function loadAssignmentForManager(
   const { data: assignment, error } = await supabase
     .from("class_assignments")
     .select(
-      "id, organization_id, class_id, allow_text_submission, allow_file_submission",
+      "id, organization_id, class_id, status, allow_text_submission, allow_file_submission",
     )
     .eq("id", assignmentId)
     .eq("class_id", classId)
@@ -240,6 +267,7 @@ async function loadAssignmentForManager(
       id: string
       organization_id: string
       class_id: string
+      status: "draft" | "published"
       allow_text_submission: boolean
       allow_file_submission: boolean
     },

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -61,7 +62,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { data: assignment, error: assignmentError } = await supabase
     .from("class_assignments")
-    .select("id, organization_id, class_id, max_score")
+    .select("id, organization_id, class_id, title, max_score")
     .eq("id", assignmentId)
     .eq("class_id", classId)
     .is("deleted_at", null)
@@ -132,6 +133,31 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await sendNotification({
+    supabase,
+    organizationId: assignment.organization_id,
+    actorUserId: user.id,
+    target: {
+      type: "person",
+      userId: data.student_user_id,
+      classId,
+    },
+    notificationType: "assignment_graded",
+    title: "Assignment graded",
+    body: `${assignment.title} has been graded.`,
+    href: notificationHref({
+      classId,
+      section: "assignments",
+      itemId: assignmentId,
+    }),
+    metadata: {
+      assignmentId,
+      submissionId,
+      score,
+    },
+    eventKey: `assignment_graded:${submissionId}:${data.graded_at}`,
+  }).catch(() => null)
 
   return NextResponse.json({
     submission: toSubmissionResponse(data as SubmissionRow),

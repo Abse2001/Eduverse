@@ -1,10 +1,10 @@
 "use client"
 
-import { Bell, Search } from "lucide-react"
+import { Search } from "lucide-react"
 import { AccountMenu } from "@/components/top-bar/account-menu"
+import { NotificationsMenu } from "@/components/top-bar/notifications-menu"
 import { OrganizationMenu } from "@/components/top-bar/organization-menu"
 import { RoleMenu } from "@/components/top-bar/role-menu"
-import { Button } from "@/components/ui/button"
 
 export function TopBar() {
   return (
@@ -21,12 +21,7 @@ export function TopBar() {
       <div className="ml-auto flex items-center gap-2">
         <RoleMenu />
         <OrganizationMenu />
-
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
-          <span className="sr-only">Notifications</span>
-        </Button>
+        <NotificationsMenu />
 
         <AccountMenu />
       </div>
