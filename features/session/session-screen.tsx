@@ -14,6 +14,7 @@ import {
   MonitorUp,
   Phone,
   Redo2,
+  Square,
   Trash2,
   Undo2,
   Users,
@@ -35,13 +36,13 @@ import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type { Class } from "@/lib/mock-data"
 import { ControlButton } from "./control-button"
+import { usePersistentLiveSession } from "./live-session-provider"
 import type { LiveSessionNotice } from "./live-session-types"
 import { ParticipantsPanel } from "./participants-panel"
 import { SessionAudioRenderer } from "./session-audio-renderer"
 import { SESSION_COLORS, SESSION_TOOLS } from "./session-data"
 import { SessionChat } from "./session-chat"
 import { VideoTrackView } from "./track-media"
-import { useLiveSession } from "./use-live-session"
 import { useWhiteboard } from "./use-whiteboard"
 import { VideoTile } from "./video-tile"
 
@@ -134,19 +135,23 @@ function SessionNoticeStack({
 }
 
 export function SessionScreen({ cls }: { cls: Class }) {
-  const { currentUser, refreshClassLiveSessions } = useApp()
+  const { currentUser } = useApp()
+  const {
+    activeClass,
+    endSession,
+    hasJoinedSession,
+    joinSession,
+    leaveSession,
+    liveSession,
+    sessionActive,
+  } = usePersistentLiveSession()
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
-  const [sessionActive, setSessionActive] = useState(false)
-  const [hasJoinedSession, setHasJoinedSession] = useState(false)
 
   const isTeacher = currentUser.role === "teacher"
-  const liveSession = useLiveSession({
-    classId: cls.id,
-    currentUser,
-    enabled: sessionActive,
-  })
+  const isThisClassSession = activeClass?.id === cls.id && sessionActive
+  const hasJoinedThisClass = activeClass?.id === cls.id && hasJoinedSession
   const presentationStageRef = useRef<HTMLDivElement | null>(null)
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | undefined>()
   const [presentationStageSize, setPresentationStageSize] = useState<{
@@ -213,19 +218,6 @@ export function SessionScreen({ cls }: { cls: Class }) {
       ? "Stop sharing"
       : "Share screen"
 
-  async function leaveSession() {
-    liveSession.disconnect()
-    setSessionActive(false)
-    setHasJoinedSession(true)
-
-    if (isTeacher) {
-      await fetch(`/api/classes/${encodeURIComponent(cls.id)}/live-session`, {
-        method: "DELETE",
-      }).catch(() => null)
-      await refreshClassLiveSessions({ force: true }).catch(() => null)
-    }
-  }
-
   useEffect(() => {
     setVideoAspectRatio(undefined)
   }, [presentationSessionId])
@@ -278,12 +270,12 @@ export function SessionScreen({ cls }: { cls: Class }) {
     }
   }, [liveSession.presentation, presentationAspectRatio])
 
-  if (!sessionActive) {
-    const title = hasJoinedSession ? "Session ended" : "Ready to join"
-    const description = hasJoinedSession
+  if (!isThisClassSession) {
+    const title = hasJoinedThisClass ? "Session ended" : "Ready to join"
+    const description = hasJoinedThisClass
       ? `You left the live session for ${cls.name}.`
       : `Join the live session for ${cls.name} when you are ready.`
-    const buttonLabel = hasJoinedSession ? "Rejoin" : "Join session"
+    const buttonLabel = hasJoinedThisClass ? "Rejoin" : "Join session"
 
     return (
       <div className="p-6 flex flex-col items-center justify-center gap-3 text-center">
@@ -293,8 +285,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
         <Button
           size="sm"
           onClick={() => {
-            setHasJoinedSession(true)
-            setSessionActive(true)
+            joinSession(cls)
           }}
         >
           {buttonLabel}
@@ -358,13 +349,24 @@ export function SessionScreen({ cls }: { cls: Class }) {
             <Separator orientation="vertical" className="h-6 mx-1" />
             <Button
               size="sm"
-              variant="destructive"
+              variant="outline"
               className="gap-1.5 text-xs h-8"
-              onClick={() => void leaveSession()}
+              onClick={leaveSession}
             >
               <Phone className="w-3.5 h-3.5" />
               Leave
             </Button>
+            {isTeacher ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="gap-1.5 text-xs h-8"
+                onClick={() => void endSession()}
+              >
+                <Square className="w-3.5 h-3.5" />
+                End Session
+              </Button>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-1 ml-2">

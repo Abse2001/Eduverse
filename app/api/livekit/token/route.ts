@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import { AccessToken } from "livekit-server-sdk"
-import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -110,6 +109,34 @@ export async function POST(request: Request) {
 
   const classId = classData.id
   const roomName = `class-${classId}`
+
+  if (!canManage) {
+    const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+    const { data: liveSession, error: liveSessionError } = await supabase
+      .from("class_live_sessions")
+      .select("id")
+      .eq("class_id", classId)
+      .eq("room_name", roomName)
+      .eq("status", "live")
+      .is("ended_at", null)
+      .gt("last_seen_at", staleBefore)
+      .maybeSingle()
+
+    if (liveSessionError) {
+      return NextResponse.json(
+        { error: liveSessionError.message },
+        { status: 500 },
+      )
+    }
+
+    if (!liveSession) {
+      return NextResponse.json(
+        { error: "No live session is active for this class." },
+        { status: 409 },
+      )
+    }
+  }
+
   const metadata = JSON.stringify({
     avatar: body.user.avatar ?? body.user.name.slice(0, 2).toUpperCase(),
     role: body.user.role ?? "student",
@@ -129,52 +156,6 @@ export async function POST(request: Request) {
     canSubscribe: true,
     canPublishData: true,
   })
-
-  if (canManage) {
-    const now = new Date().toISOString()
-
-    const { error: liveSessionError } = await supabase
-      .from("class_live_sessions")
-      .upsert(
-        {
-          organization_id: classData.organization_id,
-          class_id: classId,
-          room_name: roomName,
-          started_by_user_id: user.id,
-          status: "live",
-          started_at: now,
-          last_seen_at: now,
-          ended_at: null,
-        },
-        { onConflict: "class_id" },
-      )
-
-    if (liveSessionError) {
-      return NextResponse.json(
-        { error: liveSessionError.message },
-        { status: 500 },
-      )
-    }
-  }
-
-  if (classData.teacher_user_id === user.id) {
-    const cooldownBucket = Math.floor(Date.now() / (10 * 60 * 1000))
-
-    await sendNotification({
-      supabase,
-      organizationId: classData.organization_id,
-      actorUserId: user.id,
-      target: { type: "class", classId },
-      notificationType: "session_started",
-      title: "Live session started",
-      body: `${classData.name} is live now.`,
-      href: notificationHref({ classId, section: "session" }),
-      metadata: {
-        roomName,
-      },
-      eventKey: `session_started:${classId}:${cooldownBucket}`,
-    }).catch(() => null)
-  }
 
   return NextResponse.json({
     serverUrl,

@@ -849,7 +849,7 @@ export function useApp() {
 
 async function loadClassLiveSessions(organizationId: string) {
   const supabase = createClient()
-  const staleBefore = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString()
   const { data, error } = await supabase
     .from("class_live_sessions")
     .select(
