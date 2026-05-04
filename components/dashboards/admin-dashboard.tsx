@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import {
   Activity,
   BookOpen,
@@ -23,8 +24,12 @@ export function AdminDashboard() {
     currentUser,
     organizationClasses,
     organizationInvites,
-    organizationMembers,
+    refreshOrganizationUsers,
   } = useApp()
+
+  useEffect(() => {
+    void refreshOrganizationUsers().catch(() => {})
+  }, [refreshOrganizationUsers])
 
   if (currentUser.role !== "admin") {
     return (
@@ -40,19 +45,19 @@ export function AdminDashboard() {
     )
   }
 
-  const activeMembers = organizationMembers.filter(
-    (member) => member.status === "active",
-  )
-  const students = activeMembers.filter((member) =>
-    member.roles.some(
-      (roleRecord) =>
-        roleRecord.status === "active" && roleRecord.role === "student",
+  const studentIds = new Set(
+    organizationClasses.flatMap((classItem) =>
+      classItem.students.map((student) => student.id),
     ),
   )
-  const teachers = activeMembers.filter((member) =>
-    member.roles.some(
-      (roleRecord) =>
-        roleRecord.status === "active" && roleRecord.role === "teacher",
+  const teacherIds = new Set(
+    organizationClasses.flatMap((classItem) =>
+      [
+        classItem.teacher_user_id,
+        ...classItem.memberships
+          .filter((membership) => membership.role === "teacher")
+          .map((membership) => membership.user_id),
+      ].filter((userId): userId is string => Boolean(userId)),
     ),
   )
   const pendingMockInvites = PENDING_ACCESS_REQUESTS.filter(
@@ -82,8 +87,8 @@ export function AdminDashboard() {
       </div>
 
       <AdminOverviewStats
-        studentCount={students.length}
-        teacherCount={teachers.length}
+        studentCount={studentIds.size}
+        teacherCount={teacherIds.size}
         classCount={organizationClasses.length}
         pendingAccessCount={pendingAccessCount}
         pendingAccessSublabel={pendingAccessSublabel}
