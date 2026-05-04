@@ -10,6 +10,7 @@ type RouteContext = {
 }
 
 type LiveSessionRequestBody = {
+  action?: "end"
   roomName?: string
 }
 
@@ -19,7 +20,7 @@ async function readLiveSessionBody(request: Request) {
     .catch(() => null)) as LiveSessionRequestBody | null
 }
 
-async function loadManagedClass({
+async function loadClassWithPermissions({
   classId,
   supabase,
 }: {
@@ -53,14 +54,56 @@ async function loadManagedClass({
     return { error: manageError.message, status: 500 as const }
   }
 
-  if (!canManage) {
+  return { canManage: Boolean(canManage), classData }
+}
+
+function requireCanManage(
+  result: Awaited<ReturnType<typeof loadClassWithPermissions>>,
+) {
+  if ("error" in result) return result
+
+  if (!result.canManage) {
     return {
       error: "Only class managers can update live sessions.",
       status: 403 as const,
     }
   }
 
-  return { classData }
+  return result
+}
+
+async function endLiveSession({
+  canManage,
+  classId,
+  roomName,
+  supabase,
+  userId,
+}: {
+  canManage: boolean
+  classId: string
+  roomName: string
+  supabase: SupabaseClient
+  userId: string
+}) {
+  const now = new Date().toISOString()
+  let query = supabase
+    .from("class_live_sessions")
+    .update({
+      status: "ended",
+      ended_at: now,
+      last_seen_at: now,
+    })
+    .eq("class_id", classId)
+    .eq("room_name", roomName)
+    .eq("status", "live")
+
+  if (!canManage) {
+    query = query.eq("started_by_user_id", userId)
+  }
+
+  const { error } = await query
+
+  return error
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -71,14 +114,43 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  const result = await loadManagedClass({ classId, supabase })
+  const body = await readLiveSessionBody(request)
+  const routeRoomName = body?.roomName || `class-${classId}`
+
+  if (body?.action === "end") {
+    const error = await endLiveSession({
+      canManage: false,
+      classId,
+      roomName: routeRoomName,
+      supabase,
+      userId: user.id,
+    })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true })
+  }
+
+  const result = await loadClassWithPermissions({ classId, supabase })
 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }
 
-  const body = await readLiveSessionBody(request)
   const roomName = body?.roomName || `class-${result.classData.id}`
+  const managedResult = requireCanManage(result)
+
+  if ("error" in managedResult) {
+    return NextResponse.json(
+      {
+        error: managedResult.error,
+      },
+      { status: managedResult.status },
+    )
+  }
+
   const now = new Date().toISOString()
   const staleBefore = Date.now() - 2 * 60 * 1000
   const { data: existingSession, error: existingError } = await supabase
@@ -164,7 +236,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  const result = await loadManagedClass({ classId, supabase })
+  const result = requireCanManage(
+    await loadClassWithPermissions({ classId, supabase }),
+  )
 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status })
@@ -189,13 +263,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   const { classId } = await context.params
-  const { supabase, error: authError } = await requireRouteUser(request)
+  const { user, supabase, error: authError } = await requireRouteUser(request)
 
-  if (authError || !supabase) {
+  if (authError || !user || !supabase) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  const result = await loadManagedClass({ classId, supabase })
+  const result = await loadClassWithPermissions({ classId, supabase })
 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status })
@@ -203,17 +277,13 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const body = await readLiveSessionBody(request)
   const roomName = body?.roomName || `class-${result.classData.id}`
-  const now = new Date().toISOString()
-  const { error } = await supabase
-    .from("class_live_sessions")
-    .update({
-      status: "ended",
-      ended_at: now,
-      last_seen_at: now,
-    })
-    .eq("class_id", result.classData.id)
-    .eq("room_name", roomName)
-    .eq("status", "live")
+  const error = await endLiveSession({
+    canManage: result.canManage,
+    classId: result.classData.id,
+    roomName,
+    supabase,
+    userId: user.id,
+  })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -62,28 +63,86 @@ async function syncClassLiveSession({
   }
 }
 
+function terminateClassLiveSession(
+  classId: string,
+  options: { useBeacon?: boolean } = {},
+) {
+  const url = `/api/classes/${encodeURIComponent(classId)}/live-session`
+  const body = JSON.stringify({
+    action: "end",
+    roomName: getRoomName(classId),
+  })
+
+  if (
+    options.useBeacon &&
+    typeof navigator !== "undefined" &&
+    navigator.sendBeacon
+  ) {
+    const payload = new Blob([body], { type: "application/json" })
+
+    if (navigator.sendBeacon(url, payload)) {
+      return Promise.resolve()
+    }
+  }
+
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body,
+    keepalive: true,
+  }).catch(() => {})
+}
+
 export function LiveSessionProvider({ children }: { children: ReactNode }) {
-  const { currentUser, refreshClassLiveSessions } = useApp()
+  const { activeOrganization, currentUser, refreshClassLiveSessions } = useApp()
   const [activeClass, setActiveClass] = useState<Class | null>(null)
   const [sessionActive, setSessionActive] = useState(false)
   const [hasJoinedSession, setHasJoinedSession] = useState(false)
+  const [sessionScope, setSessionScope] = useState<string | null>(null)
+  const activeTeacherSessionRef = useRef<string | null>(null)
+  const disconnectRef = useRef<() => void>(() => {})
   const isTeacher = currentUser.role === "teacher"
+  const currentSessionScope = `${activeOrganization?.id ?? ""}:${currentUser.id}:${currentUser.role}`
   const liveSession = useLiveSession({
     classId: activeClass?.id ?? "",
     currentUser,
-    enabled: Boolean(activeClass && sessionActive),
+    enabled: Boolean(
+      activeClass && sessionActive && sessionScope === currentSessionScope,
+    ),
   })
   const connected = liveSession.connectionState === ConnectionState.Connected
 
-  const joinSession = useCallback((cls: Class) => {
-    setActiveClass(cls)
-    setHasJoinedSession(true)
-    setSessionActive(true)
-  }, [])
+  useEffect(() => {
+    activeTeacherSessionRef.current =
+      activeClass && sessionActive && isTeacher ? activeClass.id : null
+  }, [activeClass, isTeacher, sessionActive])
+
+  useEffect(() => {
+    disconnectRef.current = liveSession.disconnect
+  }, [liveSession.disconnect])
+
+  const joinSession = useCallback(
+    (cls: Class) => {
+      const currentTeacherClassId = activeTeacherSessionRef.current
+
+      if (currentTeacherClassId && currentTeacherClassId !== cls.id) {
+        void terminateClassLiveSession(currentTeacherClassId)
+      }
+
+      setActiveClass(cls)
+      setSessionScope(currentSessionScope)
+      setHasJoinedSession(true)
+      setSessionActive(true)
+    },
+    [currentSessionScope],
+  )
 
   const leaveSession = useCallback(() => {
     liveSession.disconnect()
     setSessionActive(false)
+    setSessionScope(null)
     setHasJoinedSession(true)
   }, [liveSession])
 
@@ -97,6 +156,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
 
     liveSession.disconnect()
     setSessionActive(false)
+    setSessionScope(null)
     setHasJoinedSession(true)
 
     if (isTeacher) {
@@ -152,11 +212,41 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   ])
 
   useEffect(() => {
-    liveSession.disconnect()
+    disconnectRef.current()
     setActiveClass(null)
     setSessionActive(false)
     setHasJoinedSession(false)
-  }, [currentUser.id])
+    setSessionScope(null)
+
+    const endActiveTeacherSession = (options?: { useBeacon?: boolean }) => {
+      const classId = activeTeacherSessionRef.current
+
+      if (classId) {
+        void terminateClassLiveSession(classId, options)
+          .catch(() => {})
+          .finally(() => {
+            if (!options?.useBeacon) {
+              void refreshClassLiveSessions({ force: true }).catch(() => {})
+            }
+          })
+      }
+    }
+
+    const handlePageHide = () => endActiveTeacherSession({ useBeacon: true })
+
+    window.addEventListener("pagehide", handlePageHide)
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide)
+      endActiveTeacherSession()
+      disconnectRef.current()
+    }
+  }, [
+    activeOrganization?.id,
+    currentUser.id,
+    currentUser.role,
+    refreshClassLiveSessions,
+  ])
 
   const value = useMemo(
     () => ({
