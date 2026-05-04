@@ -14,7 +14,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useApp } from "@/lib/store"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+
+const NOTIFICATIONS_CACHE_PREFIX = "eduverse:notifications:v1"
 
 type AppNotification = {
   id: string
@@ -43,24 +46,40 @@ type NotificationsResponse = {
   error?: string
 }
 
+type NotificationsCache = {
+  notifications: AppNotification[]
+  unreadCount: number
+}
+
 export function NotificationsMenu() {
   const router = useRouter()
-  const { activeOrganization } = useApp()
+  const { activeOrganization, authUser } = useApp()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const cacheKey = getNotificationsCacheKey({
+    userId: authUser?.id ?? null,
+    organizationId: activeOrganization?.id ?? null,
+    role: activeOrganization?.selectedRole ?? null,
+  })
 
-  async function loadNotifications() {
-    setIsLoading(true)
+  async function loadNotifications({ background = false } = {}) {
+    if (!authUser || !activeOrganization) {
+      setNotifications([])
+      setUnreadCount(0)
+      setIsLoading(false)
+      setErrorMessage(null)
+      return
+    }
+
+    if (!background) setIsLoading(true)
     setErrorMessage(null)
 
     try {
       const params = new URLSearchParams()
-      if (activeOrganization?.id) {
-        params.set("organizationId", activeOrganization.id)
-      }
+      params.set("organizationId", activeOrganization.id)
       const query = params.toString()
       const response = await fetch(
         `/api/notifications${query ? `?${query}` : ""}`,
@@ -76,11 +95,14 @@ export function NotificationsMenu() {
         throw new Error(payload?.error ?? "Could not load notifications.")
       }
 
-      setNotifications(payload?.notifications ?? [])
-      setUnreadCount(payload?.unreadCount ?? 0)
+      const nextCache = {
+        notifications: payload?.notifications ?? [],
+        unreadCount: payload?.unreadCount ?? 0,
+      }
+      setNotifications(nextCache.notifications)
+      setUnreadCount(nextCache.unreadCount)
+      writeNotificationsCache(cacheKey, nextCache)
     } catch (error) {
-      setNotifications([])
-      setUnreadCount(0)
       setErrorMessage(
         error instanceof Error
           ? error.message
@@ -92,25 +114,64 @@ export function NotificationsMenu() {
   }
 
   useEffect(() => {
+    const cached = readNotificationsCache(cacheKey)
+
+    if (cached) {
+      setNotifications(cached.notifications)
+      setUnreadCount(cached.unreadCount)
+      setIsLoading(false)
+    } else {
+      setNotifications([])
+      setUnreadCount(0)
+      setIsLoading(Boolean(authUser && activeOrganization))
+    }
+
     void loadNotifications()
-  }, [activeOrganization?.id, activeOrganization?.selectedRole])
+  }, [authUser?.id, activeOrganization?.id, activeOrganization?.selectedRole])
 
   useEffect(() => {
-    if (open) void loadNotifications()
-  }, [open])
+    if (!authUser || !activeOrganization) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(
+        `notifications:${authUser.id}:${activeOrganization.id}:${activeOrganization.selectedRole}`,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `recipient_user_id=eq.${authUser.id}`,
+        },
+        () => {
+          void loadNotifications({ background: true })
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [authUser?.id, activeOrganization?.id, activeOrganization?.selectedRole])
 
   async function markRead(notificationId: string) {
-    setNotifications((current) =>
-      current.map((notification) =>
-        notification.id === notificationId
-          ? {
-              ...notification,
-              readAt: notification.readAt ?? new Date().toISOString(),
-            }
-          : notification,
-      ),
+    const nextNotifications = notifications.map((notification) =>
+      notification.id === notificationId
+        ? {
+            ...notification,
+            readAt: notification.readAt ?? new Date().toISOString(),
+          }
+        : notification,
     )
-    setUnreadCount((current) => Math.max(0, current - 1))
+    const nextUnreadCount = countUnreadNotifications(nextNotifications)
+    setNotifications(nextNotifications)
+    setUnreadCount(nextUnreadCount)
+    writeNotificationsCache(cacheKey, {
+      notifications: nextNotifications,
+      unreadCount: nextUnreadCount,
+    })
 
     await fetch(`/api/notifications/${encodeURIComponent(notificationId)}`, {
       method: "PATCH",
@@ -119,10 +180,16 @@ export function NotificationsMenu() {
 
   async function markAllRead() {
     const readAt = new Date().toISOString()
-    setNotifications((current) =>
-      current.map((notification) => ({ ...notification, readAt })),
-    )
+    const nextNotifications = notifications.map((notification) => ({
+      ...notification,
+      readAt,
+    }))
+    setNotifications(nextNotifications)
     setUnreadCount(0)
+    writeNotificationsCache(cacheKey, {
+      notifications: nextNotifications,
+      unreadCount: 0,
+    })
 
     await fetch("/api/notifications/read-all", {
       method: "POST",
@@ -140,14 +207,16 @@ export function NotificationsMenu() {
   }
 
   async function deleteNotification(notification: AppNotification) {
-    setNotifications((current) =>
-      current.filter(
-        (currentNotification) => currentNotification.id !== notification.id,
-      ),
+    const nextNotifications = notifications.filter(
+      (currentNotification) => currentNotification.id !== notification.id,
     )
-    if (!notification.readAt) {
-      setUnreadCount((current) => Math.max(0, current - 1))
-    }
+    const nextUnreadCount = countUnreadNotifications(nextNotifications)
+    setNotifications(nextNotifications)
+    setUnreadCount(nextUnreadCount)
+    writeNotificationsCache(cacheKey, {
+      notifications: nextNotifications,
+      unreadCount: nextUnreadCount,
+    })
 
     await fetch(`/api/notifications/${encodeURIComponent(notification.id)}`, {
       method: "DELETE",
@@ -286,4 +355,56 @@ function formatRelativeTime(value: string) {
     month: "short",
     day: "numeric",
   }).format(new Date(value))
+}
+
+function getNotificationsCacheKey({
+  userId,
+  organizationId,
+  role,
+}: {
+  userId: string | null
+  organizationId: string | null
+  role: string | null
+}) {
+  if (!userId || !organizationId || !role) return null
+  return `${NOTIFICATIONS_CACHE_PREFIX}:${userId}:${organizationId}:${role}`
+}
+
+function readNotificationsCache(cacheKey: string | null) {
+  if (!cacheKey || typeof window === "undefined") return null
+
+  try {
+    const value = window.localStorage.getItem(cacheKey)
+    if (!value) return null
+
+    const parsed = JSON.parse(value) as Partial<NotificationsCache>
+    if (!Array.isArray(parsed.notifications)) return null
+
+    return {
+      notifications: parsed.notifications,
+      unreadCount:
+        typeof parsed.unreadCount === "number"
+          ? parsed.unreadCount
+          : countUnreadNotifications(parsed.notifications),
+    } satisfies NotificationsCache
+  } catch {
+    return null
+  }
+}
+
+function writeNotificationsCache(
+  cacheKey: string | null,
+  cache: NotificationsCache,
+) {
+  if (!cacheKey || typeof window === "undefined") return
+
+  try {
+    window.localStorage.setItem(cacheKey, JSON.stringify(cache))
+  } catch {
+    // localStorage can be unavailable or full; state remains authoritative.
+  }
+}
+
+function countUnreadNotifications(notifications: AppNotification[]) {
+  return notifications.filter((notification) => !notification.readAt).length
 }
