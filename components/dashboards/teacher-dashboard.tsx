@@ -1,12 +1,14 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import {
   BookOpen,
-  Calendar,
   FileText,
+  MessageSquare,
   PlusCircle,
   TrendingUp,
+  Upload,
   Users,
   Video,
 } from "lucide-react"
@@ -14,33 +16,95 @@ import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { getAssignmentsByClass } from "@/lib/mock-data"
+import {
+  type ClassAssignment,
+  loadClassAssignments,
+} from "@/features/assignments/use-class-assignments"
 import { getClassesForUser } from "@/lib/education/classes"
 import { getAssignmentProgress } from "@/lib/education/selectors"
+import { getAssignmentsByClass } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function TeacherDashboard() {
-  const { currentUser, organizationClasses } = useApp()
+  const { authUser, currentUser, organizationClasses } = useApp()
   const classRows = getClassesForUser(organizationClasses, currentUser)
+  const classIds = classRows.map((classItem) => classItem.id)
+  const classIdKey = classIds.join("|")
+  const [assignmentsByClass, setAssignmentsByClass] = useState<
+    Record<string, ClassAssignment[]>
+  >({})
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
   const classRowById = new Map(
     classRows.map((classItem) => [classItem.id, classItem]),
   )
   const myClasses = classRows.map(toLegacyClass)
   const totalStudents = new Set(myClasses.flatMap((cls) => cls.studentIds)).size
-  const totalAssignments = myClasses.reduce(
-    (sum, cls) => sum + getAssignmentsByClass(cls.id).length,
+  const totalAssignments = classIds.reduce(
+    (sum, classId) => sum + (assignmentsByClass[classId]?.length ?? 0),
     0,
   )
-  const pendingGrades = myClasses
-    .flatMap((cls) => getAssignmentsByClass(cls.id))
-    .filter((assignment) => assignment.status === "submitted").length
+  const pendingGrades = classIds.reduce(
+    (sum, classId) =>
+      sum +
+      (assignmentsByClass[classId] ?? []).reduce(
+        (assignmentSum, assignment) =>
+          assignmentSum +
+          assignment.submissions.filter((submission) => !submission.gradedAt)
+            .length,
+        0,
+      ),
+    0,
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    const currentUserId = authUser?.id ?? currentUser.id ?? null
+
+    if (classIds.length === 0) {
+      setAssignmentsByClass({})
+      setAssignmentsError(null)
+      return
+    }
+
+    Promise.all(
+      classIds.map(async (classId) => {
+        const assignments = await loadClassAssignments({
+          classId,
+          currentUserId,
+          canManage: true,
+        })
+
+        return [classId, assignments] as const
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return
+
+        setAssignmentsByClass(Object.fromEntries(entries))
+        setAssignmentsError(null)
+      })
+      .catch((error) => {
+        if (cancelled) return
+
+        setAssignmentsByClass({})
+        setAssignmentsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load assignment metrics.",
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authUser?.id, classIdKey, currentUser.id])
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-4">
+      <div>
         <div>
           <h1 className="text-2xl font-bold text-foreground text-balance">
             Welcome back, {currentUser.name.split(" ")[0]}
@@ -49,10 +113,6 @@ export function TeacherDashboard() {
             {currentUser.institution} &middot; Spring 2026
           </p>
         </div>
-        <Button size="sm" className="gap-2 shrink-0">
-          <PlusCircle className="w-4 h-4" />
-          New Assignment
-        </Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -85,14 +145,23 @@ export function TeacherDashboard() {
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-3">
           <h2 className="font-semibold text-foreground">Your Classes</h2>
+          {assignmentsError ? (
+            <p className="text-xs text-destructive">{assignmentsError}</p>
+          ) : null}
 
           {myClasses.map((cls) => {
             const students = classRowById.get(cls.id)?.students ?? []
-            const assignments = getAssignmentsByClass(cls.id)
-            const submittedAssignments = assignments.filter(
-              (assignment) => assignment.status === "submitted",
-            ).length
-            const { progress } = getAssignmentProgress(assignments)
+            const assignments = assignmentsByClass[cls.id] ?? []
+            const submittedAssignments = assignments.reduce(
+              (sum, assignment) =>
+                sum +
+                assignment.submissions.filter(
+                  (submission) => !submission.gradedAt,
+                ).length,
+              0,
+            )
+            const legacyAssignments = getAssignmentsByClass(cls.id)
+            const { progress } = getAssignmentProgress(legacyAssignments)
 
             return (
               <Card key={cls.id} className="hover:shadow-md transition-shadow">
@@ -163,22 +232,37 @@ export function TeacherDashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2 mt-3 pt-3 border-t border-border">
-                    <Link href={`/classes/${cls.id}/home`} className="flex-1">
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                    <Link href={`/classes/${cls.id}/chat`}>
                       <Button
                         variant="outline"
                         size="sm"
                         className="w-full text-xs gap-1.5"
                       >
-                        <BookOpen className="w-3 h-3" /> Class Home
+                        <MessageSquare className="w-3 h-3" /> Chat
                       </Button>
                     </Link>
-                    <Link
-                      href={`/classes/${cls.id}/session`}
-                      className="flex-1"
-                    >
+                    <Link href={`/classes/${cls.id}/session`}>
                       <Button size="sm" className="w-full text-xs gap-1.5">
                         <Video className="w-3 h-3" /> Start Session
+                      </Button>
+                    </Link>
+                    <Link href={`/classes/${cls.id}/assignments`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <PlusCircle className="w-3 h-3" /> Create Assignment
+                      </Button>
+                    </Link>
+                    <Link href={`/classes/${cls.id}/materials`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <Upload className="w-3 h-3" /> Upload Material
                       </Button>
                     </Link>
                   </div>
@@ -189,45 +273,6 @@ export function TeacherDashboard() {
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-2">
-            <h2 className="font-semibold text-foreground">Quick Actions</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                {
-                  label: "Start Session",
-                  icon: Video,
-                  href: `/classes/${myClasses[0]?.id}/session`,
-                },
-                {
-                  label: "New Material",
-                  icon: FileText,
-                  href: `/classes/${myClasses[0]?.id}/materials`,
-                },
-                {
-                  label: "Schedule Exam",
-                  icon: Calendar,
-                  href: `/classes/${myClasses[0]?.id}/assignments`,
-                },
-                {
-                  label: "View Chat",
-                  icon: Users,
-                  href: `/classes/${myClasses[0]?.id}/chat`,
-                },
-              ].map((action) => (
-                <Link key={action.label} href={action.href ?? "#"}>
-                  <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                    <CardContent className="p-3 flex flex-col items-center gap-1.5 text-center">
-                      <action.icon className="w-5 h-5 text-primary" />
-                      <span className="text-xs font-medium text-foreground">
-                        {action.label}
-                      </span>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
-
           <div className="space-y-2">
             <h2 className="font-semibold text-foreground">
               Today&apos;s Schedule

@@ -142,7 +142,7 @@ export function useClassAssignments({
     setErrorMessage(null)
 
     try {
-      const nextAssignments = await loadAssignments({
+      const nextAssignments = await loadClassAssignments({
         classId,
         currentUserId,
         canManage,
@@ -165,7 +165,7 @@ export function useClassAssignments({
     setIsLoading(true)
     setErrorMessage(null)
 
-    loadAssignments({ classId, currentUserId, canManage })
+    loadClassAssignments({ classId, currentUserId, canManage })
       .then((nextAssignments) => {
         if (cancelled) return
         setAssignments(nextAssignments)
@@ -459,7 +459,7 @@ export function getAssignmentDerivedStatus(
   return "pending"
 }
 
-async function loadAssignments({
+export async function loadClassAssignments({
   classId,
   currentUserId,
   canManage,
