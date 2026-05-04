@@ -238,6 +238,7 @@ export async function POST(request: Request, context: RouteContext) {
       profileData?.display_name ||
       profileData?.email?.split("@")[0] ||
       "A student"
+    const isResubmission = Boolean(previousSubmission)
 
     if (teacherUserId) {
       await sendNotification({
@@ -251,8 +252,12 @@ export async function POST(request: Request, context: RouteContext) {
           classId: assignment.class_id,
         },
         notificationType: "assignment_submitted",
-        title: "Assignment submitted",
-        body: `${studentName} submitted ${assignment.title}.`,
+        title: isResubmission
+          ? "Assignment resubmitted"
+          : "Assignment submitted",
+        body: `${studentName} ${
+          isResubmission ? "resubmitted" : "submitted"
+        } ${assignment.title}.`,
         href: notificationHref({
           classId: assignment.class_id,
           section: "assignments",
@@ -262,8 +267,10 @@ export async function POST(request: Request, context: RouteContext) {
           assignmentId: assignment.id,
           submissionId: data.id,
           studentUserId: user.id,
+          submittedAt: data.submitted_at,
+          isResubmission,
         },
-        eventKey: `assignment_submitted:${data.id}`,
+        eventKey: `assignment_submitted:${data.id}:${data.submitted_at}`,
       }).catch(() => null)
     }
 
