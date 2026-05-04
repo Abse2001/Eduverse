@@ -212,12 +212,28 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   ])
 
   useEffect(() => {
+    if (!sessionScope || sessionScope === currentSessionScope) {
+      return
+    }
+
+    const classId = activeTeacherSessionRef.current
+
+    if (classId) {
+      void terminateClassLiveSession(classId)
+        .catch(() => {})
+        .finally(() => {
+          void refreshClassLiveSessions({ force: true }).catch(() => {})
+        })
+    }
+
     disconnectRef.current()
     setActiveClass(null)
     setSessionActive(false)
     setHasJoinedSession(false)
     setSessionScope(null)
+  }, [currentSessionScope, refreshClassLiveSessions, sessionScope])
 
+  useEffect(() => {
     const endActiveTeacherSession = (options?: { useBeacon?: boolean }) => {
       const classId = activeTeacherSessionRef.current
 
@@ -238,15 +254,10 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       window.removeEventListener("pagehide", handlePageHide)
-      endActiveTeacherSession()
+      endActiveTeacherSession({ useBeacon: true })
       disconnectRef.current()
     }
-  }, [
-    activeOrganization?.id,
-    currentUser.id,
-    currentUser.role,
-    refreshClassLiveSessions,
-  ])
+  }, [refreshClassLiveSessions])
 
   const value = useMemo(
     () => ({

@@ -5,6 +5,8 @@ import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
 
+const LIVE_SESSION_STALE_MS = 5 * 60 * 1000
+
 type RouteContext = {
   params: Promise<{ classId: string }>
 }
@@ -152,7 +154,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const now = new Date().toISOString()
-  const staleBefore = Date.now() - 2 * 60 * 1000
+  const staleBefore = Date.now() - LIVE_SESSION_STALE_MS
   const { data: existingSession, error: existingError } = await supabase
     .from("class_live_sessions")
     .select("id, status, last_seen_at")

@@ -132,6 +132,7 @@ interface AppContextValue {
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
+const LIVE_SESSION_STALE_MS = 5 * 60 * 1000
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>(FALLBACK_USER)
@@ -849,7 +850,7 @@ export function useApp() {
 
 async function loadClassLiveSessions(organizationId: string) {
   const supabase = createClient()
-  const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+  const staleBefore = new Date(Date.now() - LIVE_SESSION_STALE_MS).toISOString()
   const { data, error } = await supabase
     .from("class_live_sessions")
     .select(

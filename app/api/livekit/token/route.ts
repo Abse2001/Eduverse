@@ -4,6 +4,8 @@ import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
 
+const LIVE_SESSION_STALE_MS = 5 * 60 * 1000
+
 interface TokenRequestBody {
   classId?: string
   user?: {
@@ -111,7 +113,9 @@ export async function POST(request: Request) {
   const roomName = `class-${classId}`
 
   if (!canManage) {
-    const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+    const staleBefore = new Date(
+      Date.now() - LIVE_SESSION_STALE_MS,
+    ).toISOString()
     const { data: liveSession, error: liveSessionError } = await supabase
       .from("class_live_sessions")
       .select("id")
