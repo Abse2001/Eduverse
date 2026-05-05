@@ -96,13 +96,25 @@ function terminateClassLiveSession(
 }
 
 export function LiveSessionProvider({ children }: { children: ReactNode }) {
-  const { activeOrganization, currentUser, refreshClassLiveSessions } = useApp()
+  const {
+    activeOrganization,
+    classLiveSessions,
+    classLiveSessionsStatus,
+    currentUser,
+    refreshClassLiveSessions,
+  } = useApp()
   const [activeClass, setActiveClass] = useState<Class | null>(null)
   const [sessionActive, setSessionActive] = useState(false)
   const [hasJoinedSession, setHasJoinedSession] = useState(false)
   const [sessionScope, setSessionScope] = useState<string | null>(null)
   const activeTeacherSessionRef = useRef<string | null>(null)
   const disconnectRef = useRef<() => void>(() => {})
+  const mountedRef = useRef(false)
+  const sessionPresenceRef = useRef({
+    activeClassId: null as string | null,
+    isTeacher: false,
+    sessionActive: false,
+  })
   const isTeacher = currentUser.role === "teacher"
   const currentSessionScope = `${activeOrganization?.id ?? ""}:${currentUser.id}:${currentUser.role}`
   const handleRemoteSessionEnded = useCallback(() => {
@@ -122,6 +134,14 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const connected = liveSession.connectionState === ConnectionState.Connected
 
   useEffect(() => {
+    mountedRef.current = true
+
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
     activeTeacherSessionRef.current =
       activeClass && sessionActive && isTeacher ? activeClass.id : null
   }, [activeClass, isTeacher, sessionActive])
@@ -129,6 +149,77 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     disconnectRef.current = liveSession.disconnect
   }, [liveSession.disconnect])
+
+  useEffect(() => {
+    sessionPresenceRef.current = {
+      activeClassId: activeClass?.id ?? null,
+      isTeacher,
+      sessionActive,
+    }
+  }, [activeClass?.id, isTeacher, sessionActive])
+
+  useEffect(() => {
+    const activeClassId = activeClass?.id
+
+    if (
+      isTeacher ||
+      !activeClassId ||
+      !sessionActive ||
+      classLiveSessionsStatus !== "ready"
+    ) {
+      return
+    }
+
+    const sessionIsStillLive = classLiveSessions.some(
+      (session) => session.class_id === activeClassId,
+    )
+
+    if (sessionIsStillLive) {
+      return
+    }
+
+    let cancelled = false
+    let recheckStarted = false
+    const recheckTimer = window.setTimeout(() => {
+      recheckStarted = true
+      void refreshClassLiveSessions({ force: true })
+        .then((freshSessions) => {
+          const currentPresence = sessionPresenceRef.current
+
+          if (
+            cancelled ||
+            !mountedRef.current ||
+            currentPresence.activeClassId !== activeClassId ||
+            currentPresence.isTeacher ||
+            !currentPresence.sessionActive ||
+            freshSessions.some((session) => session.class_id === activeClassId)
+          ) {
+            return
+          }
+
+          disconnectRef.current()
+          setSessionActive(false)
+          setSessionScope(null)
+          setHasJoinedSession(true)
+        })
+        .catch(() => {})
+    }, 1500)
+
+    return () => {
+      window.clearTimeout(recheckTimer)
+
+      if (!recheckStarted) {
+        cancelled = true
+      }
+    }
+  }, [
+    activeClass?.id,
+    classLiveSessions,
+    classLiveSessionsStatus,
+    isTeacher,
+    refreshClassLiveSessions,
+    sessionActive,
+  ])
 
   const joinSession = useCallback(
     (cls: Class) => {

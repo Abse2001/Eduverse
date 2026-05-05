@@ -98,6 +98,16 @@ function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function getStateResponseDelay(userId: string) {
+  let hash = 0
+
+  for (let index = 0; index < userId.length; index += 1) {
+    hash = (hash * 31 + userId.charCodeAt(index)) % 997
+  }
+
+  return 120 + (hash % 600)
+}
+
 function createStrokeId() {
   return `stroke-${createMessageId()}`
 }
@@ -758,9 +768,18 @@ export function useWhiteboard({
   const activeBoardId = useRef(boardId)
   const lastParticipantCount = useRef(participantCount)
   const stateRequested = useRef(new Set<string>())
+  const stateRequestIds = useRef(new Map<string, string>())
+  const stateResponseTimers = useRef(new Set<number>())
   const operations = useRef<WhiteboardOperation[]>([])
   const redoOperations = useRef<WhiteboardOperation[]>([])
   const boardVersion = useRef(0)
+
+  const clearStateResponseTimers = useCallback(() => {
+    stateResponseTimers.current.forEach((timerId) => {
+      window.clearTimeout(timerId)
+    })
+    stateResponseTimers.current.clear()
+  }, [])
 
   const getContext = useCallback(() => {
     const canvas = canvasRef.current
@@ -891,10 +910,11 @@ export function useWhiteboard({
     [boardId, currentUserId, sendMessage, syncEnabled],
   )
 
-  const sendStateSync = useCallback(() => {
+  const sendStateSync = useCallback((requestId?: string) => {
     sendWhiteboardMessage(
       {
         type: "state:sync",
+        ...(requestId ? { requestId } : {}),
         version: boardVersion.current,
         operations: getStateSyncOperations(operations.current),
       },
@@ -1170,11 +1190,13 @@ export function useWhiteboard({
     selectedOperationIds.current = new Set()
     remoteStrokes.current.clear()
     stateRequested.current.clear()
+    stateRequestIds.current.clear()
+    clearStateResponseTimers()
     setHasSelection(false)
     setRedoCount(0)
     resetDrawingState()
     resetBoard()
-  }, [resetBoard, resetDrawingState])
+  }, [clearStateResponseTimers, resetBoard, resetDrawingState])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (
@@ -1698,20 +1720,39 @@ export function useWhiteboard({
       if (strokeFlushFrame.current !== null) {
         cancelAnimationFrame(strokeFlushFrame.current)
       }
+      clearStateResponseTimers()
     }
-  }, [])
+  }, [clearStateResponseTimers])
 
   useEffect(() => {
     if (!syncEnabled) {
       stateRequested.current.clear()
+      stateRequestIds.current.clear()
+      clearStateResponseTimers()
       return
     }
 
     if (!stateRequested.current.has(boardId)) {
+      const requestId = createMessageId()
+
       stateRequested.current.add(boardId)
-      sendWhiteboardMessage({ type: "state:request" }, { reliable: true })
+      stateRequestIds.current.set(boardId, requestId)
+      sendWhiteboardMessage(
+        {
+          type: "state:request",
+          requestId,
+          requesterRole: isTeacher ? "teacher" : "student",
+        },
+        { reliable: true },
+      )
     }
-  }, [boardId, sendWhiteboardMessage, syncEnabled])
+  }, [
+    boardId,
+    clearStateResponseTimers,
+    isTeacher,
+    sendWhiteboardMessage,
+    syncEnabled,
+  ])
 
   useEffect(() => {
     if (!isTeacher || !syncEnabled) {
@@ -1753,15 +1794,43 @@ export function useWhiteboard({
       }
 
       if (message.type === "state:request") {
-        if (operations.current.length > 0 || boardVersion.current > 0) {
-          sendStateSync()
+        const hasBoardState =
+          operations.current.length > 0 || boardVersion.current > 0
+
+        if (!hasBoardState) {
+          continue
         }
+
+        if (isTeacher) {
+          sendStateSync(message.requestId)
+          continue
+        }
+
+        if (message.requesterRole === "teacher") {
+          const timerId = window.setTimeout(() => {
+            stateResponseTimers.current.delete(timerId)
+            sendStateSync(message.requestId)
+          }, getStateResponseDelay(currentUserId))
+
+          stateResponseTimers.current.add(timerId)
+        }
+
         continue
       }
 
       if (message.type === "state:sync") {
-        if (message.version < boardVersion.current) {
+        const currentRequestId = stateRequestIds.current.get(boardId)
+
+        if (message.requestId && message.requestId !== currentRequestId) {
           continue
+        }
+
+        if (message.version <= boardVersion.current) {
+          continue
+        }
+
+        if (message.requestId) {
+          stateRequestIds.current.delete(boardId)
         }
 
         boardVersion.current = message.version

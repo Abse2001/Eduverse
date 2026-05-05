@@ -431,7 +431,12 @@ function isWhiteboardMessage(
   }
 
   if (value.type === "state:request") {
-    return true
+    return (
+      typeof value.requestId === "string" &&
+      (value.requesterRole === undefined ||
+        (typeof value.requesterRole === "string" &&
+          isRole(value.requesterRole)))
+    )
   }
 
   if (value.type === "session:clear" || value.type === "session:end") {
@@ -440,6 +445,7 @@ function isWhiteboardMessage(
 
   if (
     value.type === "state:sync" &&
+    (value.requestId === undefined || typeof value.requestId === "string") &&
     typeof value.version === "number" &&
     isWhiteboardOperationList(value.operations)
   ) {

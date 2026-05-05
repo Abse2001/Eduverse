@@ -197,12 +197,15 @@ export type LiveSessionWhiteboardMessage =
       senderId: string
       boardId?: string
       type: "state:request"
+      requestId: string
+      requesterRole?: Role
     }
   | {
       id: string
       senderId: string
       boardId?: string
       type: "state:sync"
+      requestId?: string
       version: number
       operations: WhiteboardOperation[]
     }
