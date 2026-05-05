@@ -1836,16 +1836,22 @@ export function useWhiteboard({
 
       if (message.type === "state:sync") {
         const currentRequestId = stateRequestIds.current.get(boardId)
+        const isRequestedSync = Boolean(
+          message.requestId && message.requestId === currentRequestId,
+        )
 
-        if (message.requestId && message.requestId !== currentRequestId) {
+        if (message.requestId && !isRequestedSync) {
           continue
         }
 
-        if (message.version <= boardVersion.current) {
+        if (
+          message.version < boardVersion.current ||
+          (!isRequestedSync && message.version === boardVersion.current)
+        ) {
           continue
         }
 
-        if (message.requestId) {
+        if (isRequestedSync) {
           stateRequestIds.current.delete(boardId)
         }
 

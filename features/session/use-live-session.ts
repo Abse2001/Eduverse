@@ -166,6 +166,10 @@ function isRole(value: string | undefined): value is Role {
   return value === "student" || value === "teacher" || value === "admin"
 }
 
+function isConnectedRoom(room: Room | null): room is Room {
+  return room?.state === ConnectionState.Connected
+}
+
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -914,6 +918,29 @@ export function useLiveSession({
     [],
   )
 
+  const disconnectRoom = useCallback((room: Room | null = roomRef.current) => {
+    if (!room) {
+      return
+    }
+
+    if (roomRef.current === room) {
+      roomRef.current = null
+    }
+
+    void room.disconnect().catch(() => {})
+  }, [])
+
+  const noticeMediaNotConnected = useCallback(() => {
+    upsertNotice({
+      id: "media-not-connected",
+      scope: "session",
+      severity: "info",
+      title: "Session is reconnecting",
+      description: "Media controls are available after reconnection.",
+      nextStep: "Wait a moment, then try again.",
+    })
+  }, [upsertNotice])
+
   useEffect(() => {
     if (!chatStorageKey) {
       return
@@ -978,8 +1005,7 @@ export function useLiveSession({
 
   useEffect(() => {
     if (!enabled) {
-      roomRef.current?.disconnect()
-      roomRef.current = null
+      disconnectRoom()
       setParticipants([])
       setConnectionState(ConnectionState.Disconnected)
       setIsConnecting(false)
@@ -1040,7 +1066,7 @@ export function useLiveSession({
 
         if (parsed.type === "session:end") {
           setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
-          room.disconnect()
+          disconnectRoom(room)
           onSessionEnded?.()
           return
         }
@@ -1198,7 +1224,7 @@ export function useLiveSession({
         setIsConnecting(false)
         setConnectionState(ConnectionState.Disconnected)
         setMedia(INITIAL_MEDIA_STATUS)
-        room.disconnect()
+        disconnectRoom(room)
       }
     }
 
@@ -1220,10 +1246,7 @@ export function useLiveSession({
       room.off(RoomEvent.DataReceived, handleDataReceived)
       room.off(RoomEvent.MediaDevicesError, handleMediaDevicesError)
       room.unregisterTextStreamHandler(CHAT_TOPIC)
-      room.disconnect()
-      if (roomRef.current === room) {
-        roomRef.current = null
-      }
+      disconnectRoom(room)
     }
   }, [
     classId,
@@ -1231,6 +1254,7 @@ export function useLiveSession({
     currentUserId,
     currentUserName,
     currentUserRole,
+    disconnectRoom,
     enabled,
     liveSessionId,
     onLiveSessionIdResolved,
@@ -1376,7 +1400,8 @@ export function useLiveSession({
   const toggleMic = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1416,12 +1441,18 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const toggleCamera = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1458,12 +1489,18 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const toggleScreenShare = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1507,11 +1544,15 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const disconnect = useCallback(() => {
-    roomRef.current?.disconnect()
-    roomRef.current = null
+    disconnectRoom()
     setParticipants([])
     setConnectionState(ConnectionState.Disconnected)
     setIsConnecting(false)
@@ -1521,7 +1562,7 @@ export function useLiveSession({
     setChatMessages([])
     setChatStorageKey(null)
     setWhiteboardMessages([])
-  }, [])
+  }, [disconnectRoom])
 
   const localParticipant = participants.find(
     (participant) => participant.isLocal,
