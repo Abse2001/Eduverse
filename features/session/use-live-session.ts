@@ -21,6 +21,7 @@ import type {
   LiveSessionNotice,
   LiveSessionState,
   LiveSessionWhiteboardMessage,
+  LiveSessionWhiteboardMessagePayload,
   SessionParticipant,
   SessionPresentation,
   WhiteboardOperation,
@@ -44,6 +45,7 @@ const CHAT_STORAGE_PREFIX = "eduverse:session-chat:v1"
 const MAX_CHAT_MESSAGES = 200
 
 type MediaDeviceKind = "microphone" | "camera" | "screen"
+type SessionTokenUser = Pick<User, "avatar" | "id" | "name" | "role">
 type LiveSessionError =
   | Error
   | string
@@ -162,6 +164,10 @@ function isWhiteboardStrokeTool(
 
 function isRole(value: string | undefined): value is Role {
   return value === "student" || value === "teacher" || value === "admin"
+}
+
+function isConnectedRoom(room: Room | null): room is Room {
+  return room?.state === ConnectionState.Connected
 }
 
 function getInitials(name: string) {
@@ -423,6 +429,7 @@ function isWhiteboardMessage(
     !isJsonObject(value) ||
     typeof value.id !== "string" ||
     typeof value.senderId !== "string" ||
+    typeof value.liveSessionId !== "string" ||
     typeof value.type !== "string" ||
     (value.boardId !== undefined && typeof value.boardId !== "string")
   ) {
@@ -430,11 +437,21 @@ function isWhiteboardMessage(
   }
 
   if (value.type === "state:request") {
-    return true
+    return (
+      typeof value.requestId === "string" &&
+      (value.requesterRole === undefined ||
+        (typeof value.requesterRole === "string" &&
+          isRole(value.requesterRole)))
+    )
+  }
+
+  if (value.type === "session:clear" || value.type === "session:end") {
+    return value.boardId === undefined
   }
 
   if (
     value.type === "state:sync" &&
+    (value.requestId === undefined || typeof value.requestId === "string") &&
     typeof value.version === "number" &&
     isWhiteboardOperationList(value.operations)
   ) {
@@ -799,7 +816,11 @@ function mapParticipant(
   } satisfies SessionParticipant
 }
 
-async function fetchSessionToken(classId: string, user: User) {
+async function fetchSessionToken(
+  classId: string,
+  liveSessionId: string | null,
+  user: SessionTokenUser,
+) {
   const response = await fetch("/api/livekit/token", {
     method: "POST",
     headers: {
@@ -807,6 +828,7 @@ async function fetchSessionToken(classId: string, user: User) {
     },
     body: JSON.stringify({
       classId,
+      liveSessionId,
       user: {
         id: user.id,
         name: user.name,
@@ -818,25 +840,41 @@ async function fetchSessionToken(classId: string, user: User) {
 
   const payload = (await response.json().catch(() => null)) as {
     error?: string
+    liveSessionId?: string
     participantToken?: string
     serverUrl?: string
   } | null
 
-  if (!response.ok || !payload?.participantToken || !payload.serverUrl) {
+  if (
+    !response.ok ||
+    !payload?.liveSessionId ||
+    !payload.participantToken ||
+    !payload.serverUrl
+  ) {
     throw new Error(payload?.error ?? "Unable to create a live session token.")
   }
 
-  return payload as { participantToken: string; serverUrl: string }
+  return payload as {
+    liveSessionId: string
+    participantToken: string
+    serverUrl: string
+  }
 }
 
 export function useLiveSession({
   classId,
   currentUser,
   enabled,
+  liveSessionId,
+  onLiveSessionIdResolved,
+  onSessionEnded,
 }: {
   classId: string
   currentUser: User
   enabled: boolean
+  liveSessionId: string | null
+  onLiveSessionIdResolved?: (liveSessionId: string) => void
+  onSessionEnded?: () => void
 }): LiveSessionState {
   const roomRef = useRef<Room | null>(null)
   const [participants, setParticipants] = useState<SessionParticipant[]>([])
@@ -852,6 +890,10 @@ export function useLiveSession({
   const [whiteboardMessages, setWhiteboardMessages] = useState<
     LiveSessionWhiteboardMessage[]
   >([])
+  const currentUserId = currentUser.id
+  const currentUserName = currentUser.name
+  const currentUserAvatar = currentUser.avatar
+  const currentUserRole = currentUser.role
 
   const upsertNotice = useCallback((notice: LiveSessionNotice) => {
     setNotices((prev) =>
@@ -875,6 +917,29 @@ export function useLiveSession({
     },
     [],
   )
+
+  const disconnectRoom = useCallback((room: Room | null = roomRef.current) => {
+    if (!room) {
+      return
+    }
+
+    if (roomRef.current === room) {
+      roomRef.current = null
+    }
+
+    void room.disconnect().catch(() => {})
+  }, [])
+
+  const noticeMediaNotConnected = useCallback(() => {
+    upsertNotice({
+      id: "media-not-connected",
+      scope: "session",
+      severity: "info",
+      title: "Session is reconnecting",
+      description: "Media controls are available after reconnection.",
+      nextStep: "Wait a moment, then try again.",
+    })
+  }, [upsertNotice])
 
   useEffect(() => {
     if (!chatStorageKey) {
@@ -940,8 +1005,7 @@ export function useLiveSession({
 
   useEffect(() => {
     if (!enabled) {
-      roomRef.current?.disconnect()
-      roomRef.current = null
+      disconnectRoom()
       setParticipants([])
       setConnectionState(ConnectionState.Disconnected)
       setIsConnecting(false)
@@ -993,6 +1057,17 @@ export function useLiveSession({
         const parsed = JSON.parse(decoded) as JsonValue
 
         if (!isWhiteboardMessage(parsed)) {
+          return
+        }
+
+        if (parsed.liveSessionId !== liveSessionId) {
+          return
+        }
+
+        if (parsed.type === "session:end") {
+          setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
+          disconnectRoom(room)
+          onSessionEnded?.()
           return
         }
 
@@ -1078,12 +1153,23 @@ export function useLiveSession({
 
     const connect = async () => {
       try {
-        const { participantToken, serverUrl } = await fetchSessionToken(
-          classId,
-          currentUser,
-        )
+        const {
+          liveSessionId: resolvedLiveSessionId,
+          participantToken,
+          serverUrl,
+        } = await fetchSessionToken(classId, liveSessionId, {
+          id: currentUserId,
+          name: currentUserName,
+          avatar: currentUserAvatar,
+          role: currentUserRole,
+        })
 
         if (isCancelled) {
+          return
+        }
+
+        if (resolvedLiveSessionId !== liveSessionId) {
+          onLiveSessionIdResolved?.(resolvedLiveSessionId)
           return
         }
 
@@ -1102,13 +1188,13 @@ export function useLiveSession({
         if (roomSid) {
           const nextChatStorageKey = getSessionChatStorageKey({
             classId,
-            userId: currentUser.id,
+            userId: currentUserId,
             roomSid,
           })
 
           pruneStoredSessionChats({
             classId,
-            userId: currentUser.id,
+            userId: currentUserId,
             activeStorageKey: nextChatStorageKey,
           })
           setChatStorageKey(nextChatStorageKey)
@@ -1138,7 +1224,7 @@ export function useLiveSession({
         setIsConnecting(false)
         setConnectionState(ConnectionState.Disconnected)
         setMedia(INITIAL_MEDIA_STATUS)
-        room.disconnect()
+        disconnectRoom(room)
       }
     }
 
@@ -1160,15 +1246,19 @@ export function useLiveSession({
       room.off(RoomEvent.DataReceived, handleDataReceived)
       room.off(RoomEvent.MediaDevicesError, handleMediaDevicesError)
       room.unregisterTextStreamHandler(CHAT_TOPIC)
-      room.disconnect()
-      if (roomRef.current === room) {
-        roomRef.current = null
-      }
+      disconnectRoom(room)
     }
   }, [
     classId,
-    currentUser,
+    currentUserAvatar,
+    currentUserId,
+    currentUserName,
+    currentUserRole,
+    disconnectRoom,
     enabled,
+    liveSessionId,
+    onLiveSessionIdResolved,
+    onSessionEnded,
     syncParticipants,
     updateMediaDevice,
     upsertNotice,
@@ -1176,17 +1266,19 @@ export function useLiveSession({
 
   const sendWhiteboardMessage = useCallback(
     async (
-      message: LiveSessionWhiteboardMessage,
+      message: LiveSessionWhiteboardMessagePayload,
       options?: { reliable?: boolean },
     ) => {
       const room = roomRef.current
 
-      if (!room || room.state !== ConnectionState.Connected) {
+      if (!liveSessionId || !room || room.state !== ConnectionState.Connected) {
         return false
       }
 
       try {
-        const encoded = new TextEncoder().encode(JSON.stringify(message))
+        const encoded = new TextEncoder().encode(
+          JSON.stringify({ ...message, liveSessionId }),
+        )
         await room.localParticipant.publishData(encoded, {
           reliable: options?.reliable ?? true,
           topic: WHITEBOARD_TOPIC,
@@ -1206,8 +1298,30 @@ export function useLiveSession({
         return false
       }
     },
-    [upsertNotice],
+    [liveSessionId, upsertNotice],
   )
+
+  const clearWhiteboards = useCallback(() => {
+    return sendWhiteboardMessage(
+      {
+        id: createChatMessageId(currentUserId),
+        senderId: currentUserId,
+        type: "session:clear",
+      },
+      { reliable: true },
+    )
+  }, [currentUserId, sendWhiteboardMessage])
+
+  const endSessionForEveryone = useCallback(() => {
+    return sendWhiteboardMessage(
+      {
+        id: createChatMessageId(currentUserId),
+        senderId: currentUserId,
+        type: "session:end",
+      },
+      { reliable: true },
+    )
+  }, [currentUserId, sendWhiteboardMessage])
 
   const sendChatMessage = useCallback(
     async (content: string) => {
@@ -1286,7 +1400,8 @@ export function useLiveSession({
   const toggleMic = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1326,12 +1441,18 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const toggleCamera = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1368,12 +1489,18 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const toggleScreenShare = useCallback(async () => {
     const room = roomRef.current
 
-    if (!room) {
+    if (!isConnectedRoom(room)) {
+      noticeMediaNotConnected()
       return
     }
 
@@ -1417,11 +1544,15 @@ export function useLiveSession({
       upsertNotice(notice)
       setError(notice.description)
     }
-  }, [syncParticipants, updateMediaDevice, upsertNotice])
+  }, [
+    noticeMediaNotConnected,
+    syncParticipants,
+    updateMediaDevice,
+    upsertNotice,
+  ])
 
   const disconnect = useCallback(() => {
-    roomRef.current?.disconnect()
-    roomRef.current = null
+    disconnectRoom()
     setParticipants([])
     setConnectionState(ConnectionState.Disconnected)
     setIsConnecting(false)
@@ -1431,7 +1562,7 @@ export function useLiveSession({
     setChatMessages([])
     setChatStorageKey(null)
     setWhiteboardMessages([])
-  }, [])
+  }, [disconnectRoom])
 
   const localParticipant = participants.find(
     (participant) => participant.isLocal,
@@ -1469,6 +1600,8 @@ export function useLiveSession({
     toggleCamera,
     toggleScreenShare,
     sendWhiteboardMessage,
+    clearWhiteboards,
+    endSessionForEveryone,
     sendChatMessage,
     dismissNotice,
     disconnect,

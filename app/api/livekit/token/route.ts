@@ -8,6 +8,7 @@ const LIVE_SESSION_STALE_MS = 5 * 60 * 1000
 
 interface TokenRequestBody {
   classId?: string
+  liveSessionId?: string
   user?: {
     id?: string
     name?: string
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
 
   const classId = classData.id
   const roomName = `class-${classId}`
+  let liveSessionId = body.liveSessionId
 
   if (!canManage) {
     const staleBefore = new Date(
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
     ).toISOString()
     const { data: liveSession, error: liveSessionError } = await supabase
       .from("class_live_sessions")
-      .select("id")
+      .select("id, live_session_id")
       .eq("class_id", classId)
       .eq("room_name", roomName)
       .eq("status", "live")
@@ -139,12 +141,41 @@ export async function POST(request: Request) {
         { status: 409 },
       )
     }
+
+    if (liveSessionId && liveSession.live_session_id !== liveSessionId) {
+      return NextResponse.json(
+        { error: "This live session is no longer active." },
+        { status: 409 },
+      )
+    }
+
+    liveSessionId = liveSession.live_session_id
+  } else {
+    const staleBefore = new Date(
+      Date.now() - LIVE_SESSION_STALE_MS,
+    ).toISOString()
+    const { data: claimedLiveSession, error: claimError } = await supabase
+      .rpc("claim_class_live_session", {
+        target_org_id: classData.organization_id,
+        target_class_id: classId,
+        target_room_name: roomName,
+        stale_before: staleBefore,
+      })
+      .single()
+
+    if (claimError) {
+      return NextResponse.json({ error: claimError.message }, { status: 500 })
+    }
+
+    const liveSession = claimedLiveSession as { live_session_id: string }
+    liveSessionId = liveSession.live_session_id
   }
 
   const metadata = JSON.stringify({
     avatar: body.user.avatar ?? body.user.name.slice(0, 2).toUpperCase(),
     role: body.user.role ?? "student",
     classId,
+    liveSessionId,
   })
 
   const token = new AccessToken(apiKey, apiSecret, {
@@ -164,6 +195,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     serverUrl,
     roomName,
+    liveSessionId,
     participantToken: await token.toJwt(),
   })
 }

@@ -135,23 +135,30 @@ function SessionNoticeStack({
 }
 
 export function SessionScreen({ cls }: { cls: Class }) {
-  const { currentUser } = useApp()
+  const { classLiveSessions, currentUser } = useApp()
   const {
     activeClass,
     endSession,
-    hasJoinedSession,
     joinSession,
     leaveSession,
     liveSession,
     sessionActive,
+    whiteboardResetKey,
   } = usePersistentLiveSession()
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
 
   const isTeacher = currentUser.role === "teacher"
+  const canStartSession = currentUser.role !== "student"
+  const classHasLiveSession = classLiveSessions.some(
+    (session) => session.class_id === cls.id,
+  )
+  const canJoinSession = canStartSession || classHasLiveSession
   const isThisClassSession = activeClass?.id === cls.id && sessionActive
-  const hasJoinedThisClass = activeClass?.id === cls.id && hasJoinedSession
+  const isTeacherPreviewSession = isTeacher && !isThisClassSession
+  const teacherReconnectAvailable =
+    isTeacherPreviewSession && classHasLiveSession
   const presentationStageRef = useRef<HTMLDivElement | null>(null)
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | undefined>()
   const [presentationStageSize, setPresentationStageSize] = useState<{
@@ -159,7 +166,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
     height: number
   } | null>(null)
   const presentationSessionId = liveSession.presentation
-    ? `presentation:${liveSession.presentation.publication.trackSid}`
+    ? `presentation:${cls.id}`
     : null
   const presentationDimensions =
     liveSession.presentation?.publication.dimensions
@@ -181,6 +188,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
     participantCount,
     overlayActive: Boolean(liveSession.presentation),
     overlayAspectRatio: presentationAspectRatio,
+    resetKey: whiteboardResetKey,
     syncEnabled: connected,
     sendMessage: liveSession.sendWhiteboardMessage,
   })
@@ -198,7 +206,11 @@ export function SessionScreen({ cls }: { cls: Class }) {
     ? "Connecting"
     : liveSession.connectionState === ConnectionState.Connected
       ? "Live Session"
-      : "Offline"
+      : teacherReconnectAvailable
+        ? "Disconnected"
+        : isTeacherPreviewSession
+          ? "Not Live"
+          : "Offline"
   const micBusy = isBusyMediaState(liveSession.media.microphone.state)
   const cameraBusy = isBusyMediaState(liveSession.media.camera.state)
   const screenBusy = isBusyMediaState(liveSession.media.screen.state)
@@ -270,26 +282,44 @@ export function SessionScreen({ cls }: { cls: Class }) {
     }
   }, [liveSession.presentation, presentationAspectRatio])
 
-  if (!isThisClassSession) {
-    const title = hasJoinedThisClass ? "Session ended" : "Ready to join"
-    const description = hasJoinedThisClass
-      ? `You left the live session for ${cls.name}.`
-      : `Join the live session for ${cls.name} when you are ready.`
-    const buttonLabel = hasJoinedThisClass ? "Rejoin" : "Join session"
+  if (!isThisClassSession && !isTeacher) {
+    const title = classHasLiveSession
+      ? "Live session is open"
+      : "Waiting for teacher"
+    const description = classHasLiveSession
+      ? `Join the live session for ${cls.name}.`
+      : `The teacher has not started the live session for ${cls.name} yet.`
+    const buttonLabel = classHasLiveSession
+      ? "Join live session"
+      : "Not live yet"
 
     return (
-      <div className="p-6 flex flex-col items-center justify-center gap-3 text-center">
-        <Phone className="w-10 h-10 text-muted-foreground" />
-        <p className="text-lg font-semibold text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{description}</p>
-        <Button
-          size="sm"
-          onClick={() => {
-            joinSession(cls)
-          }}
-        >
-          {buttonLabel}
-        </Button>
+      <div className="flex h-full items-center justify-center bg-background p-6">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+          <span
+            className={cn(
+              "flex h-12 w-12 items-center justify-center rounded-xl",
+              classHasLiveSession
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            <Video className="h-6 w-6" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-lg font-semibold text-foreground">{title}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
+          <Button
+            size="sm"
+            disabled={!canJoinSession}
+            onClick={() => {
+              joinSession(cls)
+            }}
+          >
+            {buttonLabel}
+          </Button>
+        </div>
       </div>
     )
   }
@@ -347,16 +377,27 @@ export function SessionScreen({ cls }: { cls: Class }) {
               />
             ) : null}
             <Separator orientation="vertical" className="h-6 mx-1" />
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-xs h-8"
-              onClick={leaveSession}
-            >
-              <Phone className="w-3.5 h-3.5" />
-              Leave
-            </Button>
-            {isTeacher ? (
+            {isTeacherPreviewSession ? (
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs h-8"
+                onClick={() => joinSession(cls)}
+              >
+                <Video className="w-3.5 h-3.5" />
+                {teacherReconnectAvailable ? "Reconnect" : "Go Live"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-8"
+                onClick={leaveSession}
+              >
+                <Phone className="w-3.5 h-3.5" />
+                Leave
+              </Button>
+            )}
+            {isTeacher && !isTeacherPreviewSession ? (
               <Button
                 size="sm"
                 variant="destructive"
@@ -695,12 +736,6 @@ export function SessionScreen({ cls }: { cls: Class }) {
           {liveSession.participants.map((participant) => (
             <VideoTile key={participant.id} participant={participant} />
           ))}
-          <div className="ml-auto hidden md:flex items-center gap-2 text-xs text-muted-foreground pr-2">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            {liveSession.presentation
-              ? "Presentation synced live"
-              : "Whiteboard synced live"}
-          </div>
         </div>
       </div>
     </TooltipProvider>

@@ -70,6 +70,7 @@ export type ClassLiveSessionRow = {
   organization_id: string
   class_id: string
   room_name: string
+  live_session_id: string
   started_by_user_id: string
   status: "live" | "ended"
   started_at: string
@@ -854,7 +855,7 @@ async function loadClassLiveSessions(organizationId: string) {
   const { data, error } = await supabase
     .from("class_live_sessions")
     .select(
-      "id, organization_id, class_id, room_name, started_by_user_id, status, started_at, last_seen_at, ended_at",
+      "id, organization_id, class_id, room_name, live_session_id, started_by_user_id, status, started_at, last_seen_at, ended_at",
     )
     .eq("organization_id", organizationId)
     .eq("status", "live")

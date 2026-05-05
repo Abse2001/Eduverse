@@ -6,6 +6,7 @@ import type {
 } from "react"
 import type {
   LiveSessionWhiteboardMessage,
+  LiveSessionWhiteboardMessagePayload,
   WhiteboardOperation,
   WhiteboardPoint,
   WhiteboardShape,
@@ -39,7 +40,7 @@ type OperationBounds = {
 type OutgoingWhiteboardMessage =
   LiveSessionWhiteboardMessage extends infer Message
     ? Message extends LiveSessionWhiteboardMessage
-      ? Omit<Message, "id" | "senderId" | "boardId">
+      ? Omit<Message, "id" | "senderId" | "boardId" | "liveSessionId">
       : never
     : never
 
@@ -74,9 +75,10 @@ interface WhiteboardOptions {
   participantCount: number
   overlayActive: boolean
   overlayAspectRatio?: number
+  resetKey: number
   syncEnabled: boolean
   sendMessage: (
-    message: LiveSessionWhiteboardMessage,
+    message: LiveSessionWhiteboardMessagePayload,
     options?: { reliable?: boolean },
   ) => Promise<boolean>
 }
@@ -96,6 +98,16 @@ interface BoardState {
 
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function getStateResponseDelay(userId: string) {
+  let hash = 0
+
+  for (let index = 0; index < userId.length; index += 1) {
+    hash = (hash * 31 + userId.charCodeAt(index)) % 997
+  }
+
+  return 120 + (hash % 600)
 }
 
 function createStrokeId() {
@@ -135,6 +147,10 @@ function createEmptyBoardState(): BoardState {
 }
 
 function getMessageBoardId(message: LiveSessionWhiteboardMessage) {
+  if (message.type === "session:clear" || message.type === "session:end") {
+    return REGULAR_WHITEBOARD_BOARD_ID
+  }
+
   return message.boardId ?? REGULAR_WHITEBOARD_BOARD_ID
 }
 
@@ -726,6 +742,7 @@ export function useWhiteboard({
   participantCount,
   overlayActive,
   overlayAspectRatio,
+  resetKey,
   syncEnabled,
   sendMessage,
 }: WhiteboardOptions): WhiteboardState {
@@ -753,10 +770,20 @@ export function useWhiteboard({
   const boardStates = useRef(new Map<string, BoardState>())
   const activeBoardId = useRef(boardId)
   const lastParticipantCount = useRef(participantCount)
+  const lastResetKey = useRef(resetKey)
   const stateRequested = useRef(new Set<string>())
+  const stateRequestIds = useRef(new Map<string, string>())
+  const stateResponseTimers = useRef(new Set<number>())
   const operations = useRef<WhiteboardOperation[]>([])
   const redoOperations = useRef<WhiteboardOperation[]>([])
   const boardVersion = useRef(0)
+
+  const clearStateResponseTimers = useCallback(() => {
+    stateResponseTimers.current.forEach((timerId) => {
+      window.clearTimeout(timerId)
+    })
+    stateResponseTimers.current.clear()
+  }, [])
 
   const getContext = useCallback(() => {
     const canvas = canvasRef.current
@@ -880,23 +907,27 @@ export function useWhiteboard({
           senderId: currentUserId,
           boardId,
           ...message,
-        } as LiveSessionWhiteboardMessage,
+        } as LiveSessionWhiteboardMessagePayload,
         options,
       )
     },
     [boardId, currentUserId, sendMessage, syncEnabled],
   )
 
-  const sendStateSync = useCallback(() => {
-    sendWhiteboardMessage(
-      {
-        type: "state:sync",
-        version: boardVersion.current,
-        operations: getStateSyncOperations(operations.current),
-      },
-      { reliable: true },
-    )
-  }, [sendWhiteboardMessage])
+  const sendStateSync = useCallback(
+    (requestId?: string) => {
+      sendWhiteboardMessage(
+        {
+          type: "state:sync",
+          ...(requestId ? { requestId } : {}),
+          version: boardVersion.current,
+          operations: getStateSyncOperations(operations.current),
+        },
+        { reliable: true },
+      )
+    },
+    [sendWhiteboardMessage],
+  )
 
   const commitOperation = useCallback((operation: WhiteboardOperation) => {
     operations.current = [...operations.current, operation]
@@ -1157,6 +1188,31 @@ export function useWhiteboard({
     activeStrokePoints.current = []
     pendingStrokePoints.current = []
   }, [])
+
+  const clearAllBoards = useCallback(() => {
+    boardStates.current.clear()
+    operations.current = []
+    redoOperations.current = []
+    boardVersion.current = 0
+    selectedOperationIds.current = new Set()
+    remoteStrokes.current.clear()
+    stateRequested.current.clear()
+    stateRequestIds.current.clear()
+    clearStateResponseTimers()
+    setHasSelection(false)
+    setRedoCount(0)
+    resetDrawingState()
+    resetBoard()
+  }, [clearStateResponseTimers, resetBoard, resetDrawingState])
+
+  useEffect(() => {
+    if (lastResetKey.current === resetKey) {
+      return
+    }
+
+    lastResetKey.current = resetKey
+    clearAllBoards()
+  }, [clearAllBoards, resetKey])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (
@@ -1680,20 +1736,39 @@ export function useWhiteboard({
       if (strokeFlushFrame.current !== null) {
         cancelAnimationFrame(strokeFlushFrame.current)
       }
+      clearStateResponseTimers()
     }
-  }, [])
+  }, [clearStateResponseTimers])
 
   useEffect(() => {
     if (!syncEnabled) {
       stateRequested.current.clear()
+      stateRequestIds.current.clear()
+      clearStateResponseTimers()
       return
     }
 
-    if (!isTeacher && !stateRequested.current.has(boardId)) {
+    if (!stateRequested.current.has(boardId)) {
+      const requestId = createMessageId()
+
       stateRequested.current.add(boardId)
-      sendWhiteboardMessage({ type: "state:request" }, { reliable: true })
+      stateRequestIds.current.set(boardId, requestId)
+      sendWhiteboardMessage(
+        {
+          type: "state:request",
+          requestId,
+          requesterRole: isTeacher ? "teacher" : "student",
+        },
+        { reliable: true },
+      )
     }
-  }, [boardId, isTeacher, sendWhiteboardMessage, syncEnabled])
+  }, [
+    boardId,
+    clearStateResponseTimers,
+    isTeacher,
+    sendWhiteboardMessage,
+    syncEnabled,
+  ])
 
   useEffect(() => {
     if (!isTeacher || !syncEnabled) {
@@ -1723,22 +1798,61 @@ export function useWhiteboard({
         continue
       }
 
+      processedMessageIds.current.add(message.id)
+
+      if (message.type === "session:clear" || message.type === "session:end") {
+        clearAllBoards()
+        continue
+      }
+
       if (getMessageBoardId(message) !== boardId) {
         continue
       }
 
-      processedMessageIds.current.add(message.id)
+      if (message.type === "state:request") {
+        const hasBoardState =
+          operations.current.length > 0 || boardVersion.current > 0
 
-      if (isTeacher) {
-        if (message.type === "state:request") {
-          sendStateSync()
+        if (!hasBoardState) {
+          continue
         }
+
+        if (isTeacher) {
+          sendStateSync(message.requestId)
+          continue
+        }
+
+        if (message.requesterRole === "teacher") {
+          const timerId = window.setTimeout(() => {
+            stateResponseTimers.current.delete(timerId)
+            sendStateSync(message.requestId)
+          }, getStateResponseDelay(currentUserId))
+
+          stateResponseTimers.current.add(timerId)
+        }
+
         continue
       }
 
       if (message.type === "state:sync") {
-        if (message.version < boardVersion.current) {
+        const currentRequestId = stateRequestIds.current.get(boardId)
+        const isRequestedSync = Boolean(
+          message.requestId && message.requestId === currentRequestId,
+        )
+
+        if (message.requestId && !isRequestedSync) {
           continue
+        }
+
+        if (
+          message.version < boardVersion.current ||
+          (!isRequestedSync && message.version === boardVersion.current)
+        ) {
+          continue
+        }
+
+        if (isRequestedSync) {
+          stateRequestIds.current.delete(boardId)
         }
 
         boardVersion.current = message.version
@@ -1881,6 +1995,7 @@ export function useWhiteboard({
     }
   }, [
     boardId,
+    clearAllBoards,
     currentUserId,
     getContext,
     incomingMessages,

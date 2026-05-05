@@ -13,6 +13,7 @@ type RouteContext = {
 
 type LiveSessionRequestBody = {
   action?: "end"
+  liveSessionId?: string
   roomName?: string
 }
 
@@ -80,12 +81,14 @@ async function endLiveSession({
   roomName,
   supabase,
   userId,
+  liveSessionId,
 }: {
   canManage: boolean
   classId: string
   roomName: string
   supabase: SupabaseClient
   userId: string
+  liveSessionId?: string
 }) {
   const now = new Date().toISOString()
   let query = supabase
@@ -97,15 +100,30 @@ async function endLiveSession({
     })
     .eq("class_id", classId)
     .eq("room_name", roomName)
-    .eq("status", "live")
+    .in("status", ["pending", "live"])
+
+  if (liveSessionId) {
+    query = query.eq("live_session_id", liveSessionId)
+  }
 
   if (!canManage) {
     query = query.eq("started_by_user_id", userId)
   }
 
-  const { error } = await query
+  const { data, error } = await query.select("id").maybeSingle()
 
-  return error
+  if (error) {
+    return { message: error.message, status: 500 as const }
+  }
+
+  if (!data) {
+    return {
+      message: "No matching live session is active.",
+      status: 409 as const,
+    }
+  }
+
+  return null
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -123,13 +141,17 @@ export async function POST(request: Request, context: RouteContext) {
     const error = await endLiveSession({
       canManage: false,
       classId,
+      liveSessionId: body.liveSessionId,
       roomName: routeRoomName,
       supabase,
       userId: user.id,
     })
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      )
     }
 
     return NextResponse.json({ ok: true })
@@ -153,56 +175,42 @@ export async function POST(request: Request, context: RouteContext) {
     )
   }
 
+  if (!body?.liveSessionId) {
+    return NextResponse.json(
+      { error: "A liveSessionId is required to mark a session live." },
+      { status: 400 },
+    )
+  }
+
   const now = new Date().toISOString()
-  const staleBefore = Date.now() - LIVE_SESSION_STALE_MS
-  const { data: existingSession, error: existingError } = await supabase
+  const staleBefore = new Date(Date.now() - LIVE_SESSION_STALE_MS).toISOString()
+  const { data: liveSession, error } = await supabase
     .from("class_live_sessions")
-    .select("id, status, last_seen_at")
-    .eq("class_id", result.classData.id)
-    .maybeSingle()
-
-  if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 })
-  }
-
-  const hasFreshLiveSession =
-    existingSession?.status === "live" &&
-    Date.parse(existingSession.last_seen_at) > staleBefore
-
-  if (hasFreshLiveSession) {
-    const { error } = await supabase
-      .from("class_live_sessions")
-      .update({
-        room_name: roomName,
-        started_by_user_id: user.id,
-        last_seen_at: now,
-        ended_at: null,
-      })
-      .eq("id", existingSession.id)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ ok: true })
-  }
-
-  const { error } = await supabase.from("class_live_sessions").upsert(
-    {
-      organization_id: result.classData.organization_id,
-      class_id: result.classData.id,
+    .update({
       room_name: roomName,
       started_by_user_id: user.id,
       status: "live",
-      started_at: now,
       last_seen_at: now,
       ended_at: null,
-    },
-    { onConflict: "class_id" },
-  )
+    })
+    .eq("class_id", result.classData.id)
+    .eq("room_name", roomName)
+    .eq("live_session_id", body.liveSessionId)
+    .in("status", ["pending", "live"])
+    .is("ended_at", null)
+    .gt("last_seen_at", staleBefore)
+    .select("live_session_id")
+    .maybeSingle()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (!liveSession) {
+    return NextResponse.json(
+      { error: "No matching claimed live session is active." },
+      { status: 409 },
+    )
   }
 
   if (result.classData.teacher_user_id === user.id) {
@@ -227,7 +235,10 @@ export async function POST(request: Request, context: RouteContext) {
     }).catch(() => null)
   }
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({
+    ok: true,
+    liveSessionId: liveSession.live_session_id,
+  })
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -248,7 +259,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const body = await readLiveSessionBody(request)
   const roomName = body?.roomName || `class-${result.classData.id}`
-  const { error } = await supabase
+  let query = supabase
     .from("class_live_sessions")
     .update({ last_seen_at: new Date().toISOString() })
     .eq("class_id", result.classData.id)
@@ -256,8 +267,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     .eq("status", "live")
     .is("ended_at", null)
 
+  if (body?.liveSessionId) {
+    query = query.eq("live_session_id", body.liveSessionId)
+  }
+
+  const { data, error } = await query.select("id").maybeSingle()
+
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (!data) {
+    return NextResponse.json(
+      { error: "No matching live session is active." },
+      { status: 409 },
+    )
   }
 
   return NextResponse.json({ ok: true })
@@ -282,13 +306,14 @@ export async function DELETE(request: Request, context: RouteContext) {
   const error = await endLiveSession({
     canManage: result.canManage,
     classId: result.classData.id,
+    liveSessionId: body?.liveSessionId,
     roomName,
     supabase,
     userId: user.id,
   })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: error.status })
   }
 
   return NextResponse.json({ ok: true })

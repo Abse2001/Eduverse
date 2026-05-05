@@ -24,6 +24,7 @@ type LiveSessionContextValue = {
   activeClass: Class | null
   hasJoinedSession: boolean
   sessionActive: boolean
+  whiteboardResetKey: number
   liveSession: LiveSessionState
   joinSession: (cls: Class) => void
   leaveSession: () => void
@@ -38,9 +39,11 @@ function getRoomName(classId: string) {
 
 async function syncClassLiveSession({
   classId,
+  liveSessionId,
   method,
 }: {
   classId: string
+  liveSessionId?: string | null
   method: "POST" | "PATCH" | "DELETE"
 }) {
   const response = await fetch(
@@ -50,7 +53,7 @@ async function syncClassLiveSession({
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ roomName: getRoomName(classId) }),
+      body: JSON.stringify({ liveSessionId, roomName: getRoomName(classId) }),
     },
   )
 
@@ -61,15 +64,21 @@ async function syncClassLiveSession({
 
     throw new Error(payload?.error ?? "Could not update live session.")
   }
+
+  return (await response.json().catch(() => null)) as {
+    liveSessionId?: string
+    ok?: boolean
+  } | null
 }
 
 function terminateClassLiveSession(
   classId: string,
-  options: { useBeacon?: boolean } = {},
+  options: { liveSessionId?: string | null; useBeacon?: boolean } = {},
 ) {
   const url = `/api/classes/${encodeURIComponent(classId)}/live-session`
   const body = JSON.stringify({
     action: "end",
+    liveSessionId: options.liveSessionId,
     roomName: getRoomName(classId),
   })
 
@@ -96,23 +105,66 @@ function terminateClassLiveSession(
 }
 
 export function LiveSessionProvider({ children }: { children: ReactNode }) {
-  const { activeOrganization, currentUser, refreshClassLiveSessions } = useApp()
+  const {
+    activeOrganization,
+    classLiveSessions,
+    classLiveSessionsStatus,
+    currentUser,
+    refreshClassLiveSessions,
+  } = useApp()
   const [activeClass, setActiveClass] = useState<Class | null>(null)
   const [sessionActive, setSessionActive] = useState(false)
   const [hasJoinedSession, setHasJoinedSession] = useState(false)
   const [sessionScope, setSessionScope] = useState<string | null>(null)
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null)
+  const [whiteboardResetKey, setWhiteboardResetKey] = useState(0)
   const activeTeacherSessionRef = useRef<string | null>(null)
   const disconnectRef = useRef<() => void>(() => {})
+  const liveSessionIdRef = useRef<string | null>(null)
+  const mountedRef = useRef(false)
+  const sessionPresenceRef = useRef({
+    activeClassId: null as string | null,
+    isTeacher: false,
+    sessionActive: false,
+  })
   const isTeacher = currentUser.role === "teacher"
   const currentSessionScope = `${activeOrganization?.id ?? ""}:${currentUser.id}:${currentUser.role}`
+  const resetLocalWhiteboards = useCallback(() => {
+    setWhiteboardResetKey((key) => key + 1)
+  }, [])
+  const handleLiveSessionIdResolved = useCallback(
+    (nextLiveSessionId: string) => {
+      setLiveSessionId(nextLiveSessionId)
+    },
+    [],
+  )
+  const handleRemoteSessionEnded = useCallback(() => {
+    resetLocalWhiteboards()
+    setLiveSessionId(null)
+    setSessionActive(false)
+    setSessionScope(null)
+    setHasJoinedSession(true)
+    void refreshClassLiveSessions({ force: true }).catch(() => {})
+  }, [refreshClassLiveSessions, resetLocalWhiteboards])
   const liveSession = useLiveSession({
     classId: activeClass?.id ?? "",
     currentUser,
     enabled: Boolean(
       activeClass && sessionActive && sessionScope === currentSessionScope,
     ),
+    liveSessionId,
+    onLiveSessionIdResolved: handleLiveSessionIdResolved,
+    onSessionEnded: handleRemoteSessionEnded,
   })
   const connected = liveSession.connectionState === ConnectionState.Connected
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     activeTeacherSessionRef.current =
@@ -123,20 +175,107 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     disconnectRef.current = liveSession.disconnect
   }, [liveSession.disconnect])
 
+  useEffect(() => {
+    liveSessionIdRef.current = liveSessionId
+  }, [liveSessionId])
+
+  useEffect(() => {
+    sessionPresenceRef.current = {
+      activeClassId: activeClass?.id ?? null,
+      isTeacher,
+      sessionActive,
+    }
+  }, [activeClass?.id, isTeacher, sessionActive])
+
+  useEffect(() => {
+    const activeClassId = activeClass?.id
+
+    if (
+      isTeacher ||
+      !activeClassId ||
+      !sessionActive ||
+      classLiveSessionsStatus !== "ready"
+    ) {
+      return
+    }
+
+    const sessionIsStillLive = classLiveSessions.some(
+      (session) => session.class_id === activeClassId,
+    )
+
+    if (sessionIsStillLive) {
+      return
+    }
+
+    let cancelled = false
+    let recheckStarted = false
+    const recheckTimer = window.setTimeout(() => {
+      recheckStarted = true
+      void refreshClassLiveSessions({ force: true })
+        .then((freshSessions) => {
+          const currentPresence = sessionPresenceRef.current
+
+          if (
+            cancelled ||
+            !mountedRef.current ||
+            currentPresence.activeClassId !== activeClassId ||
+            currentPresence.isTeacher ||
+            !currentPresence.sessionActive ||
+            freshSessions.some((session) => session.class_id === activeClassId)
+          ) {
+            return
+          }
+
+          disconnectRef.current()
+          resetLocalWhiteboards()
+          setLiveSessionId(null)
+          setSessionActive(false)
+          setSessionScope(null)
+          setHasJoinedSession(true)
+        })
+        .catch(() => {})
+    }, 1500)
+
+    return () => {
+      window.clearTimeout(recheckTimer)
+
+      if (!recheckStarted) {
+        cancelled = true
+      }
+    }
+  }, [
+    activeClass?.id,
+    classLiveSessions,
+    classLiveSessionsStatus,
+    isTeacher,
+    refreshClassLiveSessions,
+    sessionActive,
+  ])
+
   const joinSession = useCallback(
     (cls: Class) => {
       const currentTeacherClassId = activeTeacherSessionRef.current
+      const existingLiveSessionId =
+        classLiveSessions.find((session) => session.class_id === cls.id)
+          ?.live_session_id ?? null
+
+      if (!isTeacher && !existingLiveSessionId) {
+        return
+      }
 
       if (currentTeacherClassId && currentTeacherClassId !== cls.id) {
-        void terminateClassLiveSession(currentTeacherClassId)
+        void terminateClassLiveSession(currentTeacherClassId, {
+          liveSessionId: liveSessionIdRef.current,
+        })
       }
 
       setActiveClass(cls)
+      setLiveSessionId(existingLiveSessionId)
       setSessionScope(currentSessionScope)
       setHasJoinedSession(true)
       setSessionActive(true)
     },
-    [currentSessionScope],
+    [classLiveSessions, currentSessionScope, isTeacher],
   )
 
   const leaveSession = useCallback(() => {
@@ -154,25 +293,44 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (isTeacher) {
+      await liveSession.clearWhiteboards().catch(() => false)
+      await liveSession.endSessionForEveryone().catch(() => false)
+      resetLocalWhiteboards()
+    }
+
     liveSession.disconnect()
+    setLiveSessionId(null)
     setSessionActive(false)
     setSessionScope(null)
     setHasJoinedSession(true)
 
     if (isTeacher) {
-      await syncClassLiveSession({ classId, method: "DELETE" }).catch(() => {})
+      await syncClassLiveSession({
+        classId,
+        liveSessionId,
+        method: "DELETE",
+      }).catch(() => {})
       await refreshClassLiveSessions({ force: true }).catch(() => {})
     }
   }, [
     activeClass?.id,
     isTeacher,
     leaveSession,
+    liveSessionId,
     liveSession,
     refreshClassLiveSessions,
+    resetLocalWhiteboards,
   ])
 
   useEffect(() => {
-    if (!activeClass || !sessionActive || !isTeacher || !connected) {
+    if (
+      !activeClass ||
+      !liveSessionId ||
+      !sessionActive ||
+      !isTeacher ||
+      !connected
+    ) {
       return
     }
 
@@ -183,7 +341,12 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
 
       await syncClassLiveSession({
         classId: activeClass.id,
+        liveSessionId,
         method: "POST",
+      }).then((payload) => {
+        if (!cancelled && payload?.liveSessionId) {
+          setLiveSessionId(payload.liveSessionId)
+        }
       })
       if (!cancelled) {
         await refreshClassLiveSessions({ force: true }).catch(() => {})
@@ -195,6 +358,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     const heartbeat = window.setInterval(() => {
       void syncClassLiveSession({
         classId: activeClass.id,
+        liveSessionId,
         method: "PATCH",
       }).catch(() => {})
     }, 60_000)
@@ -207,6 +371,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     activeClass,
     connected,
     isTeacher,
+    liveSessionId,
     refreshClassLiveSessions,
     sessionActive,
   ])
@@ -219,7 +384,9 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     const classId = activeTeacherSessionRef.current
 
     if (classId) {
-      void terminateClassLiveSession(classId)
+      void terminateClassLiveSession(classId, {
+        liveSessionId: liveSessionIdRef.current,
+      })
         .catch(() => {})
         .finally(() => {
           void refreshClassLiveSessions({ force: true }).catch(() => {})
@@ -228,6 +395,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
 
     disconnectRef.current()
     setActiveClass(null)
+    setLiveSessionId(null)
     setSessionActive(false)
     setHasJoinedSession(false)
     setSessionScope(null)
@@ -238,7 +406,10 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       const classId = activeTeacherSessionRef.current
 
       if (classId) {
-        void terminateClassLiveSession(classId, options)
+        void terminateClassLiveSession(classId, {
+          ...options,
+          liveSessionId: liveSessionIdRef.current,
+        })
           .catch(() => {})
           .finally(() => {
             if (!options?.useBeacon) {
@@ -264,6 +435,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       activeClass,
       hasJoinedSession,
       sessionActive,
+      whiteboardResetKey,
       liveSession,
       joinSession,
       leaveSession,
@@ -277,6 +449,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       leaveSession,
       liveSession,
       sessionActive,
+      whiteboardResetKey,
     ],
   )
 
