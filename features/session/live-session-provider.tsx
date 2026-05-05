@@ -105,12 +105,19 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const disconnectRef = useRef<() => void>(() => {})
   const isTeacher = currentUser.role === "teacher"
   const currentSessionScope = `${activeOrganization?.id ?? ""}:${currentUser.id}:${currentUser.role}`
+  const handleRemoteSessionEnded = useCallback(() => {
+    setSessionActive(false)
+    setSessionScope(null)
+    setHasJoinedSession(true)
+    void refreshClassLiveSessions({ force: true }).catch(() => {})
+  }, [refreshClassLiveSessions])
   const liveSession = useLiveSession({
     classId: activeClass?.id ?? "",
     currentUser,
     enabled: Boolean(
       activeClass && sessionActive && sessionScope === currentSessionScope,
     ),
+    onSessionEnded: handleRemoteSessionEnded,
   })
   const connected = liveSession.connectionState === ConnectionState.Connected
 
@@ -156,6 +163,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
 
     if (isTeacher) {
       await liveSession.clearWhiteboards().catch(() => false)
+      await liveSession.endSessionForEveryone().catch(() => false)
     }
 
     liveSession.disconnect()

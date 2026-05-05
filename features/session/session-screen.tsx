@@ -135,7 +135,7 @@ function SessionNoticeStack({
 }
 
 export function SessionScreen({ cls }: { cls: Class }) {
-  const { currentUser } = useApp()
+  const { classLiveSessions, currentUser } = useApp()
   const {
     activeClass,
     endSession,
@@ -150,6 +150,11 @@ export function SessionScreen({ cls }: { cls: Class }) {
   )
 
   const isTeacher = currentUser.role === "teacher"
+  const canStartSession = currentUser.role !== "student"
+  const classHasLiveSession = classLiveSessions.some(
+    (session) => session.class_id === cls.id,
+  )
+  const canJoinSession = canStartSession || classHasLiveSession
   const isThisClassSession = activeClass?.id === cls.id && sessionActive
   const hasJoinedThisClass = activeClass?.id === cls.id && hasJoinedSession
   const presentationStageRef = useRef<HTMLDivElement | null>(null)
@@ -274,7 +279,9 @@ export function SessionScreen({ cls }: { cls: Class }) {
     const title = hasJoinedThisClass ? "Session ended" : "Ready to join"
     const description = hasJoinedThisClass
       ? `You left the live session for ${cls.name}.`
-      : `Join the live session for ${cls.name} when you are ready.`
+      : canJoinSession
+        ? `Join the live session for ${cls.name} when you are ready.`
+        : `The live session for ${cls.name} has not started yet.`
     const buttonLabel = hasJoinedThisClass ? "Rejoin" : "Join session"
 
     return (
@@ -284,6 +291,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
         <p className="text-sm text-muted-foreground">{description}</p>
         <Button
           size="sm"
+          disabled={!canJoinSession}
           onClick={() => {
             joinSession(cls)
           }}

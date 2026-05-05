@@ -434,7 +434,7 @@ function isWhiteboardMessage(
     return true
   }
 
-  if (value.type === "session:clear") {
+  if (value.type === "session:clear" || value.type === "session:end") {
     return value.boardId === undefined
   }
 
@@ -838,10 +838,12 @@ export function useLiveSession({
   classId,
   currentUser,
   enabled,
+  onSessionEnded,
 }: {
   classId: string
   currentUser: User
   enabled: boolean
+  onSessionEnded?: () => void
 }): LiveSessionState {
   const roomRef = useRef<Room | null>(null)
   const [participants, setParticipants] = useState<SessionParticipant[]>([])
@@ -1002,6 +1004,13 @@ export function useLiveSession({
         const parsed = JSON.parse(decoded) as JsonValue
 
         if (!isWhiteboardMessage(parsed)) {
+          return
+        }
+
+        if (parsed.type === "session:end") {
+          setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
+          room.disconnect()
+          onSessionEnded?.()
           return
         }
 
@@ -1186,6 +1195,7 @@ export function useLiveSession({
     currentUserName,
     currentUserRole,
     enabled,
+    onSessionEnded,
     syncParticipants,
     updateMediaDevice,
     upsertNotice,
@@ -1232,6 +1242,17 @@ export function useLiveSession({
         id: createChatMessageId(currentUserId),
         senderId: currentUserId,
         type: "session:clear",
+      },
+      { reliable: true },
+    )
+  }, [currentUserId, sendWhiteboardMessage])
+
+  const endSessionForEveryone = useCallback(() => {
+    return sendWhiteboardMessage(
+      {
+        id: createChatMessageId(currentUserId),
+        senderId: currentUserId,
+        type: "session:end",
       },
       { reliable: true },
     )
@@ -1498,6 +1519,7 @@ export function useLiveSession({
     toggleScreenShare,
     sendWhiteboardMessage,
     clearWhiteboards,
+    endSessionForEveryone,
     sendChatMessage,
     dismissNotice,
     disconnect,

@@ -135,7 +135,7 @@ function createEmptyBoardState(): BoardState {
 }
 
 function getMessageBoardId(message: LiveSessionWhiteboardMessage) {
-  if (message.type === "session:clear") {
+  if (message.type === "session:clear" || message.type === "session:end") {
     return REGULAR_WHITEBOARD_BOARD_ID
   }
 
@@ -1743,7 +1743,7 @@ export function useWhiteboard({
 
       processedMessageIds.current.add(message.id)
 
-      if (message.type === "session:clear") {
+      if (message.type === "session:clear" || message.type === "session:end") {
         clearAllBoards()
         continue
       }
