@@ -736,16 +736,6 @@ export function SessionScreen({ cls }: { cls: Class }) {
           {liveSession.participants.map((participant) => (
             <VideoTile key={participant.id} participant={participant} />
           ))}
-          <div className="ml-auto hidden md:flex items-center gap-2 text-xs text-muted-foreground pr-2">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            {teacherReconnectAvailable
-              ? "Live session is waiting for you to reconnect"
-              : isTeacherPreviewSession
-                ? "Whiteboard is local until you go live"
-                : liveSession.presentation
-                  ? "Presentation synced live"
-                  : "Whiteboard synced live"}
-          </div>
         </div>
       </div>
     </TooltipProvider>
