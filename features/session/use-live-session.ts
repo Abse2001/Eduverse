@@ -44,6 +44,7 @@ const CHAT_STORAGE_PREFIX = "eduverse:session-chat:v1"
 const MAX_CHAT_MESSAGES = 200
 
 type MediaDeviceKind = "microphone" | "camera" | "screen"
+type SessionTokenUser = Pick<User, "avatar" | "id" | "name" | "role">
 type LiveSessionError =
   | Error
   | string
@@ -799,7 +800,7 @@ function mapParticipant(
   } satisfies SessionParticipant
 }
 
-async function fetchSessionToken(classId: string, user: User) {
+async function fetchSessionToken(classId: string, user: SessionTokenUser) {
   const response = await fetch("/api/livekit/token", {
     method: "POST",
     headers: {
@@ -852,6 +853,10 @@ export function useLiveSession({
   const [whiteboardMessages, setWhiteboardMessages] = useState<
     LiveSessionWhiteboardMessage[]
   >([])
+  const currentUserId = currentUser.id
+  const currentUserName = currentUser.name
+  const currentUserAvatar = currentUser.avatar
+  const currentUserRole = currentUser.role
 
   const upsertNotice = useCallback((notice: LiveSessionNotice) => {
     setNotices((prev) =>
@@ -1080,7 +1085,12 @@ export function useLiveSession({
       try {
         const { participantToken, serverUrl } = await fetchSessionToken(
           classId,
-          currentUser,
+          {
+            id: currentUserId,
+            name: currentUserName,
+            avatar: currentUserAvatar,
+            role: currentUserRole,
+          },
         )
 
         if (isCancelled) {
@@ -1102,13 +1112,13 @@ export function useLiveSession({
         if (roomSid) {
           const nextChatStorageKey = getSessionChatStorageKey({
             classId,
-            userId: currentUser.id,
+            userId: currentUserId,
             roomSid,
           })
 
           pruneStoredSessionChats({
             classId,
-            userId: currentUser.id,
+            userId: currentUserId,
             activeStorageKey: nextChatStorageKey,
           })
           setChatStorageKey(nextChatStorageKey)
@@ -1167,7 +1177,10 @@ export function useLiveSession({
     }
   }, [
     classId,
-    currentUser,
+    currentUserAvatar,
+    currentUserId,
+    currentUserName,
+    currentUserRole,
     enabled,
     syncParticipants,
     updateMediaDevice,
