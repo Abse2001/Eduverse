@@ -135,6 +135,10 @@ function createEmptyBoardState(): BoardState {
 }
 
 function getMessageBoardId(message: LiveSessionWhiteboardMessage) {
+  if (message.type === "session:clear") {
+    return REGULAR_WHITEBOARD_BOARD_ID
+  }
+
   return message.boardId ?? REGULAR_WHITEBOARD_BOARD_ID
 }
 
@@ -1158,6 +1162,20 @@ export function useWhiteboard({
     pendingStrokePoints.current = []
   }, [])
 
+  const clearAllBoards = useCallback(() => {
+    boardStates.current.clear()
+    operations.current = []
+    redoOperations.current = []
+    boardVersion.current = 0
+    selectedOperationIds.current = new Set()
+    remoteStrokes.current.clear()
+    stateRequested.current.clear()
+    setHasSelection(false)
+    setRedoCount(0)
+    resetDrawingState()
+    resetBoard()
+  }, [resetBoard, resetDrawingState])
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (
       !isTeacher ||
@@ -1689,11 +1707,11 @@ export function useWhiteboard({
       return
     }
 
-    if (!isTeacher && !stateRequested.current.has(boardId)) {
+    if (!stateRequested.current.has(boardId)) {
       stateRequested.current.add(boardId)
       sendWhiteboardMessage({ type: "state:request" }, { reliable: true })
     }
-  }, [boardId, isTeacher, sendWhiteboardMessage, syncEnabled])
+  }, [boardId, sendWhiteboardMessage, syncEnabled])
 
   useEffect(() => {
     if (!isTeacher || !syncEnabled) {
@@ -1723,14 +1741,19 @@ export function useWhiteboard({
         continue
       }
 
+      processedMessageIds.current.add(message.id)
+
+      if (message.type === "session:clear") {
+        clearAllBoards()
+        continue
+      }
+
       if (getMessageBoardId(message) !== boardId) {
         continue
       }
 
-      processedMessageIds.current.add(message.id)
-
-      if (isTeacher) {
-        if (message.type === "state:request") {
+      if (message.type === "state:request") {
+        if (operations.current.length > 0 || boardVersion.current > 0) {
           sendStateSync()
         }
         continue
@@ -1881,6 +1904,7 @@ export function useWhiteboard({
     }
   }, [
     boardId,
+    clearAllBoards,
     currentUserId,
     getContext,
     incomingMessages,

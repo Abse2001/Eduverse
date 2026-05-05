@@ -154,6 +154,10 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (isTeacher) {
+      await liveSession.clearWhiteboards().catch(() => false)
+    }
+
     liveSession.disconnect()
     setSessionActive(false)
     setSessionScope(null)

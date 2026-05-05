@@ -206,6 +206,11 @@ export type LiveSessionWhiteboardMessage =
       version: number
       operations: WhiteboardOperation[]
     }
+  | {
+      id: string
+      senderId: string
+      type: "session:clear"
+    }
 
 export interface LiveSessionChatMessage {
   id: string
@@ -239,6 +244,7 @@ export interface LiveSessionState {
     message: LiveSessionWhiteboardMessage,
     options?: { reliable?: boolean },
   ) => Promise<boolean>
+  clearWhiteboards: () => Promise<boolean>
   sendChatMessage: (content: string) => Promise<boolean>
   dismissNotice: (noticeId: string) => void
   disconnect: () => void

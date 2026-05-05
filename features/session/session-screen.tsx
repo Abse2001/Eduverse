@@ -159,7 +159,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
     height: number
   } | null>(null)
   const presentationSessionId = liveSession.presentation
-    ? `presentation:${liveSession.presentation.publication.trackSid}`
+    ? `presentation:${cls.id}`
     : null
   const presentationDimensions =
     liveSession.presentation?.publication.dimensions

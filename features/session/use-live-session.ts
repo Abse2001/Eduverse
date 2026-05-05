@@ -434,6 +434,10 @@ function isWhiteboardMessage(
     return true
   }
 
+  if (value.type === "session:clear") {
+    return value.boardId === undefined
+  }
+
   if (
     value.type === "state:sync" &&
     typeof value.version === "number" &&
@@ -1222,6 +1226,17 @@ export function useLiveSession({
     [upsertNotice],
   )
 
+  const clearWhiteboards = useCallback(() => {
+    return sendWhiteboardMessage(
+      {
+        id: createChatMessageId(currentUserId),
+        senderId: currentUserId,
+        type: "session:clear",
+      },
+      { reliable: true },
+    )
+  }, [currentUserId, sendWhiteboardMessage])
+
   const sendChatMessage = useCallback(
     async (content: string) => {
       const trimmed = content.trim()
@@ -1482,6 +1497,7 @@ export function useLiveSession({
     toggleCamera,
     toggleScreenShare,
     sendWhiteboardMessage,
+    clearWhiteboards,
     sendChatMessage,
     dismissNotice,
     disconnect,
