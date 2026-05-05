@@ -6,6 +6,7 @@ import type {
 } from "react"
 import type {
   LiveSessionWhiteboardMessage,
+  LiveSessionWhiteboardMessagePayload,
   WhiteboardOperation,
   WhiteboardPoint,
   WhiteboardShape,
@@ -39,7 +40,7 @@ type OperationBounds = {
 type OutgoingWhiteboardMessage =
   LiveSessionWhiteboardMessage extends infer Message
     ? Message extends LiveSessionWhiteboardMessage
-      ? Omit<Message, "id" | "senderId" | "boardId">
+      ? Omit<Message, "id" | "senderId" | "boardId" | "liveSessionId">
       : never
     : never
 
@@ -77,7 +78,7 @@ interface WhiteboardOptions {
   resetKey: number
   syncEnabled: boolean
   sendMessage: (
-    message: LiveSessionWhiteboardMessage,
+    message: LiveSessionWhiteboardMessagePayload,
     options?: { reliable?: boolean },
   ) => Promise<boolean>
 }
@@ -906,24 +907,27 @@ export function useWhiteboard({
           senderId: currentUserId,
           boardId,
           ...message,
-        } as LiveSessionWhiteboardMessage,
+        } as LiveSessionWhiteboardMessagePayload,
         options,
       )
     },
     [boardId, currentUserId, sendMessage, syncEnabled],
   )
 
-  const sendStateSync = useCallback((requestId?: string) => {
-    sendWhiteboardMessage(
-      {
-        type: "state:sync",
-        ...(requestId ? { requestId } : {}),
-        version: boardVersion.current,
-        operations: getStateSyncOperations(operations.current),
-      },
-      { reliable: true },
-    )
-  }, [sendWhiteboardMessage])
+  const sendStateSync = useCallback(
+    (requestId?: string) => {
+      sendWhiteboardMessage(
+        {
+          type: "state:sync",
+          ...(requestId ? { requestId } : {}),
+          version: boardVersion.current,
+          operations: getStateSyncOperations(operations.current),
+        },
+        { reliable: true },
+      )
+    },
+    [sendWhiteboardMessage],
+  )
 
   const commitOperation = useCallback((operation: WhiteboardOperation) => {
     operations.current = [...operations.current, operation]

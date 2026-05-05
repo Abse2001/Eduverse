@@ -21,6 +21,7 @@ import type {
   LiveSessionNotice,
   LiveSessionState,
   LiveSessionWhiteboardMessage,
+  LiveSessionWhiteboardMessagePayload,
   SessionParticipant,
   SessionPresentation,
   WhiteboardOperation,
@@ -424,6 +425,7 @@ function isWhiteboardMessage(
     !isJsonObject(value) ||
     typeof value.id !== "string" ||
     typeof value.senderId !== "string" ||
+    typeof value.liveSessionId !== "string" ||
     typeof value.type !== "string" ||
     (value.boardId !== undefined && typeof value.boardId !== "string")
   ) {
@@ -810,7 +812,11 @@ function mapParticipant(
   } satisfies SessionParticipant
 }
 
-async function fetchSessionToken(classId: string, user: SessionTokenUser) {
+async function fetchSessionToken(
+  classId: string,
+  liveSessionId: string | null,
+  user: SessionTokenUser,
+) {
   const response = await fetch("/api/livekit/token", {
     method: "POST",
     headers: {
@@ -818,6 +824,7 @@ async function fetchSessionToken(classId: string, user: SessionTokenUser) {
     },
     body: JSON.stringify({
       classId,
+      liveSessionId,
       user: {
         id: user.id,
         name: user.name,
@@ -829,26 +836,40 @@ async function fetchSessionToken(classId: string, user: SessionTokenUser) {
 
   const payload = (await response.json().catch(() => null)) as {
     error?: string
+    liveSessionId?: string
     participantToken?: string
     serverUrl?: string
   } | null
 
-  if (!response.ok || !payload?.participantToken || !payload.serverUrl) {
+  if (
+    !response.ok ||
+    !payload?.liveSessionId ||
+    !payload.participantToken ||
+    !payload.serverUrl
+  ) {
     throw new Error(payload?.error ?? "Unable to create a live session token.")
   }
 
-  return payload as { participantToken: string; serverUrl: string }
+  return payload as {
+    liveSessionId: string
+    participantToken: string
+    serverUrl: string
+  }
 }
 
 export function useLiveSession({
   classId,
   currentUser,
   enabled,
+  liveSessionId,
+  onLiveSessionIdResolved,
   onSessionEnded,
 }: {
   classId: string
   currentUser: User
   enabled: boolean
+  liveSessionId: string | null
+  onLiveSessionIdResolved?: (liveSessionId: string) => void
   onSessionEnded?: () => void
 }): LiveSessionState {
   const roomRef = useRef<Room | null>(null)
@@ -1013,6 +1034,10 @@ export function useLiveSession({
           return
         }
 
+        if (parsed.liveSessionId !== liveSessionId) {
+          return
+        }
+
         if (parsed.type === "session:end") {
           setWhiteboardMessages((prev) => [...prev.slice(-199), parsed])
           room.disconnect()
@@ -1102,17 +1127,23 @@ export function useLiveSession({
 
     const connect = async () => {
       try {
-        const { participantToken, serverUrl } = await fetchSessionToken(
-          classId,
-          {
-            id: currentUserId,
-            name: currentUserName,
-            avatar: currentUserAvatar,
-            role: currentUserRole,
-          },
-        )
+        const {
+          liveSessionId: resolvedLiveSessionId,
+          participantToken,
+          serverUrl,
+        } = await fetchSessionToken(classId, liveSessionId, {
+          id: currentUserId,
+          name: currentUserName,
+          avatar: currentUserAvatar,
+          role: currentUserRole,
+        })
 
         if (isCancelled) {
+          return
+        }
+
+        if (resolvedLiveSessionId !== liveSessionId) {
+          onLiveSessionIdResolved?.(resolvedLiveSessionId)
           return
         }
 
@@ -1201,6 +1232,8 @@ export function useLiveSession({
     currentUserName,
     currentUserRole,
     enabled,
+    liveSessionId,
+    onLiveSessionIdResolved,
     onSessionEnded,
     syncParticipants,
     updateMediaDevice,
@@ -1209,17 +1242,19 @@ export function useLiveSession({
 
   const sendWhiteboardMessage = useCallback(
     async (
-      message: LiveSessionWhiteboardMessage,
+      message: LiveSessionWhiteboardMessagePayload,
       options?: { reliable?: boolean },
     ) => {
       const room = roomRef.current
 
-      if (!room || room.state !== ConnectionState.Connected) {
+      if (!liveSessionId || !room || room.state !== ConnectionState.Connected) {
         return false
       }
 
       try {
-        const encoded = new TextEncoder().encode(JSON.stringify(message))
+        const encoded = new TextEncoder().encode(
+          JSON.stringify({ ...message, liveSessionId }),
+        )
         await room.localParticipant.publishData(encoded, {
           reliable: options?.reliable ?? true,
           topic: WHITEBOARD_TOPIC,
@@ -1239,7 +1274,7 @@ export function useLiveSession({
         return false
       }
     },
-    [upsertNotice],
+    [liveSessionId, upsertNotice],
   )
 
   const clearWhiteboards = useCallback(() => {

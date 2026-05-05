@@ -115,7 +115,9 @@ export type WhiteboardOperation =
       delta: WhiteboardPoint
     }
 
-export type LiveSessionWhiteboardMessage =
+export type LiveSessionWhiteboardMessage = {
+  liveSessionId: string
+} & (
   | {
       id: string
       senderId: string
@@ -219,6 +221,14 @@ export type LiveSessionWhiteboardMessage =
       senderId: string
       type: "session:end"
     }
+)
+
+export type LiveSessionWhiteboardMessagePayload =
+  LiveSessionWhiteboardMessage extends infer Message
+    ? Message extends LiveSessionWhiteboardMessage
+      ? Omit<Message, "liveSessionId">
+      : never
+    : never
 
 export interface LiveSessionChatMessage {
   id: string
@@ -249,7 +259,7 @@ export interface LiveSessionState {
   toggleCamera: () => Promise<void>
   toggleScreenShare: () => Promise<void>
   sendWhiteboardMessage: (
-    message: LiveSessionWhiteboardMessage,
+    message: LiveSessionWhiteboardMessagePayload,
     options?: { reliable?: boolean },
   ) => Promise<boolean>
   clearWhiteboards: () => Promise<boolean>
