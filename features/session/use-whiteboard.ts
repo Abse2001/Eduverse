@@ -74,6 +74,7 @@ interface WhiteboardOptions {
   participantCount: number
   overlayActive: boolean
   overlayAspectRatio?: number
+  resetKey: number
   syncEnabled: boolean
   sendMessage: (
     message: LiveSessionWhiteboardMessage,
@@ -740,6 +741,7 @@ export function useWhiteboard({
   participantCount,
   overlayActive,
   overlayAspectRatio,
+  resetKey,
   syncEnabled,
   sendMessage,
 }: WhiteboardOptions): WhiteboardState {
@@ -767,6 +769,7 @@ export function useWhiteboard({
   const boardStates = useRef(new Map<string, BoardState>())
   const activeBoardId = useRef(boardId)
   const lastParticipantCount = useRef(participantCount)
+  const lastResetKey = useRef(resetKey)
   const stateRequested = useRef(new Set<string>())
   const stateRequestIds = useRef(new Map<string, string>())
   const stateResponseTimers = useRef(new Set<number>())
@@ -1197,6 +1200,15 @@ export function useWhiteboard({
     resetDrawingState()
     resetBoard()
   }, [clearStateResponseTimers, resetBoard, resetDrawingState])
+
+  useEffect(() => {
+    if (lastResetKey.current === resetKey) {
+      return
+    }
+
+    lastResetKey.current = resetKey
+    clearAllBoards()
+  }, [clearAllBoards, resetKey])
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (

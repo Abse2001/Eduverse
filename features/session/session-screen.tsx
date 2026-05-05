@@ -143,6 +143,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
     leaveSession,
     liveSession,
     sessionActive,
+    whiteboardResetKey,
   } = usePersistentLiveSession()
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
@@ -187,6 +188,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
     participantCount,
     overlayActive: Boolean(liveSession.presentation),
     overlayAspectRatio: presentationAspectRatio,
+    resetKey: whiteboardResetKey,
     syncEnabled: connected,
     sendMessage: liveSession.sendWhiteboardMessage,
   })

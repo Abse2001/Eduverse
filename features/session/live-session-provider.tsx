@@ -24,6 +24,7 @@ type LiveSessionContextValue = {
   activeClass: Class | null
   hasJoinedSession: boolean
   sessionActive: boolean
+  whiteboardResetKey: number
   liveSession: LiveSessionState
   joinSession: (cls: Class) => void
   leaveSession: () => void
@@ -107,6 +108,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const [sessionActive, setSessionActive] = useState(false)
   const [hasJoinedSession, setHasJoinedSession] = useState(false)
   const [sessionScope, setSessionScope] = useState<string | null>(null)
+  const [whiteboardResetKey, setWhiteboardResetKey] = useState(0)
   const activeTeacherSessionRef = useRef<string | null>(null)
   const disconnectRef = useRef<() => void>(() => {})
   const mountedRef = useRef(false)
@@ -117,12 +119,16 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   })
   const isTeacher = currentUser.role === "teacher"
   const currentSessionScope = `${activeOrganization?.id ?? ""}:${currentUser.id}:${currentUser.role}`
+  const resetLocalWhiteboards = useCallback(() => {
+    setWhiteboardResetKey((key) => key + 1)
+  }, [])
   const handleRemoteSessionEnded = useCallback(() => {
+    resetLocalWhiteboards()
     setSessionActive(false)
     setSessionScope(null)
     setHasJoinedSession(true)
     void refreshClassLiveSessions({ force: true }).catch(() => {})
-  }, [refreshClassLiveSessions])
+  }, [refreshClassLiveSessions, resetLocalWhiteboards])
   const liveSession = useLiveSession({
     classId: activeClass?.id ?? "",
     currentUser,
@@ -198,6 +204,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
           }
 
           disconnectRef.current()
+          resetLocalWhiteboards()
           setSessionActive(false)
           setSessionScope(null)
           setHasJoinedSession(true)
@@ -255,6 +262,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     if (isTeacher) {
       await liveSession.clearWhiteboards().catch(() => false)
       await liveSession.endSessionForEveryone().catch(() => false)
+      resetLocalWhiteboards()
     }
 
     liveSession.disconnect()
@@ -272,6 +280,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     leaveSession,
     liveSession,
     refreshClassLiveSessions,
+    resetLocalWhiteboards,
   ])
 
   useEffect(() => {
@@ -367,6 +376,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       activeClass,
       hasJoinedSession,
       sessionActive,
+      whiteboardResetKey,
       liveSession,
       joinSession,
       leaveSession,
@@ -380,6 +390,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       leaveSession,
       liveSession,
       sessionActive,
+      whiteboardResetKey,
     ],
   )
 
