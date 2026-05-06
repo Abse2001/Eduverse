@@ -120,7 +120,7 @@ export const FEATURE_REGISTRY = [
     label: "Results",
     icon: ChartColumn,
     parentKey: null,
-    routeSegment: "leaderboard",
+    routeSegment: "results",
     defaultEnabled: true,
     sortOrder: 70,
     renderInClassNav: true,
@@ -196,7 +196,10 @@ export function resolveClassFeatures({
     const resolved: ResolvedClassFeature = {
       ...feature,
       label: definition?.label ?? feature.label,
-      routeSegment: definition?.route_segment ?? feature.routeSegment,
+      routeSegment: normalizeFeatureRouteSegment(
+        feature.key,
+        definition?.route_segment ?? feature.routeSegment,
+      ),
       defaultEnabled: definition?.default_enabled ?? feature.defaultEnabled,
       sortOrder: definition?.sort_order ?? feature.sortOrder,
       enabled,
@@ -294,4 +297,15 @@ export function getFeatureByRouteSegment(
 
 function toSettingsMap(settings: FeatureSetting[]) {
   return new Map(settings.map((setting) => [setting.feature_key, setting]))
+}
+
+function normalizeFeatureRouteSegment(
+  featureKey: string,
+  routeSegment: string | null,
+) {
+  if (featureKey === "leaderboard") {
+    return "results"
+  }
+
+  return routeSegment
 }

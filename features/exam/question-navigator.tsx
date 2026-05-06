@@ -1,17 +1,17 @@
 "use client"
 
+import type { JsonValue, StudentQuestionDto } from "@/lib/exams/types"
 import { cn } from "@/lib/utils"
-import type { Exam } from "@/lib/mock-data"
 
 interface QuestionNavigatorProps {
-  exam: Exam
+  questions: StudentQuestionDto[]
   currentQuestionIndex: number
-  answers: Record<string, string | number>
+  answers: Record<string, JsonValue | null>
   onSelectQuestion: (index: number) => void
 }
 
 export function QuestionNavigator({
-  exam,
+  questions,
   currentQuestionIndex,
   answers,
   onSelectQuestion,
@@ -22,7 +22,7 @@ export function QuestionNavigator({
         Questions
       </p>
       <div className="grid grid-cols-4 gap-1.5">
-        {exam.questions.map((question, index) => (
+        {questions.map((question, index) => (
           <button
             key={question.id}
             onClick={() => onSelectQuestion(index)}
@@ -30,7 +30,7 @@ export function QuestionNavigator({
               "w-8 h-8 rounded-lg text-xs font-semibold transition-colors",
               index === currentQuestionIndex
                 ? "bg-primary text-primary-foreground"
-                : answers[question.id] !== undefined
+                : hasAnswerValue(answers[question.id])
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                   : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
@@ -55,4 +55,10 @@ export function QuestionNavigator({
       </div>
     </div>
   )
+}
+
+function hasAnswerValue(value: JsonValue | null | undefined) {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
 }
