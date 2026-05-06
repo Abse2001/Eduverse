@@ -9,6 +9,7 @@ import {
   LiveSessionMiniBar,
   LiveSessionProvider,
 } from "@/features/session/live-session-provider"
+import { ExamLockProvider } from "@/features/exam/exam-lock"
 import { useApp } from "@/lib/store"
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -71,14 +72,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <LiveSessionProvider>
-      <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <TopBar />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+      <ExamLockProvider>
+        <div className="flex h-screen overflow-hidden bg-background">
+          <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+            <TopBar />
+            <main className="flex-1 overflow-y-auto">{children}</main>
+          </div>
+          <LiveSessionMiniBar />
         </div>
-        <LiveSessionMiniBar />
-      </div>
+      </ExamLockProvider>
     </LiveSessionProvider>
   )
 }

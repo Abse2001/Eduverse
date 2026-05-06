@@ -4,17 +4,40 @@ import { AlertCircle, BookOpen } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
-import type { Class, Exam } from "@/lib/mock-data"
 
 export function ExamLobby({
-  exam,
-  cls,
+  title,
+  className,
+  classCode,
+  status,
+  questionCount,
+  durationMinutes,
+  totalPoints,
+  requiresPasscode,
+  startBlockedReason,
+  passcode,
+  onPasscodeChange,
   onStart,
+  disabled,
+  actionLabel,
 }: {
-  exam: Exam
-  cls: Pick<Class, "name" | "code">
+  title: string
+  className: string
+  classCode: string
+  status: "upcoming" | "live" | "ended"
+  questionCount: number | null
+  durationMinutes: number
+  totalPoints: number
+  requiresPasscode: boolean
+  startBlockedReason: string | null
+  passcode: string
+  onPasscodeChange: (value: string) => void
   onStart: () => void
+  disabled: boolean
+  actionLabel: string
 }) {
   return (
     <div className="p-6 flex flex-col items-center justify-center gap-6 max-w-lg mx-auto pt-20">
@@ -26,43 +49,43 @@ export function ExamLobby({
           variant="secondary"
           className={cn(
             "mb-2",
-            exam.status === "live" &&
+            status === "live" &&
               "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-            exam.status === "upcoming" &&
+            status === "upcoming" &&
               "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+            status === "ended" &&
+              "bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300",
           )}
         >
-          {exam.status === "live"
+          {status === "live"
             ? "In Progress"
-            : exam.status === "upcoming"
-              ? "Upcoming"
+            : status === "upcoming"
+              ? "Scheduled"
               : "Ended"}
         </Badge>
         <h1 className="text-2xl font-bold text-foreground text-balance">
-          {exam.title}
+          {title}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {cls.name} &middot; {cls.code}
+          {className} &middot; {classCode}
         </p>
       </div>
       <Card className="w-full">
         <CardContent className="p-4 grid grid-cols-3 divide-x divide-border text-center">
           <div className="px-4">
             <p className="text-2xl font-bold text-foreground">
-              {exam.questions.length}
+              {questionCount ?? "?"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Questions</p>
           </div>
           <div className="px-4">
             <p className="text-2xl font-bold text-foreground">
-              {exam.durationMinutes}
+              {durationMinutes}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Minutes</p>
           </div>
           <div className="px-4">
-            <p className="text-2xl font-bold text-foreground">
-              {exam.totalPoints}
-            </p>
+            <p className="text-2xl font-bold text-foreground">{totalPoints}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Total pts</p>
           </div>
         </CardContent>
@@ -73,9 +96,11 @@ export function ExamLobby({
         </p>
         {[
           "Once started, the timer cannot be paused.",
-          "Code questions include starter code - edit as needed.",
-          "All answers are auto-saved as you type.",
-          "Submit before time runs out or it submits automatically.",
+          "Questions can include multiple choice and short answers.",
+          "Answers are auto-saved through the backend.",
+          "Submitting ends the attempt immediately.",
+          "You must enter the teacher's passcode before the exam can start.",
+          "Fullscreen exam mode is required. Leaving fullscreen or switching tabs is recorded for the teacher.",
         ].map((note) => (
           <div key={note} className="flex items-start gap-2">
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
@@ -83,13 +108,42 @@ export function ExamLobby({
           </div>
         ))}
       </div>
+
+      {requiresPasscode && status === "live" && (
+        <div className="w-full space-y-2">
+          <Label htmlFor="exam-passcode">Passcode</Label>
+          <Input
+            id="exam-passcode"
+            type="password"
+            value={passcode}
+            onChange={(event) => onPasscodeChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !disabled) {
+                event.preventDefault()
+                onStart()
+              }
+            }}
+            placeholder="Enter exam passcode"
+            autoFocus
+            minLength={4}
+            autoComplete="one-time-code"
+          />
+        </div>
+      )}
+
+      {startBlockedReason ? (
+        <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {startBlockedReason}
+        </div>
+      ) : null}
+
       <Button
         size="lg"
         className="w-full"
         onClick={onStart}
-        disabled={exam.status === "upcoming"}
+        disabled={disabled}
       >
-        {exam.status === "upcoming" ? "Exam not started yet" : "Begin Exam"}
+        {actionLabel}
       </Button>
     </div>
   )
