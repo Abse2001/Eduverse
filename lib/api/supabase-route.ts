@@ -4,6 +4,7 @@ import {
   type User,
 } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
+import { createSupabaseServerFetch } from "@/lib/supabase/server"
 
 export async function createRouteSupabaseClient() {
   const cookieStore = await cookies()
@@ -12,6 +13,9 @@ export async function createRouteSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      global: {
+        fetch: createSupabaseServerFetch(),
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()
@@ -41,7 +45,11 @@ export async function requireRouteUser(request: Request) {
   const supabase = await createRouteSupabaseClient()
   const { data, error } = await supabase.auth.getUser()
 
-  if (error || !data.user) {
+  if (error) {
+    return { user: null, supabase, error: error.message }
+  }
+
+  if (!data.user) {
     return { user: null, supabase, error: "Authentication required" }
   }
 
@@ -72,6 +80,7 @@ async function requireBearerUser(bearerToken: string) {
 
   const supabase = createSupabaseClient(supabaseUrl, publishableKey, {
     global: {
+      fetch: createSupabaseServerFetch(),
       headers: {
         Authorization: `Bearer ${bearerToken}`,
       },
@@ -84,7 +93,11 @@ async function requireBearerUser(bearerToken: string) {
 
   const { data, error } = await supabase.auth.getUser(bearerToken)
 
-  if (error || !data.user) {
+  if (error) {
+    return { user: null, supabase, error: error.message }
+  }
+
+  if (!data.user) {
     return { user: null, supabase, error: "Authentication required" }
   }
 

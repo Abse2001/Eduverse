@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react"
 import type { JsonValue, StudentActiveExamDto } from "@/lib/exams/types"
 
+export const EXAM_MODE_FULLSCREEN_REQUIRED_MESSAGE =
+  "Fullscreen is required for this exam. Please allow fullscreen and try again."
+
 export function useExamSession(input: {
   activeExam: StudentActiveExamDto | null
   onSaveAnswer: (questionId: string, answer: JsonValue | null) => Promise<void>
@@ -208,11 +211,7 @@ export function useExamSession(input: {
 
     const resumed = await requestExamModeFullscreen()
     setIsExamModeBlocked(!resumed)
-    setExamModeError(
-      resumed
-        ? null
-        : "Fullscreen is required for this exam. Please allow fullscreen and try again.",
-    )
+    setExamModeError(resumed ? null : EXAM_MODE_FULLSCREEN_REQUIRED_MESSAGE)
 
     return resumed
   }
@@ -233,7 +232,7 @@ export function useExamSession(input: {
   }
 }
 
-async function requestExamModeFullscreen() {
+export async function requestExamModeFullscreen() {
   if (typeof document === "undefined") return false
   if (document.fullscreenElement) return true
   if (typeof document.documentElement.requestFullscreen !== "function") {
@@ -245,6 +244,19 @@ async function requestExamModeFullscreen() {
     return Boolean(document.fullscreenElement)
   } catch {
     return false
+  }
+}
+
+export async function exitExamModeFullscreen() {
+  if (typeof document === "undefined") return
+  if (!document.fullscreenElement) return
+  if (typeof document.exitFullscreen !== "function") return
+
+  try {
+    await document.exitFullscreen()
+  } catch {
+    // Exiting fullscreen is a best-effort cleanup when an exam attempt fails
+    // to start after fullscreen has already been entered.
   }
 }
 

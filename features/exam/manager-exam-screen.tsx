@@ -70,7 +70,7 @@ type QuestionEditorState = {
   type: UpsertExamQuestionInput["type"]
   prompt: string
   points: string
-  optionsText: string
+  options: string[]
   correctAnswerText: string
 }
 
@@ -82,12 +82,18 @@ type ExamFormState = {
   questions: QuestionEditorState[]
 }
 
-const EMPTY_QUESTION: QuestionEditorState = {
-  type: "mcq",
-  prompt: "",
-  points: "10",
-  optionsText: "Option A\nOption B",
-  correctAnswerText: "1",
+const DEFAULT_MCQ_OPTIONS = ["Option A", "Option B"] as const
+
+function createQuestionEditorState(
+  type: QuestionEditorState["type"] = "mcq",
+): QuestionEditorState {
+  return {
+    type,
+    prompt: "",
+    points: "10",
+    options: type === "mcq" ? [...DEFAULT_MCQ_OPTIONS] : [],
+    correctAnswerText: type === "mcq" ? "1" : "",
+  }
 }
 
 const EMPTY_FORM: ExamFormState = {
@@ -95,7 +101,7 @@ const EMPTY_FORM: ExamFormState = {
   durationMinutes: "60",
   startAt: "",
   passcode: "",
-  questions: [{ ...EMPTY_QUESTION }],
+  questions: [createQuestionEditorState("mcq")],
 }
 
 export function ManagerExamScreen({
@@ -257,7 +263,10 @@ export function ManagerExamScreen({
         type: toSupportedQuestionType(question.type),
         prompt: question.prompt,
         points: String(question.points),
-        optionsText: question.options.join("\n"),
+        options:
+          question.type === "mcq" && question.options.length > 0
+            ? [...question.options]
+            : [],
         correctAnswerText:
           typeof question.correctAnswer === "number"
             ? String(question.correctAnswer + 1)
@@ -619,15 +628,7 @@ export function ManagerExamScreen({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() =>
-                      setForm((current) => ({
-                        ...current,
-                        questions: [
-                          ...current.questions,
-                          { ...EMPTY_QUESTION, type: "mcq" },
-                        ],
-                      }))
-                    }
+                    onClick={() => addQuestion("mcq")}
                   >
                     Add MCQ
                   </Button>
@@ -635,15 +636,7 @@ export function ManagerExamScreen({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() =>
-                      setForm((current) => ({
-                        ...current,
-                        questions: [
-                          ...current.questions,
-                          { ...EMPTY_QUESTION, type: "short" },
-                        ],
-                      }))
-                    }
+                    onClick={() => addQuestion("short")}
                   >
                     Add Short
                   </Button>
@@ -706,7 +699,7 @@ export function ManagerExamScreen({
                         <Select
                           value={question.type}
                           onValueChange={(value: QuestionEditorState["type"]) =>
-                            updateQuestion(index, { type: value })
+                            updateQuestionType(index, value)
                           }
                         >
                           <SelectTrigger>
@@ -721,19 +714,49 @@ export function ManagerExamScreen({
                     </div>
 
                     {question.type === "mcq" && (
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
                         <div className="space-y-2">
-                          <Label>Options (one per line)</Label>
-                          <Textarea
-                            value={question.optionsText}
-                            onChange={(event) =>
-                              updateQuestion(index, {
-                                optionsText: event.target.value,
-                              })
-                            }
-                            rows={4}
-                            required
-                          />
+                          <Label>Options</Label>
+                          <div className="space-y-2">
+                            {question.options.map((option, optionIndex) => (
+                              <div
+                                key={`${index}-option-${optionIndex}`}
+                                className="flex items-center gap-2"
+                              >
+                                <Input
+                                  value={option}
+                                  onChange={(event) =>
+                                    updateQuestionOption(
+                                      index,
+                                      optionIndex,
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder={`Option ${String.fromCharCode(65 + optionIndex)}`}
+                                  required
+                                />
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    removeQuestionOption(index, optionIndex)
+                                  }
+                                  disabled={question.options.length === 1}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => addQuestionOption(index)}
+                          >
+                            Add option
+                          </Button>
                         </div>
                         <Field
                           label="Correct option number"
@@ -1254,6 +1277,100 @@ export function ManagerExamScreen({
       ),
     }))
   }
+
+  function addQuestion(type: QuestionEditorState["type"]) {
+    setForm((current) => ({
+      ...current,
+      questions: [createQuestionEditorState(type), ...current.questions],
+    }))
+  }
+
+  function updateQuestionType(
+    index: number,
+    type: QuestionEditorState["type"],
+  ) {
+    setForm((current) => ({
+      ...current,
+      questions: current.questions.map((question, questionIndex) => {
+        if (questionIndex !== index) return question
+
+        if (type === "mcq") {
+          const options =
+            question.options.length > 0
+              ? question.options
+              : [...DEFAULT_MCQ_OPTIONS]
+
+          return {
+            ...question,
+            type,
+            options,
+            correctAnswerText: normalizeCorrectOptionNumber(
+              question.correctAnswerText,
+              options.length,
+            ),
+          }
+        }
+
+        return { ...question, type }
+      }),
+    }))
+  }
+
+  function updateQuestionOption(
+    questionIndex: number,
+    optionIndex: number,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      questions: current.questions.map((question, currentQuestionIndex) => {
+        if (currentQuestionIndex !== questionIndex) return question
+
+        return {
+          ...question,
+          options: question.options.map((option, currentOptionIndex) =>
+            currentOptionIndex === optionIndex ? value : option,
+          ),
+        }
+      }),
+    }))
+  }
+
+  function addQuestionOption(questionIndex: number) {
+    setForm((current) => ({
+      ...current,
+      questions: current.questions.map((question, currentQuestionIndex) => {
+        if (currentQuestionIndex !== questionIndex) return question
+
+        return {
+          ...question,
+          options: [...question.options, ""],
+        }
+      }),
+    }))
+  }
+
+  function removeQuestionOption(questionIndex: number, optionIndex: number) {
+    setForm((current) => ({
+      ...current,
+      questions: current.questions.map((question, currentQuestionIndex) => {
+        if (currentQuestionIndex !== questionIndex) return question
+
+        const remainingOptions = question.options.filter(
+          (_, currentOptionIndex) => currentOptionIndex !== optionIndex,
+        )
+
+        return {
+          ...question,
+          options: remainingOptions,
+          correctAnswerText: normalizeCorrectOptionNumber(
+            question.correctAnswerText,
+            remainingOptions.length,
+          ),
+        }
+      }),
+    }))
+  }
 }
 
 function toExamPayload(
@@ -1296,10 +1413,7 @@ function toExamPayload(
       const points = Number.parseInt(question.points, 10)
       const options =
         question.type === "mcq"
-          ? question.optionsText
-              .split("\n")
-              .map((option) => option.trim())
-              .filter(Boolean)
+          ? question.options.map((option) => option.trim()).filter(Boolean)
           : []
       const correctOptionNumber = Number.parseInt(
         question.correctAnswerText,
@@ -1401,6 +1515,19 @@ function toSupportedQuestionType(
 
 function formatQuestionType(type: QuestionEditorState["type"]) {
   return type === "mcq" ? "MCQ" : "Short Answer"
+}
+
+function normalizeCorrectOptionNumber(value: string, optionCount: number) {
+  if (optionCount <= 0) {
+    return ""
+  }
+
+  const parsedValue = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+    return "1"
+  }
+
+  return String(Math.min(parsedValue, optionCount))
 }
 
 function getStartDatePart(value: string) {

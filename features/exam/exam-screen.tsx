@@ -19,7 +19,12 @@ import { useExamLock } from "./exam-lock"
 import { ExamLobby } from "./exam-lobby"
 import { QuestionNavigator } from "./question-navigator"
 import { QuestionView } from "./question-view"
-import { useExamSession } from "./use-exam-session"
+import {
+  EXAM_MODE_FULLSCREEN_REQUIRED_MESSAGE,
+  exitExamModeFullscreen,
+  requestExamModeFullscreen,
+  useExamSession,
+} from "./use-exam-session"
 
 type ClassInfo = {
   name: string
@@ -127,6 +132,37 @@ export function ExamScreen({
     }
   }, [state])
 
+  async function handleStartExam() {
+    if (!activeExam) return
+
+    setActionError(null)
+
+    let enteredFullscreen = false
+
+    if (activeExam.examModeEnabled) {
+      const resumed = await requestExamModeFullscreen()
+
+      if (!resumed) {
+        setActionError(EXAM_MODE_FULLSCREEN_REQUIRED_MESSAGE)
+        return
+      }
+
+      enteredFullscreen = true
+    }
+
+    try {
+      await onStartExam(activeExam.id, { passcode })
+    } catch (error) {
+      if (enteredFullscreen) {
+        await exitExamModeFullscreen()
+      }
+
+      setActionError(
+        error instanceof Error ? error.message : "Could not start exam.",
+      )
+    }
+  }
+
   useEffect(() => {
     if (!activeExam?.attempt) {
       setExamLock(null)
@@ -215,7 +251,7 @@ export function ExamScreen({
           startBlockedReason={activeExam.startBlockedReason}
           passcode={passcode}
           onPasscodeChange={setPasscode}
-          onStart={() => void onStartExam(activeExam.id, { passcode })}
+          onStart={() => void handleStartExam()}
           disabled={
             isMutating ||
             !activeExam.canStartAttempt ||

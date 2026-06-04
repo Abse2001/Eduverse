@@ -140,32 +140,32 @@ describe("monitor card helpers", () => {
   })
 
   test("summarizes suspicious, graded, and entered students without double-counting retakes", () => {
-    expect(
-      getExamMonitorSummary([
-        attempt,
-        {
-          ...attempt,
-          status: "graded",
-          resultsReleasedAt: "2026-05-04T08:30:00Z",
-          integrityStatus: "flagged",
-          integrityEvents: [
-            {
-              key: "event-2",
-              eventType: "visibility_hidden",
-              createdAt: "2026-05-04T08:10:00Z",
-              payload: {},
-            },
-          ],
-        },
-        {
-          ...attempt,
-          studentUserId: "student-2",
-          integrityStatus: "clear",
-          integrityEvents: [],
-          resultsReleasedAt: null,
-        },
-      ] as any),
-    ).toEqual({
+    const attempts: Parameters<typeof getExamMonitorSummary>[0] = [
+      attempt,
+      {
+        ...attempt,
+        status: "graded",
+        resultsReleasedAt: "2026-05-04T08:30:00Z",
+        integrityStatus: "flagged",
+        integrityEvents: [
+          {
+            key: "event-2",
+            eventType: "visibility_hidden",
+            createdAt: "2026-05-04T08:10:00Z",
+            payload: {},
+          },
+        ],
+      },
+      {
+        ...attempt,
+        studentUserId: "student-2",
+        integrityStatus: "clear",
+        integrityEvents: [],
+        resultsReleasedAt: null,
+      },
+    ]
+
+    expect(getExamMonitorSummary(attempts)).toEqual({
       suspiciousStudents: 1,
       gradedStudents: 1,
       enteredStudents: 2,
