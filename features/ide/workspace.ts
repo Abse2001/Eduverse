@@ -276,6 +276,7 @@ export function languageForPath(path: string) {
   if (path.endsWith(".js")) return "javascript"
   if (path.endsWith(".ts")) return "typescript"
   if (path.endsWith(".py")) return "python"
+  if (path.endsWith(".cpp") || path.endsWith(".cc")) return "cpp"
   if (path.endsWith(".c") || path.endsWith(".h")) return "c"
   if (path.endsWith(".json")) return "json"
   if (path.endsWith(".md")) return "markdown"
@@ -297,6 +298,12 @@ export function defaultContentForPath(path: string) {
   if (path.endsWith(".py")) return 'print("Hello, Eduverse!")\n'
   if (path.endsWith(".c")) {
     return '#include <stdio.h>\n\nint main(void) {\n  printf("Hello, Eduverse!\\n");\n  return 0;\n}\n'
+  }
+  if (path.endsWith(".cpp") || path.endsWith(".cc")) {
+    return '#include <iostream>\nusing namespace std;\n\nint main() {\n  cout << "Hello, Eduverse!" << endl;\n  return 0;\n}\n'
+  }
+  if (path.endsWith(".sql")) {
+    return "CREATE TABLE students (id INTEGER, name TEXT);\nINSERT INTO students VALUES (1, 'Anas');\nSELECT * FROM students;\n"
   }
   if (path.endsWith(".json")) return '{\n  "name": "eduverse-project"\n}\n'
   if (path.endsWith(".md")) return "# Notes\n\n"

@@ -1,3 +1,4 @@
+import { runCodeFile } from "@/features/ide/runners"
 import type { PathChange, TerminalLine, Workspace } from "@/features/ide/types"
 import {
   basename,
@@ -50,6 +51,7 @@ export function runVirtualCommand({
               "  mkdir <folder>, touch <file>, rm <file>, rmdir <folder>",
               "  mv <from> <to>, rename <from> <to>",
               "  cat <file>, open <file>, run [file], preview, problems",
+              "  python <file.py>, gcc <file.c>, g++ <file.cpp>, sql <file.sql>",
               "  echo <text> > <file>, clear, save",
             ].join("\n"),
           },
@@ -81,8 +83,44 @@ export function runVirtualCommand({
       return openFile({ args, cwd, workspace })
     case "run": {
       const path = args[0] ? resolvePath(cwd, args[0]) : activePath
-      return { lines: runFile(workspace, path) }
+      return { lines: runCodeFile(workspace, path) }
     }
+    case "python":
+    case "python3":
+      return runLanguageCommand({
+        args,
+        cwd,
+        extensions: [".py"],
+        language: "Python",
+        workspace,
+      })
+    case "gcc":
+    case "clang":
+      return runLanguageCommand({
+        args,
+        cwd,
+        extensions: [".c"],
+        language: "C",
+        workspace,
+      })
+    case "g++":
+    case "clang++":
+      return runLanguageCommand({
+        args,
+        cwd,
+        extensions: [".cpp", ".cc"],
+        language: "C++",
+        workspace,
+      })
+    case "sql":
+    case "sqlite":
+      return runLanguageCommand({
+        args,
+        cwd,
+        extensions: [".sql"],
+        language: "SQL",
+        workspace,
+      })
     case "preview":
       return {
         preview: true,
@@ -103,10 +141,6 @@ export function runVirtualCommand({
       }
     case "echo":
       return handleEchoCommand(command, cwd, workspace)
-    case "gcc":
-    case "clang":
-    case "python":
-    case "python3":
     case "node":
     case "npm":
     case "make":
@@ -128,6 +162,37 @@ export function runVirtualCommand({
         ],
       }
   }
+}
+
+function runLanguageCommand({
+  args,
+  cwd,
+  extensions,
+  language,
+  workspace,
+}: {
+  args: string[]
+  cwd: string
+  extensions: string[]
+  language: string
+  workspace: Workspace
+}): CommandResult {
+  const fileArg = args.find((arg) =>
+    extensions.some((extension) => arg.endsWith(extension)),
+  )
+
+  if (!fileArg) {
+    return {
+      lines: [
+        {
+          kind: "error",
+          text: `${language}: missing ${extensions.join(" or ")} file`,
+        },
+      ],
+    }
+  }
+
+  return { lines: runCodeFile(workspace, resolvePath(cwd, fileArg)) }
 }
 
 function changeDirectory({
@@ -329,108 +394,6 @@ function openFile({
   }
 }
 
-function runFile(
-  workspace: Workspace,
-  path: string,
-): Array<Omit<TerminalLine, "id">> {
-  const entry = workspace[path]
-  if (entry?.kind !== "file") {
-    return [{ kind: "error", text: `run: no such file: ${path}` }]
-  }
-
-  if (path.endsWith(".js")) return runJavaScript(entry.content ?? "")
-  if (path.endsWith(".html") || path.endsWith(".css")) {
-    return [
-      {
-        kind: "success",
-        text: "Use `preview` or the Preview panel to view web files.",
-      },
-    ]
-  }
-
-  if (path.endsWith(".json")) {
-    try {
-      JSON.parse(entry.content ?? "")
-      return [{ kind: "success", text: `${path} is valid JSON.` }]
-    } catch (error) {
-      return [
-        {
-          kind: "error",
-          text: error instanceof Error ? error.message : "Invalid JSON.",
-        },
-      ]
-    }
-  }
-
-  if (path.endsWith(".md")) {
-    return [
-      {
-        kind: "success",
-        text: "Markdown preview is available in the Preview panel.",
-      },
-    ]
-  }
-
-  if (path.endsWith(".py")) {
-    return [
-      {
-        kind: "error",
-        text: "Python execution needs Pyodide or a backend sandbox. Editing and syntax highlighting are ready.",
-      },
-    ]
-  }
-
-  if (path.endsWith(".c") || path.endsWith(".h")) {
-    return [
-      {
-        kind: "error",
-        text: "C compilation needs a secure backend sandbox with gcc or clang.",
-      },
-    ]
-  }
-
-  if (path.endsWith(".ts")) {
-    return [
-      {
-        kind: "error",
-        text: "TypeScript editing is ready. Browser execution needs a TypeScript transpiler step.",
-      },
-    ]
-  }
-
-  return [{ kind: "output", text: entry.content ?? "" }]
-}
-
-function runJavaScript(code: string): Array<Omit<TerminalLine, "id">> {
-  const logs: string[] = []
-  const safeConsole = {
-    log: (...values: unknown[]) => {
-      logs.push(values.map(formatConsoleValue).join(" "))
-    },
-  }
-
-  try {
-    Function("console", `"use strict";\n${code}`)(safeConsole)
-    return [
-      {
-        kind: "success",
-        text:
-          logs.length > 0
-            ? `${logs.join("\n")}\nProcess exited with code 0`
-            : "Process exited with code 0",
-      },
-    ]
-  } catch (error) {
-    return [
-      {
-        kind: "error",
-        text:
-          error instanceof Error ? error.message : "JavaScript runtime error.",
-      },
-    ]
-  }
-}
-
 function handleEchoCommand(
   command: string,
   cwd: string,
@@ -458,14 +421,5 @@ function handleEchoCommand(
     },
     openPath: path,
     lines: [{ kind: "success", text: `wrote ${path}` }],
-  }
-}
-
-function formatConsoleValue(value: unknown) {
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
   }
 }

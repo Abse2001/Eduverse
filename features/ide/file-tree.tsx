@@ -245,7 +245,12 @@ export function FileIcon({
   if (path.endsWith(".css")) return <Hash className={className} />
   if (path.endsWith(".json")) return <FileJson className={className} />
   if (path.endsWith(".md")) return <BookOpen className={className} />
-  if (path.endsWith(".c") || path.endsWith(".h")) {
+  if (
+    path.endsWith(".c") ||
+    path.endsWith(".h") ||
+    path.endsWith(".cpp") ||
+    path.endsWith(".cc")
+  ) {
     return <Braces className={className} />
   }
   if (

@@ -10,6 +10,7 @@ export const SUPPORTED_LANGUAGES = [
   "Python",
   "SQL",
   "C",
+  "C++",
 ]
 
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
@@ -109,7 +110,7 @@ action?.addEventListener("click", () => {
   {
     id: "python",
     label: "Python Practice",
-    description: "Python syntax with browser-safe terminal guidance.",
+    description: "Python basics with browser-safe terminal execution.",
     entryFile: "/main.py",
     files: {
       "/": { kind: "directory" },
@@ -128,14 +129,14 @@ if __name__ == "__main__":
       "/README.md": {
         kind: "file",
         content:
-          "# Python Practice\n\nPython editing is ready. Real execution needs Pyodide or a backend sandbox.\n",
+          "# Python Practice\n\nRun this file with `python main.py` or `run main.py`.\n",
       },
     },
   },
   {
     id: "c",
     label: "C Starter",
-    description: "C syntax and project structure for future sandbox runs.",
+    description: "C basics with browser-safe terminal execution.",
     entryFile: "/main.c",
     files: {
       "/": { kind: "directory" },
@@ -152,7 +153,60 @@ int main(void) {
       "/README.md": {
         kind: "file",
         content:
-          "# C Starter\n\nC can be edited here. Compiling with `gcc main.c -o main` needs a secure backend sandbox.\n",
+          "# C Starter\n\nRun this file with `gcc main.c` or `run main.c`.\n",
+      },
+    },
+  },
+  {
+    id: "cpp",
+    label: "C++ Starter",
+    description: "C++ basics with browser-safe terminal execution.",
+    entryFile: "/main.cpp",
+    files: {
+      "/": { kind: "directory" },
+      "/main.cpp": {
+        kind: "file",
+        content: `#include <iostream>
+using namespace std;
+
+int main() {
+  cout << "Hello, Eduverse!" << endl;
+  return 0;
+}
+`,
+      },
+      "/README.md": {
+        kind: "file",
+        content:
+          "# C++ Starter\n\nRun this file with `g++ main.cpp` or `run main.cpp`.\n",
+      },
+    },
+  },
+  {
+    id: "sql",
+    label: "SQL Practice",
+    description: "SQL basics with browser-safe terminal execution.",
+    entryFile: "/query.sql",
+    files: {
+      "/": { kind: "directory" },
+      "/query.sql": {
+        kind: "file",
+        content: `CREATE TABLE students (
+  id INTEGER,
+  name TEXT,
+  grade INTEGER
+);
+
+INSERT INTO students VALUES (1, 'Anas', 95);
+INSERT INTO students VALUES (2, 'Sara', 88);
+
+SELECT id, name, grade FROM students;
+`,
+      },
+      "/README.md": {
+        kind: "file",
+        content:
+          "# SQL Practice\n\nRun this file with `sql query.sql` or `run query.sql`.\n",
       },
     },
   },
