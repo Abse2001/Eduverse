@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
 
 export type ClassAssignment = {
   id: string
@@ -65,59 +64,6 @@ export type AssignmentDerivedStatus =
   | "submitted"
   | "graded"
   | "overdue"
-
-type AssignmentRow = {
-  id: string
-  organization_id: string
-  class_id: string
-  created_by_user_id: string
-  title: string
-  description: string
-  due_at: string
-  max_score: number
-  status: "draft" | "published"
-  allow_late_submissions: boolean
-  allow_text_submission: boolean
-  allow_file_submission: boolean
-  created_at: string
-  updated_at: string
-}
-
-type AssignmentFileRow = {
-  id: string
-  organization_id: string
-  class_id: string
-  assignment_id: string
-  uploaded_by_user_id: string
-  storage_bucket: string
-  storage_key: string
-  original_filename: string
-  mime_type: string
-  size_bytes: number
-  created_at: string
-}
-
-type SubmissionRow = {
-  id: string
-  organization_id: string
-  class_id: string
-  assignment_id: string
-  student_user_id: string
-  text_response: string | null
-  file_storage_bucket: string | null
-  file_storage_key: string | null
-  file_original_filename: string | null
-  file_mime_type: string | null
-  file_size_bytes: number | null
-  submitted_at: string
-  is_late: boolean
-  score: number | null
-  feedback: string
-  graded_at: string | null
-  graded_by_user_id: string | null
-  created_at: string
-  updated_at: string
-}
 
 type DownloadUrlResponse = {
   downloadUrl: string
@@ -461,84 +407,24 @@ export function getAssignmentDerivedStatus(
 
 export async function loadClassAssignments({
   classId,
-  currentUserId,
-  canManage,
 }: {
   classId: string
   currentUserId: string | null
   canManage: boolean
 }) {
-  const supabase = createClient()
-  let assignmentQuery = supabase
-    .from("class_assignments")
-    .select(
-      "id, organization_id, class_id, created_by_user_id, title, description, due_at, max_score, status, allow_late_submissions, allow_text_submission, allow_file_submission, created_at, updated_at",
-    )
-    .eq("class_id", classId)
-    .is("deleted_at", null)
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(classId)}/assignments`,
+  )
+  const payload = (await response.json().catch(() => null)) as {
+    assignments?: ClassAssignment[]
+    error?: string
+  } | null
 
-  if (!canManage) {
-    assignmentQuery = assignmentQuery.eq("status", "published")
+  if (!response.ok || !payload?.assignments) {
+    throw new Error(payload?.error ?? "Could not load assignments.")
   }
 
-  const { data: assignmentData, error: assignmentError } =
-    await assignmentQuery.order("due_at", { ascending: true })
-
-  if (assignmentError) throw assignmentError
-
-  const assignmentRows = (assignmentData ?? []) as AssignmentRow[]
-  const assignmentIds = assignmentRows.map((assignment) => assignment.id)
-
-  if (assignmentIds.length === 0) return []
-
-  const { data: fileData, error: fileError } = await supabase
-    .from("class_assignment_files")
-    .select(
-      "id, organization_id, class_id, assignment_id, uploaded_by_user_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at",
-    )
-    .in("assignment_id", assignmentIds)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-
-  if (fileError) throw fileError
-
-  let submissionQuery = supabase
-    .from("class_assignment_submissions")
-    .select(
-      "id, organization_id, class_id, assignment_id, student_user_id, text_response, file_storage_bucket, file_storage_key, file_original_filename, file_mime_type, file_size_bytes, submitted_at, is_late, score, feedback, graded_at, graded_by_user_id, created_at, updated_at",
-    )
-    .in("assignment_id", assignmentIds)
-    .order("submitted_at", { ascending: false })
-
-  if (!canManage && currentUserId) {
-    submissionQuery = submissionQuery.eq("student_user_id", currentUserId)
-  }
-
-  const { data: submissionData, error: submissionError } = await submissionQuery
-
-  if (submissionError) throw submissionError
-
-  const filesByAssignment = groupByAssignment(
-    ((fileData ?? []) as AssignmentFileRow[]).map(toAssignmentFile),
-  )
-  const submissions = ((submissionData ?? []) as SubmissionRow[]).map(
-    toSubmission,
-  )
-  const submissionsByAssignment = groupByAssignment(submissions)
-
-  return assignmentRows.map((row) => {
-    const assignmentSubmissions = submissionsByAssignment.get(row.id) ?? []
-
-    return {
-      ...toAssignment(row),
-      files: filesByAssignment.get(row.id) ?? [],
-      submissions: assignmentSubmissions,
-      mySubmission:
-        assignmentSubmissions.find(
-          (submission) => submission.studentUserId === currentUserId,
-        ) ?? null,
-    }
-  })
+  return payload.assignments
 }
 
 async function parseDownloadUrl(response: Response) {
@@ -551,77 +437,4 @@ async function parseDownloadUrl(response: Response) {
   }
 
   return payload.downloadUrl
-}
-
-function groupByAssignment<T extends { assignmentId: string }>(items: T[]) {
-  const grouped = new Map<string, T[]>()
-
-  for (const item of items) {
-    const existing = grouped.get(item.assignmentId) ?? []
-    existing.push(item)
-    grouped.set(item.assignmentId, existing)
-  }
-
-  return grouped
-}
-
-function toAssignment(
-  row: AssignmentRow,
-): Omit<ClassAssignment, "files" | "submissions" | "mySubmission"> {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    classId: row.class_id,
-    createdByUserId: row.created_by_user_id,
-    title: row.title,
-    description: row.description,
-    dueAt: row.due_at,
-    maxScore: Number(row.max_score),
-    status: row.status,
-    allowLateSubmissions: row.allow_late_submissions,
-    allowTextSubmission: row.allow_text_submission,
-    allowFileSubmission: row.allow_file_submission,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
-}
-
-function toAssignmentFile(row: AssignmentFileRow): ClassAssignmentFile {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    classId: row.class_id,
-    assignmentId: row.assignment_id,
-    uploadedByUserId: row.uploaded_by_user_id,
-    storageBucket: row.storage_bucket,
-    storageKey: row.storage_key,
-    originalFilename: row.original_filename,
-    mimeType: row.mime_type,
-    sizeBytes: row.size_bytes,
-    createdAt: row.created_at,
-  }
-}
-
-function toSubmission(row: SubmissionRow): ClassAssignmentSubmission {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    classId: row.class_id,
-    assignmentId: row.assignment_id,
-    studentUserId: row.student_user_id,
-    textResponse: row.text_response,
-    fileStorageBucket: row.file_storage_bucket,
-    fileStorageKey: row.file_storage_key,
-    fileOriginalFilename: row.file_original_filename,
-    fileMimeType: row.file_mime_type,
-    fileSizeBytes: row.file_size_bytes,
-    submittedAt: row.submitted_at,
-    isLate: row.is_late,
-    score: row.score === null ? null : Number(row.score),
-    feedback: row.feedback,
-    gradedAt: row.graded_at,
-    gradedByUserId: row.graded_by_user_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
 }

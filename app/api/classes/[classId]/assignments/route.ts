@@ -25,6 +25,168 @@ type AssignmentRow = {
   updated_at: string
 }
 
+type AssignmentFileRow = {
+  id: string
+  organization_id: string
+  class_id: string
+  assignment_id: string
+  uploaded_by_user_id: string
+  storage_bucket: string
+  storage_key: string
+  original_filename: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
+}
+
+type SubmissionRow = {
+  id: string
+  organization_id: string
+  class_id: string
+  assignment_id: string
+  student_user_id: string
+  text_response: string | null
+  file_storage_bucket: string | null
+  file_storage_key: string | null
+  file_original_filename: string | null
+  file_mime_type: string | null
+  file_size_bytes: number | null
+  submitted_at: string
+  is_late: boolean
+  score: number | null
+  feedback: string
+  graded_at: string | null
+  graded_by_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function GET(request: Request, context: RouteContext) {
+  const { classId } = await context.params
+  const { user, supabase, error: authError } = await requireRouteUser(request)
+
+  if (authError || !user || !supabase) {
+    return NextResponse.json({ error: authError }, { status: 401 })
+  }
+
+  const { data: classRow, error: classError } = await supabase
+    .from("classes")
+    .select("id, organization_id")
+    .eq("id", classId)
+    .eq("is_archived", false)
+    .maybeSingle()
+
+  if (classError) {
+    return NextResponse.json({ error: classError.message }, { status: 500 })
+  }
+
+  if (!classRow) {
+    return NextResponse.json({ error: "Class not found." }, { status: 404 })
+  }
+
+  const { data: canManage, error: permissionError } = await supabase.rpc(
+    "can_manage_class",
+    {
+      target_org_id: classRow.organization_id,
+      target_class_id: classRow.id,
+    },
+  )
+
+  if (permissionError) {
+    return NextResponse.json(
+      { error: permissionError.message },
+      { status: 500 },
+    )
+  }
+
+  let assignmentQuery = supabase
+    .from("class_assignments")
+    .select(
+      "id, organization_id, class_id, created_by_user_id, title, description, due_at, max_score, status, allow_late_submissions, allow_text_submission, allow_file_submission, created_at, updated_at",
+    )
+    .eq("class_id", classId)
+    .is("deleted_at", null)
+
+  if (!canManage) {
+    assignmentQuery = assignmentQuery.eq("status", "published")
+  }
+
+  const { data: assignmentData, error: assignmentError } =
+    await assignmentQuery.order("due_at", { ascending: true })
+
+  if (assignmentError) {
+    return NextResponse.json(
+      { error: assignmentError.message },
+      { status: 500 },
+    )
+  }
+
+  const assignmentRows = (assignmentData ?? []) as AssignmentRow[]
+  const assignmentIds = assignmentRows.map((assignment) => assignment.id)
+
+  if (assignmentIds.length === 0) {
+    return NextResponse.json({ assignments: [] })
+  }
+
+  const { data: fileData, error: fileError } = await supabase
+    .from("class_assignment_files")
+    .select(
+      "id, organization_id, class_id, assignment_id, uploaded_by_user_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at",
+    )
+    .in("assignment_id", assignmentIds)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+
+  if (fileError) {
+    return NextResponse.json({ error: fileError.message }, { status: 500 })
+  }
+
+  let submissionQuery = supabase
+    .from("class_assignment_submissions")
+    .select(
+      "id, organization_id, class_id, assignment_id, student_user_id, text_response, file_storage_bucket, file_storage_key, file_original_filename, file_mime_type, file_size_bytes, submitted_at, is_late, score, feedback, graded_at, graded_by_user_id, created_at, updated_at",
+    )
+    .in("assignment_id", assignmentIds)
+    .order("submitted_at", { ascending: false })
+
+  if (!canManage) {
+    submissionQuery = submissionQuery.eq("student_user_id", user.id)
+  }
+
+  const { data: submissionData, error: submissionError } = await submissionQuery
+
+  if (submissionError) {
+    return NextResponse.json(
+      { error: submissionError.message },
+      { status: 500 },
+    )
+  }
+
+  const filesByAssignment = groupByAssignment(
+    ((fileData ?? []) as AssignmentFileRow[]).map(toAssignmentFileResponse),
+  )
+  const submissions = ((submissionData ?? []) as SubmissionRow[]).map(
+    toSubmissionResponse,
+  )
+  const submissionsByAssignment = groupByAssignment(submissions)
+
+  const assignments = assignmentRows.map((row) => {
+    const assignmentSubmissions = submissionsByAssignment.get(row.id) ?? []
+
+    return {
+      ...toAssignmentResponse(row),
+      files: filesByAssignment.get(row.id) ?? [],
+      submissions: assignmentSubmissions,
+      mySubmission:
+        assignmentSubmissions.find(
+          (submission) => submission.studentUserId === user.id,
+        ) ?? null,
+    }
+  })
+
+  return NextResponse.json({ assignments })
+}
+
 export async function POST(request: Request, context: RouteContext) {
   const { classId } = await context.params
   const { user, supabase, error: authError } = await requireRouteUser(request)
@@ -233,4 +395,56 @@ function toAssignmentResponse(row: AssignmentRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function toAssignmentFileResponse(row: AssignmentFileRow) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    classId: row.class_id,
+    assignmentId: row.assignment_id,
+    uploadedByUserId: row.uploaded_by_user_id,
+    storageBucket: row.storage_bucket,
+    storageKey: row.storage_key,
+    originalFilename: row.original_filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    createdAt: row.created_at,
+  }
+}
+
+function toSubmissionResponse(row: SubmissionRow) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    classId: row.class_id,
+    assignmentId: row.assignment_id,
+    studentUserId: row.student_user_id,
+    textResponse: row.text_response,
+    fileStorageBucket: row.file_storage_bucket,
+    fileStorageKey: row.file_storage_key,
+    fileOriginalFilename: row.file_original_filename,
+    fileMimeType: row.file_mime_type,
+    fileSizeBytes: row.file_size_bytes,
+    submittedAt: row.submitted_at,
+    isLate: row.is_late,
+    score: row.score === null ? null : Number(row.score),
+    feedback: row.feedback,
+    gradedAt: row.graded_at,
+    gradedByUserId: row.graded_by_user_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function groupByAssignment<T extends { assignmentId: string }>(items: T[]) {
+  const grouped = new Map<string, T[]>()
+
+  for (const item of items) {
+    const existing = grouped.get(item.assignmentId) ?? []
+    existing.push(item)
+    grouped.set(item.assignmentId, existing)
+  }
+
+  return grouped
 }

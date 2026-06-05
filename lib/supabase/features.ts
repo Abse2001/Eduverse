@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type FeatureKind = "core" | "extension"
 
@@ -39,8 +40,8 @@ export type ClassExtensionSetting = {
   config: Record<string, unknown>
 }
 
-export async function loadFeatureDefinitions() {
-  const supabase = createClient()
+export async function loadFeatureDefinitions(client?: SupabaseClient) {
+  const supabase = client ?? createClient()
   const { data, error } = await supabase
     .from("feature_definitions")
     .select(
@@ -55,10 +56,11 @@ export async function loadFeatureDefinitions() {
 
 export async function loadOrganizationFeatureSettings(
   organizationIds: string[],
+  client?: SupabaseClient,
 ) {
   if (organizationIds.length === 0) return new Map<string, FeatureSetting[]>()
 
-  const supabase = createClient()
+  const supabase = client ?? createClient()
   const { data, error } = await supabase
     .from("organization_feature_settings")
     .select("organization_id, feature_key, enabled, config")
@@ -84,12 +86,15 @@ export async function loadOrganizationFeatureSettings(
   return settingsByOrganization
 }
 
-export async function loadOrganizationExtensions(organizationIds: string[]) {
+export async function loadOrganizationExtensions(
+  organizationIds: string[],
+  client?: SupabaseClient,
+) {
   if (organizationIds.length === 0) {
     return new Map<string, OrganizationExtension[]>()
   }
 
-  const supabase = createClient()
+  const supabase = client ?? createClient()
   const { data, error } = await supabase
     .from("organization_extensions")
     .select(
@@ -112,10 +117,13 @@ export async function loadOrganizationExtensions(organizationIds: string[]) {
   return extensionsByOrganization
 }
 
-export async function loadClassFeatureSettings(classIds: string[]) {
+export async function loadClassFeatureSettings(
+  classIds: string[],
+  client?: SupabaseClient,
+) {
   if (classIds.length === 0) return new Map<string, FeatureSetting[]>()
 
-  const supabase = createClient()
+  const supabase = client ?? createClient()
   const { data, error } = await supabase
     .from("class_feature_settings")
     .select("class_id, feature_key, enabled, config")
@@ -141,12 +149,15 @@ export async function loadClassFeatureSettings(classIds: string[]) {
   return settingsByClass
 }
 
-export async function loadClassExtensionSettings(classIds: string[]) {
+export async function loadClassExtensionSettings(
+  classIds: string[],
+  client?: SupabaseClient,
+) {
   if (classIds.length === 0) {
     return new Map<string, ClassExtensionSetting[]>()
   }
 
-  const supabase = createClient()
+  const supabase = client ?? createClient()
   const { data, error } = await supabase
     .from("class_extension_settings")
     .select("class_id, extension_id, enabled, config")

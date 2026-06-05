@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Class } from "@/lib/mock-data"
 import {
   loadClassExtensionSettings,
@@ -51,8 +52,11 @@ type ClassRow = Omit<
   | "extensionSettings"
 >
 
-export async function loadOrganizationClasses(organizationId: string) {
-  const supabase = createClient()
+export async function loadOrganizationClasses(
+  organizationId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = client ?? createClient()
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
@@ -64,11 +68,11 @@ export async function loadOrganizationClasses(organizationId: string) {
 
   if (classError) throw classError
 
-  return hydrateClasses((classData ?? []) as ClassRow[])
+  return hydrateClasses((classData ?? []) as ClassRow[], supabase)
 }
 
-export async function loadClass(classId: string) {
-  const supabase = createClient()
+export async function loadClass(classId: string, client?: SupabaseClient) {
+  const supabase = client ?? createClient()
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
@@ -80,7 +84,7 @@ export async function loadClass(classId: string) {
 
   if (classError) throw classError
 
-  const [classRow] = await hydrateClasses([classData as ClassRow])
+  const [classRow] = await hydrateClasses([classData as ClassRow], supabase)
 
   return classRow
 }
@@ -101,10 +105,10 @@ export function toLegacyClass(classRow: OrganizationClass): Class {
   }
 }
 
-async function hydrateClasses(classRows: ClassRow[]) {
+async function hydrateClasses(classRows: ClassRow[], client?: SupabaseClient) {
   if (classRows.length === 0) return []
 
-  const supabase = createClient()
+  const supabase = client ?? createClient()
   const classIds = classRows.map((classRow) => classRow.id)
   const { data: membershipData, error: membershipError } = await supabase
     .from("class_memberships")
@@ -141,8 +145,14 @@ async function hydrateClasses(classRows: ClassRow[]) {
     ]),
   )
   const membershipsByClass = new Map<string, ClassMembership[]>()
-  const featureSettingsByClass = await loadClassFeatureSettings(classIds)
-  const extensionSettingsByClass = await loadClassExtensionSettings(classIds)
+  const featureSettingsByClass = await loadClassFeatureSettings(
+    classIds,
+    supabase,
+  )
+  const extensionSettingsByClass = await loadClassExtensionSettings(
+    classIds,
+    supabase,
+  )
 
   for (const membership of memberships) {
     const existing = membershipsByClass.get(membership.class_id) ?? []

@@ -5,11 +5,7 @@ import Link from "next/link"
 import { hasClassAccessForRole } from "@/lib/education/classes"
 import type { Class, User } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
-import {
-  loadClass,
-  type OrganizationClass,
-  toLegacyClass,
-} from "@/lib/supabase/classes"
+import { type OrganizationClass, toLegacyClass } from "@/lib/supabase/classes"
 import {
   resolveClassFeatures,
   type FeatureKey,
@@ -80,7 +76,19 @@ export function useClassRoute(classId: string) {
     setIsLoading(true)
     setErrorMessage(null)
 
-    loadClass(classId)
+    fetch(`/api/classes/${encodeURIComponent(classId)}`)
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as {
+          class?: OrganizationClass
+          error?: string
+        }
+
+        if (!response.ok || !payload.class) {
+          throw new Error(payload.error ?? "Could not load class")
+        }
+
+        return payload.class
+      })
       .then((classRow) => {
         if (cancelled) return
         if (!canOpenClass(classRow, activeOrganization.id, currentUser)) {

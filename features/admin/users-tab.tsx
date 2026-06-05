@@ -79,7 +79,7 @@ function getInviteLink(token: string) {
   return `${window.location.origin}/invite/${token}`
 }
 
-function getActiveMemberRoles(member: OrganizationMemberRow) {
+function getActiveMemberRoles(member: OrganizationMemberRow): OrgRole[] {
   const activeRoles = member.roles
     .filter((roleRecord) => roleRecord.status === "active")
     .map((roleRecord) => roleRecord.role)

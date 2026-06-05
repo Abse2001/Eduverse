@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
 
 export type ClassMaterialType = "image" | "pdf" | "video" | "slide"
 
@@ -23,25 +22,6 @@ export type ClassMaterial = {
   createdAt: string
   updatedAt: string
   thumbnailUrl?: string
-}
-
-type ClassMaterialRow = {
-  id: string
-  organization_id: string
-  class_id: string
-  uploaded_by_user_id: string
-  title: string
-  description: string
-  type: ClassMaterialType
-  source: "manual" | "chat"
-  chat_message_id: string | null
-  storage_bucket: string
-  storage_key: string
-  original_filename: string
-  mime_type: string
-  size_bytes: number
-  created_at: string
-  updated_at: string
 }
 
 type DownloadUrlResponse = {
@@ -104,10 +84,7 @@ export function useClassMaterials({
     setErrorMessage(null)
 
     try {
-      const nextMaterials = await loadMaterialsWithThumbnails(
-        classId,
-        getDownloadUrl,
-      )
+      const nextMaterials = await loadMaterialsWithThumbnails(classId)
 
       setMaterials(nextMaterials)
       return nextMaterials
@@ -120,14 +97,14 @@ export function useClassMaterials({
     } finally {
       setIsLoading(false)
     }
-  }, [classId, getDownloadUrl])
+  }, [classId])
 
   useEffect(() => {
     let cancelled = false
     setIsLoading(true)
     setErrorMessage(null)
 
-    loadMaterialsWithThumbnails(classId, getDownloadUrl)
+    loadMaterialsWithThumbnails(classId)
       .then((nextMaterials) => {
         if (cancelled) return
         setMaterials(nextMaterials)
@@ -147,7 +124,7 @@ export function useClassMaterials({
     return () => {
       cancelled = true
     }
-  }, [classId, getDownloadUrl])
+  }, [classId])
 
   async function uploadMaterial(input: {
     file: File
@@ -237,29 +214,21 @@ export function useClassMaterials({
   }
 }
 
-async function loadMaterialsWithThumbnails(
-  classId: string,
-  getDownloadUrl: (
-    materialId: string,
-    disposition?: "inline" | "attachment",
-  ) => Promise<string>,
-) {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from("class_materials")
-    .select(
-      "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
-    )
-    .eq("class_id", classId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
+async function loadMaterialsWithThumbnails(classId: string) {
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(classId)}/materials`,
+  )
+  const payload = (await response.json().catch(() => null)) as {
+    materials?: ClassMaterial[]
+    error?: string
+  } | null
 
-  if (error) throw error
-
-  const nextMaterials = ((data ?? []) as ClassMaterialRow[]).map(toMaterial)
+  if (!response.ok || !payload?.materials) {
+    throw new Error(payload?.error ?? "Could not load materials.")
+  }
 
   return Promise.all(
-    nextMaterials.map(async (material) => {
+    payload.materials.map(async (material) => {
       if (material.type !== "image") return material
 
       try {
@@ -274,25 +243,4 @@ async function loadMaterialsWithThumbnails(
       }
     }),
   )
-}
-
-function toMaterial(row: ClassMaterialRow): ClassMaterial {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    classId: row.class_id,
-    uploadedByUserId: row.uploaded_by_user_id,
-    title: row.title,
-    description: row.description,
-    type: row.type,
-    source: row.source ?? "manual",
-    chatMessageId: row.chat_message_id ?? null,
-    storageBucket: row.storage_bucket,
-    storageKey: row.storage_key,
-    originalFilename: row.original_filename,
-    mimeType: row.mime_type,
-    sizeBytes: row.size_bytes,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
 }
