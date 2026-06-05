@@ -70,6 +70,7 @@ import {
   removePath,
   renameWorkspaceEntry,
   resolvePath,
+  runCommandForPath,
 } from "@/features/ide/workspace"
 import { cn } from "@/lib/utils"
 
