@@ -87,6 +87,21 @@ describe("getClassNavFeatures", () => {
   })
 })
 
+describe("getFeatureByRouteSegment", () => {
+  test("normalizes leaderboard routes to results", () => {
+    const features = resolveClassFeatures({
+      definitions,
+      organizationSettings: [createSetting("leaderboard", true)],
+      classSettings: [createSetting("leaderboard", true)],
+    })
+
+    expect(getFeatureByRouteSegment(features, "results")?.key).toEqual(
+      "leaderboard",
+    )
+    expect(getFeatureByRouteSegment(features, "leaderboard")).toEqual(undefined)
+  })
+})
+
 function createDefinition(
   key: string,
   label: string,

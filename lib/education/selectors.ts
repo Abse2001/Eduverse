@@ -1,5 +1,10 @@
 import { addDays, isPast, isWithinInterval } from "date-fns"
 import type {
+  ReleasedExamResultSummaryDto,
+  StudentExamPageDto,
+  StudentExamPageState,
+} from "@/lib/exams/types"
+import type {
   Assignment,
   Class,
   LeaderboardEntry,
@@ -109,4 +114,33 @@ export function mergeMessagesById(
         allMessages.findIndex((candidate) => candidate.id === message.id) ===
         index,
     )
+}
+
+export function resolveStudentExamPageState(
+  page: Pick<StudentExamPageDto, "activeExam" | "scheduledExam" | "state">,
+): StudentExamPageState {
+  if (page.activeExam) return "active"
+  if (page.scheduledExam) return "scheduled"
+  return "none"
+}
+
+export function getHistoricalExamResults(
+  page: Pick<StudentExamPageDto, "history">,
+) {
+  return page.history
+    .filter((result) => Boolean(result.releasedAt))
+    .filter(
+      (result, index, results) =>
+        results.findIndex(
+          (candidate) => candidate.attemptId === result.attemptId,
+        ) === index,
+    )
+    .sort(compareReleasedExamResultsDesc)
+}
+
+function compareReleasedExamResultsDesc(
+  left: ReleasedExamResultSummaryDto,
+  right: ReleasedExamResultSummaryDto,
+) {
+  return Date.parse(right.releasedAt) - Date.parse(left.releasedAt)
 }

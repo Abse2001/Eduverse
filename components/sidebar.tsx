@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import type { ReactNode } from "react"
 import {
   BookOpen,
   GraduationCap,
@@ -9,6 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useExamLock } from "@/features/exam/exam-lock"
 import { useApp } from "@/lib/store"
 import { getClassesForUser } from "@/lib/education/classes"
 import {
@@ -55,6 +57,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
     featureDefinitions,
     organizationClasses,
   } = useApp()
+  const { canNavigateToPath, isLocked, lock } = useExamLock()
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
 
@@ -99,11 +102,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
             </button>
           ) : (
             <>
-              <Link
+              <NavItemContent
                 href="/dashboard"
+                disabled={isLocked}
                 className={cn(
                   "flex items-center gap-2.5 py-2 rounded-lg text-sm font-medium transition-colors min-w-0 flex-1 h-9",
-                  "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+                  isLocked
+                    ? "cursor-not-allowed text-sidebar-foreground/40"
+                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
                   "pl-2 pr-8",
                 )}
               >
@@ -113,7 +119,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 <span className="truncate overflow-hidden transition-opacity duration-150">
                   Eduverse
                 </span>
-              </Link>
+              </NavItemContent>
               <button
                 onClick={() => setCollapsed(true)}
                 className="absolute right-2 text-muted-foreground hover:text-sidebar-foreground transition-colors"
@@ -153,6 +159,11 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               >
                 Classes
               </p>
+              {isLocked && !collapsed && (
+                <p className="px-2 pb-1 text-[11px] text-amber-500">
+                  Exam mode active. Navigation is locked to the exam.
+                </p>
+              )}
               {userClasses.map((cls) => {
                 const isActiveClass = activeClassId === cls.id
                 const classNavFeatures = activeOrganization
@@ -169,17 +180,20 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                   : []
                 const landingSegment =
                   getFirstClassNavRouteSegment(classNavFeatures) ?? "home"
+                const classHref = `/classes/${cls.id}/${landingSegment}`
+                const classDisabled = isLocked && !canNavigateToPath(classHref)
 
                 return (
                   <div key={cls.id}>
                     <NavItem
                       label={cls.name}
                       icon={BookOpen}
-                      href={`/classes/${cls.id}/${landingSegment}`}
+                      href={classHref}
                       active={isActiveClass}
                       collapsed={collapsed}
                       colorDot={cls.color ?? undefined}
                       live={liveClassIds.has(cls.id)}
+                      disabled={classDisabled}
                     />
                     {isActiveClass && (
                       <div
@@ -194,6 +208,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                             classId={cls.id}
                             feature={feature}
                             activeSegment={activeSegment}
+                            disabled={
+                              isLocked &&
+                              !canNavigateToPath(
+                                feature.routeSegment
+                                  ? `/classes/${cls.id}/${feature.routeSegment}`
+                                  : `/classes/${cls.id}/exam`,
+                              )
+                            }
                           />
                         ))}
                       </div>
@@ -213,10 +235,12 @@ function ClassFeatureNavItem({
   classId,
   feature,
   activeSegment,
+  disabled,
 }: {
   classId: string
   feature: ResolvedClassFeature
   activeSegment?: string
+  disabled?: boolean
 }) {
   const isActive =
     isFeatureRouteActive(feature.routeSegment, activeSegment) ||
@@ -245,6 +269,7 @@ function ClassFeatureNavItem({
               classId={classId}
               feature={child}
               active={isFeatureRouteActive(child.routeSegment, activeSegment)}
+              disabled={disabled}
             />
           ))}
         </div>
@@ -257,6 +282,7 @@ function ClassFeatureNavItem({
       classId={classId}
       feature={feature}
       active={isFeatureRouteActive(feature.routeSegment, activeSegment)}
+      disabled={disabled}
     />
   )
 }
@@ -265,26 +291,31 @@ function ClassFeatureNavLink({
   classId,
   feature,
   active,
+  disabled = false,
 }: {
   classId: string
   feature: ResolvedClassFeature
   active: boolean
+  disabled?: boolean
 }) {
   if (!feature.routeSegment) return null
 
   return (
-    <Link
+    <NavItemContent
       href={`/classes/${classId}/${feature.routeSegment}`}
       className={cn(
         "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+        disabled
+          ? "cursor-not-allowed text-muted-foreground/40"
+          : active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
       )}
+      disabled={disabled}
     >
       <feature.icon className="w-3.5 h-3.5 shrink-0" />
       {feature.label}
-    </Link>
+    </NavItemContent>
   )
 }
 
@@ -322,6 +353,7 @@ interface NavItemProps {
   collapsed: boolean
   colorDot?: string
   live?: boolean
+  disabled?: boolean
 }
 
 const DOT_COLOR_MAP: Record<string, string> = {
@@ -341,15 +373,19 @@ function NavItem({
   collapsed,
   colorDot,
   live = false,
+  disabled = false,
 }: NavItemProps) {
   const content = (
-    <Link
+    <NavItemContent
       href={href}
+      disabled={disabled}
       className={cn(
         "flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full h-9",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+        disabled
+          ? "cursor-not-allowed text-sidebar-foreground/35"
+          : active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
       )}
     >
       {colorDot ? (
@@ -380,7 +416,7 @@ function NavItem({
           Live
         </span>
       ) : null}
-    </Link>
+    </NavItemContent>
   )
 
   if (collapsed) {
@@ -393,4 +429,30 @@ function NavItem({
   }
 
   return content
+}
+
+function NavItemContent({
+  href,
+  disabled,
+  className,
+  children,
+}: {
+  href: string
+  disabled: boolean
+  className: string
+  children: ReactNode
+}) {
+  if (disabled) {
+    return (
+      <div aria-disabled="true" className={className}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  )
 }
