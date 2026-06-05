@@ -1,14 +1,26 @@
 "use client"
 
-import { use, useState, useRef } from "react"
 import {
-  ClassFeatureDisabledFallback,
-  ClassRouteFallback,
-  useClassFeatureRoute,
-} from "@/features/classes/use-class-route"
+  CheckCircle2,
+  Code2,
+  Folder,
+  FolderOpen,
+  Globe,
+  PanelBottom,
+  Play,
+  Plus,
+  Save,
+  SquareTerminal,
+  X,
+} from "lucide-react"
 import dynamic from "next/dynamic"
+import { use, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
 import {
   Select,
   SelectContent,
@@ -16,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import {
   Tooltip,
   TooltipContent,
@@ -23,163 +36,48 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  Play,
-  Trash2,
-  Copy,
-  Download,
-  RotateCcw,
-  Settings2,
-  ChevronDown,
-  ChevronUp,
-  Terminal,
-  Code2,
-  BookOpen,
-  Loader2,
-} from "lucide-react"
+  ClassFeatureDisabledFallback,
+  ClassRouteFallback,
+  useClassFeatureRoute,
+} from "@/features/classes/use-class-route"
+import { FileIcon, FileTree } from "@/features/ide/file-tree"
+import { buildPreviewDocument, getProblems } from "@/features/ide/preview"
+import {
+  INITIAL_TERMINAL,
+  PROJECT_TEMPLATES,
+  SUPPORTED_LANGUAGES,
+} from "@/features/ide/templates"
+import { runVirtualCommand } from "@/features/ide/terminal"
+import type {
+  ClipboardState,
+  PathChange,
+  TerminalLine,
+  Workspace,
+} from "@/features/ide/types"
+import {
+  basename,
+  buildFileTree,
+  defaultContentForPath,
+  ensureParentDirectories,
+  firstFilePath,
+  isPathInside,
+  joinPath,
+  languageForPath,
+  nextAvailablePath,
+  parentDir,
+  pasteWorkspaceEntry,
+  remapPathForRename,
+  removePath,
+  renameWorkspaceEntry,
+  resolvePath,
+} from "@/features/ide/workspace"
 import { cn } from "@/lib/utils"
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
 })
 
-interface Language {
-  id: string
-  label: string
-  monacoId: string
-  defaultCode: string
-}
-
-const LANGUAGES: Language[] = [
-  {
-    id: "python",
-    label: "Python 3",
-    monacoId: "python",
-    defaultCode: `# Python 3 - EduFlow IDE
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-# Entry point
-if __name__ == "__main__":
-    message = greet("World")
-    print(message)
-    
-    # Example: List comprehension
-    squares = [x ** 2 for x in range(1, 11)]
-    print("Squares:", squares)
-`,
-  },
-  {
-    id: "javascript",
-    label: "JavaScript",
-    monacoId: "javascript",
-    defaultCode: `// JavaScript - EduFlow IDE
-
-function greet(name) {
-  return \`Hello, \${name}!\`;
-}
-
-// Entry point
-const message = greet("World");
-console.log(message);
-
-// Example: Array methods
-const numbers = [1, 2, 3, 4, 5];
-const doubled = numbers.map(n => n * 2);
-console.log("Doubled:", doubled);
-`,
-  },
-  {
-    id: "typescript",
-    label: "TypeScript",
-    monacoId: "typescript",
-    defaultCode: `// TypeScript - EduFlow IDE
-
-interface Greeting {
-  message: string;
-  timestamp: Date;
-}
-
-function greet(name: string): Greeting {
-  return {
-    message: \`Hello, \${name}!\`,
-    timestamp: new Date(),
-  };
-}
-
-const result = greet("World");
-console.log(result.message);
-console.log("Time:", result.timestamp.toISOString());
-`,
-  },
-  {
-    id: "java",
-    label: "Java",
-    monacoId: "java",
-    defaultCode: `// Java - EduFlow IDE
-public class Main {
-    public static String greet(String name) {
-        return "Hello, " + name + "!";
-    }
-
-    public static void main(String[] args) {
-        String message = greet("World");
-        System.out.println(message);
-        
-        // Example: Array
-        int[] squares = new int[10];
-        for (int i = 0; i < 10; i++) {
-            squares[i] = (i + 1) * (i + 1);
-        }
-        System.out.print("Squares: ");
-        for (int s : squares) System.out.print(s + " ");
-    }
-}
-`,
-  },
-  {
-    id: "cpp",
-    label: "C++",
-    monacoId: "cpp",
-    defaultCode: `// C++ - EduFlow IDE
-#include <iostream>
-#include <vector>
-#include <string>
-
-std::string greet(const std::string& name) {
-    return "Hello, " + name + "!";
-}
-
-int main() {
-    std::string message = greet("World");
-    std::cout << message << std::endl;
-    
-    // Example: Vector
-    std::vector<int> squares;
-    for (int i = 1; i <= 10; i++) {
-        squares.push_back(i * i);
-    }
-    std::cout << "Squares: ";
-    for (int s : squares) std::cout << s << " ";
-    std::cout << std::endl;
-    return 0;
-}
-`,
-  },
-]
-
-// Simulated execution outputs
-const MOCK_OUTPUT: Record<string, (code: string) => string> = {
-  python: () =>
-    `Hello, World!\nSquares: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]\n\nProcess finished with exit code 0`,
-  javascript: () =>
-    `Hello, World!\nDoubled: [\n  2, 4, 6, 8, 10\n]\n\nProcess exited with code 0`,
-  typescript: () =>
-    `Hello, World!\nTime: ${new Date().toISOString()}\n\nProcess exited with code 0`,
-  java: () =>
-    `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
-  cpp: () =>
-    `Hello, World!\nSquares: 1 4 9 16 25 36 49 64 81 100 \n\nProcess exited with exit code 0`,
-}
+type PreviewMode = "preview" | "problems"
 
 export default function IdePage({
   params,
@@ -190,55 +88,295 @@ export default function IdePage({
   const { cls, isLoading, errorMessage, isFeatureDisabled } =
     useClassFeatureRoute(classId, "extensions.ide")
 
-  const [lang, setLang] = useState<Language>(LANGUAGES[0])
-  const [code, setCode] = useState(LANGUAGES[0].defaultCode)
-  const [output, setOutput] = useState("")
-  const [running, setRunning] = useState(false)
-  const [outputOpen, setOutputOpen] = useState(true)
-  const [theme, setTheme] = useState<"vs-dark" | "light">("vs-dark")
+  const [templateId, setTemplateId] = useState(PROJECT_TEMPLATES[0].id)
+  const activeTemplate = useMemo(
+    () =>
+      PROJECT_TEMPLATES.find((template) => template.id === templateId) ??
+      PROJECT_TEMPLATES[0],
+    [templateId],
+  )
+  const [workspace, setWorkspace] = useState<Workspace>(
+    () => PROJECT_TEMPLATES[0].files,
+  )
+  const [activePath, setActivePath] = useState(PROJECT_TEMPLATES[0].entryFile)
+  const [openPaths, setOpenPaths] = useState<string[]>([
+    PROJECT_TEMPLATES[0].entryFile,
+  ])
+  const [cwd, setCwd] = useState("/")
+  const [terminalInput, setTerminalInput] = useState("")
+  const [terminalLines, setTerminalLines] =
+    useState<TerminalLine[]>(INITIAL_TERMINAL)
+  const [terminalOpen, setTerminalOpen] = useState(true)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("preview")
+  const [clipboardPath, setClipboardPath] = useState<ClipboardState | null>(
+    null,
+  )
   const [fontSize, setFontSize] = useState(14)
-  const runCount = useRef(0)
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const terminalIdRef = useRef(INITIAL_TERMINAL.length + 1)
 
-  const handleLangChange = (id: string) => {
-    const l = LANGUAGES.find((l) => l.id === id)!
-    setLang(l)
-    setCode(l.defaultCode)
-    setOutput("")
+  const activeEntry = workspace[activePath]
+  const activeContent = activeEntry?.content ?? ""
+  const fileTree = useMemo(() => buildFileTree(workspace), [workspace])
+  const problems = useMemo(
+    () => getProblems(workspace, activePath),
+    [workspace, activePath],
+  )
+  const previewDocument = useMemo(
+    () => buildPreviewDocument(workspace, activePath),
+    [workspace, activePath],
+  )
+
+  function appendTerminal(
+    lines: Array<Omit<TerminalLine, "id">> | Omit<TerminalLine, "id">,
+  ) {
+    const nextLines = Array.isArray(lines) ? lines : [lines]
+    setTerminalLines((currentLines) => [
+      ...currentLines,
+      ...nextLines.map((line) => ({
+        ...line,
+        id: terminalIdRef.current++,
+      })),
+    ])
   }
 
-  const handleRun = () => {
-    setRunning(true)
-    setOutputOpen(true)
-    setOutput("")
-    runCount.current++
-    const count = runCount.current
+  function switchTemplate(nextTemplateId: string) {
+    const nextTemplate =
+      PROJECT_TEMPLATES.find((template) => template.id === nextTemplateId) ??
+      PROJECT_TEMPLATES[0]
 
-    // Simulate execution delay
-    const lines = (
-      MOCK_OUTPUT[lang.id]?.(code) ?? "Process exited with code 0"
-    ).split("\n")
-    let i = 0
-    const interval = setInterval(() => {
-      if (count !== runCount.current) {
-        clearInterval(interval)
-        return
+    setTemplateId(nextTemplate.id)
+    setWorkspace(nextTemplate.files)
+    setActivePath(nextTemplate.entryFile)
+    setOpenPaths([nextTemplate.entryFile])
+    setCwd("/")
+    setPreviewMode("preview")
+    setTerminalLines([
+      {
+        id: terminalIdRef.current++,
+        kind: "success",
+        text: `Loaded ${nextTemplate.label}.`,
+      },
+    ])
+  }
+
+  function openFile(path: string) {
+    if (workspace[path]?.kind !== "file") return
+    activateFile(path)
+  }
+
+  function activateFile(path: string) {
+    setActivePath(path)
+    setOpenPaths((paths) => (paths.includes(path) ? paths : [...paths, path]))
+  }
+
+  function closeFile(path: string) {
+    setOpenPaths((paths) => {
+      const nextPaths = paths.filter((openPath) => openPath !== path)
+      if (activePath === path) {
+        setActivePath(nextPaths[0] ?? firstFilePath(workspace) ?? "/")
       }
-      i++
-      setOutput(lines.slice(0, i).join("\n"))
-      if (i >= lines.length) {
-        clearInterval(interval)
-        setRunning(false)
-      }
-    }, 80)
+      return nextPaths
+    })
   }
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code)
+  function updateActiveFile(content: string) {
+    if (activeEntry?.kind !== "file") return
+    setWorkspace((currentWorkspace) => ({
+      ...currentWorkspace,
+      [activePath]: {
+        ...currentWorkspace[activePath],
+        content,
+      },
+    }))
   }
 
-  const handleClear = () => {
-    setCode(lang.defaultCode)
-    setOutput("")
+  function createFileFromButton() {
+    const path = nextAvailablePath(workspace, joinPath(cwd, "new-file.js"))
+    setWorkspace((currentWorkspace) => ({
+      ...ensureParentDirectories(currentWorkspace, path),
+      [path]: { kind: "file", content: defaultContentForPath(path) },
+    }))
+    activateFile(path)
+    appendTerminal({ kind: "success", text: `Created ${path}` })
+  }
+
+  function createFolderFromButton() {
+    const path = nextAvailablePath(workspace, joinPath(cwd, "new-folder"))
+    setWorkspace((currentWorkspace) => ({
+      ...ensureParentDirectories(currentWorkspace, path),
+      [path]: { kind: "directory" },
+    }))
+    appendTerminal({ kind: "success", text: `Created ${path}/` })
+  }
+
+  function copyWorkspacePath(path: string) {
+    if (path === "/") return
+    setClipboardPath({ mode: "copy", path })
+    appendTerminal({ kind: "success", text: `copied ${path}` })
+  }
+
+  function cutWorkspacePath(path: string) {
+    if (path === "/") return
+    setClipboardPath({ mode: "cut", path })
+    appendTerminal({ kind: "success", text: `cut ${path}` })
+  }
+
+  function pasteWorkspacePath(targetPath: string) {
+    if (!clipboardPath) return
+    const targetDirectory =
+      workspace[targetPath]?.kind === "directory"
+        ? targetPath
+        : parentDir(targetPath)
+    const result = pasteWorkspaceEntry({
+      clipboard: clipboardPath,
+      targetDirectory,
+      workspace,
+    })
+
+    if (result.error) {
+      appendTerminal({ kind: "error", text: result.error })
+      return
+    }
+
+    applyWorkspaceChange({
+      workspace: result.workspace,
+      pathChange: result.pathChange,
+    })
+
+    if (result.openPath) activateFile(result.openPath)
+    if (clipboardPath.mode === "cut") setClipboardPath(null)
+    appendTerminal({
+      kind: "success",
+      text: `${clipboardPath.mode === "cut" ? "moved" : "pasted"} ${result.path}`,
+    })
+  }
+
+  function renameWorkspacePath(path: string) {
+    if (path === "/") return
+    const currentName = basename(path)
+    const nextName = window.prompt("Rename", currentName)?.trim()
+    if (!nextName || nextName === currentName) return
+
+    const nextPath = nextName.includes("/")
+      ? resolvePath(cwd, nextName)
+      : joinPath(parentDir(path), nextName)
+    const result = renameWorkspaceEntry(workspace, path, nextPath)
+
+    if (result.error) {
+      appendTerminal({ kind: "error", text: result.error })
+      return
+    }
+
+    applyWorkspaceChange({
+      workspace: result.workspace,
+      pathChange: { from: path, to: nextPath },
+    })
+    appendTerminal({ kind: "success", text: `renamed ${path} -> ${nextPath}` })
+  }
+
+  function deleteWorkspacePath(path: string) {
+    if (path === "/") return
+    if (!window.confirm(`Delete ${path}?`)) return
+
+    applyWorkspaceChange({
+      workspace: removePath(workspace, path),
+      removedPath: path,
+    })
+    appendTerminal({ kind: "success", text: `removed ${path}` })
+  }
+
+  function runActiveFile() {
+    setTerminalOpen(true)
+    const command = runCommandForPath(activePath)
+    appendTerminal({ kind: "input", text: `$ ${command}` })
+    executeCommand(command)
+  }
+
+  function submitTerminal(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    submitTerminalCommand()
+  }
+
+  function submitTerminalCommand() {
+    const command = terminalInput.trim()
+    if (!command) return
+    setTerminalInput("")
+    appendTerminal({ kind: "input", text: `${cwd} $ ${command}` })
+    executeCommand(command)
+  }
+
+  function executeCommand(command: string) {
+    const result = runVirtualCommand({
+      command,
+      cwd,
+      workspace,
+      activePath,
+      problems,
+    })
+
+    if (result.clear) {
+      setTerminalLines([])
+    }
+
+    if (result.cwd) setCwd(result.cwd)
+    if (result.workspace) {
+      applyWorkspaceChange({
+        workspace: result.workspace,
+        pathChange: result.pathChange,
+        removedPath: result.removedPath,
+      })
+    }
+    if (result.openPath) activateFile(result.openPath)
+    if (result.preview) setPreviewMode("preview")
+    if (result.lines.length > 0) appendTerminal(result.lines)
+  }
+
+  function applyWorkspaceChange({
+    workspace: nextWorkspace,
+    pathChange,
+    removedPath,
+  }: {
+    workspace: Workspace
+    pathChange?: PathChange
+    removedPath?: string
+  }) {
+    setWorkspace(nextWorkspace)
+
+    if (pathChange) {
+      setOpenPaths((paths) =>
+        paths.map((path) =>
+          remapPathForRename(path, pathChange.from, pathChange.to),
+        ),
+      )
+      setActivePath((path) =>
+        remapPathForRename(path, pathChange.from, pathChange.to),
+      )
+      setCwd((path) => remapPathForRename(path, pathChange.from, pathChange.to))
+      return
+    }
+
+    if (removedPath) {
+      setOpenPaths((paths) =>
+        paths.filter((path) => !isPathInside(path, removedPath)),
+      )
+      setActivePath((path) => {
+        if (
+          !isPathInside(path, removedPath) &&
+          nextWorkspace[path]?.kind === "file"
+        ) {
+          return path
+        }
+        return firstFilePath(nextWorkspace) ?? "/"
+      })
+      setCwd((path) => (isPathInside(path, removedPath) ? "/" : path))
+      return
+    }
+
+    if (nextWorkspace[activePath]?.kind !== "file") {
+      const fallbackPath = firstFilePath(nextWorkspace)
+      if (fallbackPath) activateFile(fallbackPath)
+    }
   }
 
   if (!cls) {
@@ -253,181 +391,410 @@ export default function IdePage({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="flex flex-col h-full overflow-hidden bg-[#1e1e1e]">
-        {/* IDE toolbar */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-[#2d2d2d] border-b border-[#3e3e3e] shrink-0">
-          {/* Title */}
-          <div className="flex items-center gap-2 mr-2">
-            <Code2 className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm font-semibold text-white">
-              {cls?.name ?? (isLoading ? "Loading class..." : "IDE")}
+      <div className="flex h-[calc(100vh-3.5rem)] min-h-[680px] flex-col overflow-hidden bg-[#10131a] text-slate-100">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-slate-800 bg-[#171b24] px-3">
+          <div className="flex min-w-0 items-center gap-2 pr-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-indigo-500 text-white">
+              <Code2 className="h-4 w-4" />
             </span>
-            {cls && <span className="text-xs text-zinc-400">{cls.code}</span>}
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold leading-4 text-white">
+                {cls.name}
+              </h1>
+              <p className="truncate text-[11px] leading-3 text-slate-400">
+                {cls.code} IDE
+              </p>
+            </div>
           </div>
 
-          <Separator orientation="vertical" className="h-5 bg-[#3e3e3e]" />
+          <Separator orientation="vertical" className="h-6 bg-slate-800" />
 
-          {/* Language select */}
-          <Select value={lang.id} onValueChange={handleLangChange}>
-            <SelectTrigger className="h-7 w-36 bg-[#3c3c3c] border-[#555] text-white text-xs focus:ring-indigo-500">
+          <Select value={templateId} onValueChange={switchTemplate}>
+            <SelectTrigger className="h-8 w-40 border-slate-700 bg-slate-900 text-xs text-slate-100">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-[#2d2d2d] border-[#3e3e3e]">
-              {LANGUAGES.map((l) => (
-                <SelectItem
-                  key={l.id}
-                  value={l.id}
-                  className="text-white text-xs focus:bg-[#3e3e3e] focus:text-white"
-                >
-                  {l.label}
+            <SelectContent>
+              {PROJECT_TEMPLATES.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          {/* Font size */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setFontSize((f) => Math.max(11, f - 1))}
-              className="w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] text-xs font-bold"
-            >
-              A
-            </button>
-            <button
-              onClick={() => setFontSize((f) => Math.min(22, f + 1))}
-              className="w-6 h-6 flex items-center justify-center rounded text-zinc-300 hover:text-white hover:bg-[#3e3e3e] font-bold text-sm"
-            >
-              A
-            </button>
+          <div className="hidden min-w-0 max-w-80 text-xs text-slate-400 lg:block">
+            {activeTemplate.description}
           </div>
 
-          <button
-            onClick={() =>
-              setTheme((t) => (t === "vs-dark" ? "light" : "vs-dark"))
-            }
-            className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-[#3e3e3e] transition-colors"
-          >
-            {theme === "vs-dark" ? "Light" : "Dark"}
-          </button>
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={handleCopy}
-                  className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Copy code</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={handleClear}
-                  className="h-7 w-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-[#3e3e3e] transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Reset to default</TooltipContent>
-            </Tooltip>
+          <div className="ml-auto flex items-center gap-1">
+            <ToolbarButton
+              label="Decrease font size"
+              onClick={() => setFontSize((size) => Math.max(11, size - 1))}
+            >
+              <span className="text-xs font-bold">A</span>
+            </ToolbarButton>
+            <ToolbarButton
+              label="Increase font size"
+              onClick={() => setFontSize((size) => Math.min(22, size + 1))}
+            >
+              <span className="text-sm font-bold">A</span>
+            </ToolbarButton>
             <Button
               size="sm"
-              className="h-7 px-3 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white border-0"
-              onClick={handleRun}
-              disabled={running}
+              className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-700"
+              onClick={runActiveFile}
             >
-              {running ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5" />
-              )}
-              {running ? "Running..." : "Run"}
+              <Play className="h-3.5 w-3.5" />
+              Run
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 gap-1.5 border border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800"
+              onClick={() => setSavedAt(new Date())}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save
             </Button>
           </div>
-        </div>
+        </header>
 
-        {/* Editor + Output */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Monaco Editor */}
-          <div
-            className={cn(
-              "flex-1 overflow-hidden transition-all",
-              !outputOpen && "flex-1",
-            )}
-          >
-            <MonacoEditor
-              height="100%"
-              language={lang.monacoId}
-              theme={theme}
-              value={code}
-              onChange={(val) => setCode(val ?? "")}
-              options={{
-                fontSize,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                lineNumbers: "on",
-                wordWrap: "off",
-                padding: { top: 16, bottom: 16 },
-                fontFamily:
-                  "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-                fontLigatures: true,
-                smoothScrolling: true,
-                cursorBlinking: "smooth",
-                bracketPairColorization: { enabled: true },
-                renderLineHighlight: "all",
-                tabSize: lang.id === "python" ? 4 : 2,
-              }}
-            />
-          </div>
+        <ResizablePanelGroup
+          direction="vertical"
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          <ResizablePanel defaultSize={72} minSize={36}>
+            <ResizablePanelGroup direction="horizontal" className="min-h-0">
+              <ResizablePanel defaultSize={18} minSize={14} maxSize={35}>
+                <aside className="flex h-full min-h-0 flex-col bg-[#141821]">
+                  <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-800 px-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-400">
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Files
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <IconButton
+                        label="New file"
+                        onClick={createFileFromButton}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </IconButton>
+                      <IconButton
+                        label="New folder"
+                        onClick={createFolderFromButton}
+                      >
+                        <Folder className="h-3.5 w-3.5" />
+                      </IconButton>
+                    </div>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+                    <FileTree
+                      nodes={fileTree}
+                      activePath={activePath}
+                      canPaste={Boolean(clipboardPath)}
+                      onCopy={copyWorkspacePath}
+                      onCut={cutWorkspacePath}
+                      onDelete={deleteWorkspacePath}
+                      onOpen={openFile}
+                      onPaste={pasteWorkspacePath}
+                      onRename={renameWorkspacePath}
+                    />
+                  </div>
+                  <div className="border-t border-slate-800 px-3 py-2 text-[11px] text-slate-400">
+                    {SUPPORTED_LANGUAGES.join(" / ")}
+                  </div>
+                </aside>
+              </ResizablePanel>
 
-          {/* Output terminal */}
-          <div
-            className={cn(
-              "bg-[#1a1a1a] border-t border-[#3e3e3e] flex flex-col transition-all",
-              outputOpen ? "h-52" : "h-9",
-            )}
-          >
-            <button
-              onClick={() => setOutputOpen(!outputOpen)}
-              className="flex items-center gap-2 px-3 h-9 text-xs text-zinc-400 hover:text-white transition-colors w-full shrink-0 border-b border-[#2a2a2a]"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span className="font-semibold">Output</span>
-              {running && (
-                <span className="flex items-center gap-1 text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Running
-                </span>
-              )}
-              <span className="ml-auto">
-                {outputOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5" />
+              <ResizableHandle className="bg-slate-800" withHandle />
+
+              <ResizablePanel defaultSize={52} minSize={30}>
+                <section className="flex h-full min-w-0 flex-col overflow-hidden bg-[#1d222d]">
+                  <div className="flex h-10 shrink-0 items-end overflow-x-auto border-b border-slate-800 bg-[#171b24]">
+                    {openPaths.map((path) => (
+                      <button
+                        key={path}
+                        type="button"
+                        onClick={() => openFile(path)}
+                        className={cn(
+                          "group flex h-10 max-w-48 shrink-0 items-center gap-2 border-r border-slate-800 px-3 text-xs text-slate-400",
+                          activePath === path &&
+                            "border-t-2 border-t-indigo-400 bg-[#1d222d] text-slate-100",
+                        )}
+                      >
+                        <FileIcon
+                          path={path}
+                          className="h-3.5 w-3.5 shrink-0"
+                        />
+                        <span className="truncate">{basename(path)}</span>
+                        {openPaths.length > 1 ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              closeFile(path)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                closeFile(path)
+                              }
+                            }}
+                            className="rounded p-0.5 opacity-0 hover:bg-slate-700 group-hover:opacity-100"
+                            aria-label={`Close ${basename(path)}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="min-h-0 flex-1">
+                    {activeEntry?.kind === "file" ? (
+                      <MonacoEditor
+                        height="100%"
+                        language={languageForPath(activePath)}
+                        theme="vs-dark"
+                        value={activeContent}
+                        onChange={(value) => updateActiveFile(value ?? "")}
+                        path={activePath}
+                        options={{
+                          fontSize,
+                          minimap: { enabled: false },
+                          scrollBeyondLastLine: false,
+                          lineNumbers: "on",
+                          wordWrap: "off",
+                          padding: { top: 14, bottom: 14 },
+                          fontFamily:
+                            "'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace",
+                          fontLigatures: true,
+                          smoothScrolling: true,
+                          cursorBlinking: "smooth",
+                          bracketPairColorization: { enabled: true },
+                          renderLineHighlight: "all",
+                          tabSize: activePath.endsWith(".py") ? 4 : 2,
+                        }}
+                      />
+                    ) : (
+                      <div className="grid h-full place-items-center text-sm text-slate-500">
+                        Open a file from the tree.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </ResizablePanel>
+
+              <ResizableHandle
+                className="bg-slate-800 max-lg:hidden"
+                withHandle
+              />
+
+              <ResizablePanel
+                className="max-lg:hidden"
+                defaultSize={30}
+                minSize={20}
+              >
+                <aside className="flex h-full min-h-0 flex-col bg-[#141821]">
+                  <div className="flex h-10 shrink-0 items-center border-b border-slate-800">
+                    <PreviewTab
+                      active={previewMode === "preview"}
+                      label="Preview"
+                      icon={Globe}
+                      onClick={() => setPreviewMode("preview")}
+                    />
+                    <PreviewTab
+                      active={previewMode === "problems"}
+                      label="Problems"
+                      icon={CheckCircle2}
+                      onClick={() => setPreviewMode("problems")}
+                    />
+                  </div>
+
+                  {previewMode === "preview" ? (
+                    <iframe
+                      title="Project preview"
+                      className="min-h-0 flex-1 bg-white"
+                      sandbox="allow-scripts allow-forms allow-modals"
+                      srcDoc={previewDocument}
+                    />
+                  ) : (
+                    <div className="min-h-0 flex-1 overflow-auto p-3">
+                      <ProblemsList problems={problems} />
+                    </div>
+                  )}
+                </aside>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </ResizablePanel>
+
+          <ResizableHandle className="bg-slate-800" withHandle />
+
+          <ResizablePanel defaultSize={28} minSize={10}>
+            <section className="flex h-full min-h-0 flex-col bg-[#0b0f16]">
+              <button
+                type="button"
+                className="flex h-10 w-full shrink-0 items-center gap-2 border-b border-slate-800 px-3 text-left text-xs font-semibold text-slate-300"
+                onClick={() => setTerminalOpen((open) => !open)}
+              >
+                <SquareTerminal className="h-4 w-4 text-emerald-400" />
+                Terminal
+                <span className="font-normal text-slate-500">{cwd}</span>
+                {savedAt ? (
+                  <span className="ml-auto flex items-center gap-1 font-normal text-slate-500">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    Saved {savedAt.toLocaleTimeString()}
+                  </span>
                 ) : (
-                  <ChevronUp className="w-3.5 h-3.5" />
+                  <span className="ml-auto font-normal text-slate-500">
+                    Virtual CLI
+                  </span>
                 )}
-              </span>
-            </button>
-            {outputOpen && (
-              <div className="flex-1 overflow-y-auto p-4">
-                {output ? (
-                  <pre className="text-xs font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                    {output}
-                  </pre>
-                ) : (
-                  <p className="text-xs text-zinc-500">
-                    {running
-                      ? "Executing..."
-                      : "Click Run to execute your code."}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+                <PanelBottom className="h-4 w-4" />
+              </button>
+
+              {terminalOpen ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="min-h-0 flex-1 overflow-auto px-3 py-2 font-mono text-xs leading-5">
+                    {terminalLines.map((line) => (
+                      <pre
+                        key={line.id}
+                        className={cn(
+                          "whitespace-pre-wrap",
+                          line.kind === "input" && "text-sky-300",
+                          line.kind === "output" && "text-slate-300",
+                          line.kind === "error" && "text-rose-300",
+                          line.kind === "success" && "text-emerald-300",
+                        )}
+                      >
+                        {line.text}
+                      </pre>
+                    ))}
+                  </div>
+                  <form
+                    onSubmit={submitTerminal}
+                    className="flex h-10 shrink-0 items-center gap-2 border-t border-slate-800 px-3 font-mono text-xs"
+                  >
+                    <span className="text-slate-500">{cwd} $</span>
+                    <input
+                      value={terminalInput}
+                      onChange={(event) => setTerminalInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault()
+                          submitTerminalCommand()
+                        }
+                      }}
+                      className="h-full min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-600"
+                      placeholder="Try: help, ls, mkdir src, touch app.js, mv app.js main.js, rm main.js"
+                      spellCheck={false}
+                    />
+                  </form>
+                </div>
+              ) : null}
+            </section>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </TooltipProvider>
+  )
+}
+
+function ToolbarButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string
+  children: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function IconButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string
+  children: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-100"
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PreviewTab({
+  active,
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  icon: typeof Globe
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex h-full flex-1 items-center justify-center gap-2 border-r border-slate-800 text-xs font-semibold text-slate-500",
+        active && "bg-[#1d222d] text-slate-100",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  )
+}
+
+function ProblemsList({ problems }: { problems: string[] }) {
+  if (problems.length === 0) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+        <CheckCircle2 className="h-4 w-4" />
+        No problems found in the current browser checks.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {problems.map((problem) => (
+        <div
+          key={problem}
+          className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200"
+        >
+          {problem}
+        </div>
+      ))}
+    </div>
   )
 }
