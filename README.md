@@ -1,34 +1,195 @@
 # Eduverse
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+Eduverse is a modern learning workspace for organizations, teachers, and students. It brings class management, role-based dashboards, live sessions, materials, assignments, exams, chat, results, and organization administration into one Next.js application.
 
-## Built with v0
+The platform is designed around multi-organization education workflows. A user can belong to multiple organizations, hold different roles per organization, and enter a workspace that adapts to the selected role.
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+## What It Does
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_J3HPwFDgM84z9SjGJexgD10N4gN5)
+- Role-based dashboards for administrators, teachers, and students.
+- Organization membership, invitations, role selection, and user management.
+- Class management with teachers, students, schedules, rooms, semesters, and archived history.
+- Class spaces for home, chat, materials, assignments, live sessions, exams, results, and extensions.
+- Assignment workflows with submissions, grading, feedback, and notification hooks.
+- Class materials backed by S3 storage and signed upload/download flows.
+- Live classroom sessions using LiveKit.
+- Exam flows with lobby, lock mode, attempts, grading, results, and audit/integrity helpers.
+- Notifications for class updates, announcements, assignments, and live activity.
+- Feature enablement at the organization and class level, including extension support.
+
+## Tech Stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- Radix UI and shadcn-style components
+- Supabase Auth and Postgres
+- AWS S3 for class files and materials
+- LiveKit for live sessions
+- Bun test runner
+- Biome for formatting
+
+## Repository Structure
+
+```txt
+app/                    Next.js routes, layouts, auth, invite, workspace pages, and API routes
+app/api/                Server routes for classes, assignments, materials, messages, exams, live sessions, notifications, and user context
+components/             Shared app chrome, dashboards, top bar, sidebar, and UI primitives
+features/               Feature modules for admin, classes, chat, materials, assignments, exams, sessions, IDE, results, help, and profile
+hooks/                  Shared React hooks
+lib/                    App state, Supabase clients, domain services, mock data, feature registry, utilities, and tests
+supabase/migrations/    Database migrations for organizations, classes, features, assignments, chat, exams, notifications, and live sessions
+types/                  Test/runtime type helpers
+public/                 Static icons and placeholder assets
+```
+
+## Prerequisites
+
+- Node.js 22 LTS recommended
+- Bun
+- Supabase project with the migrations in `supabase/migrations`
+- AWS S3 bucket for materials and assignment files
+- LiveKit project for live sessions
+
+## Environment Setup
+
+Create a local environment file:
+
+```sh
+cp .env.example .env
+```
+
+Fill in the required values:
+
+```txt
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
+
+AWS_REGION=
+AWS_S3_BUCKET=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
+```
+
+Keep `SUPABASE_SECRET_KEY`, AWS credentials, and LiveKit API secrets server-only. Do not expose them to the mobile app or any public client runtime.
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+```sh
+bun install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run the development server:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```sh
+bun run dev
+```
 
-## Learn More
+Open the app at:
 
-To learn more, take a look at the following resources:
+```txt
+http://localhost:3000
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+The root route redirects to `/auth`. After sign in, users are taken into the workspace at `/dashboard`.
 
+## Available Scripts
+
+```sh
+bun run dev              # Start the Next.js development server
+bun run build            # Build with webpack
+bun run build:turbopack  # Build with Turbopack
+bun run start            # Start the production server
+bun run typecheck        # Run TypeScript checks
+bun run test             # Run Bun tests
+bun run format           # Format the codebase with Biome
+bun run format:check     # Check formatting with Biome
+```
+
+## Core Workflows
+
+### Authentication And Organizations
+
+Authentication uses Supabase email/password auth. User profile and organization context are loaded through `/api/me`, and the app shell redirects unauthenticated users to `/auth`.
+
+Organizations support memberships, invitations, selected roles, default organization selection, and role-specific workspaces.
+
+### Classes
+
+Classes are scoped to organizations and support teachers, students, class metadata, active/archive state, and feature settings. Class navigation is resolved from the feature registry in `lib/features/feature-registry.ts`.
+
+### Assignments
+
+Assignment APIs live under:
+
+```txt
+app/api/classes/[classId]/assignments
+```
+
+They support assignment listing, creation/update behavior, submissions, grading context, and student/teacher-specific views.
+
+### Materials
+
+Materials APIs live under:
+
+```txt
+app/api/classes/[classId]/materials
+```
+
+The server handles upload and storage behavior so clients do not need direct write access to S3.
+
+### Chat And Announcements
+
+Class messages live under:
+
+```txt
+app/api/classes/[classId]/messages
+```
+
+The chat system supports text, announcement, and media-aware flows, with notification side effects for announcements.
+
+### Live Sessions
+
+Live sessions combine class session records, LiveKit tokens, session state, participant UI, chat, audio/video rendering, and a mini bar for active sessions.
+
+### Exams
+
+Exam modules cover manager and student experiences, session lock behavior, question navigation, results, integrity helpers, and audit helpers.
+
+## Database
+
+Supabase migrations live in:
+
+```txt
+supabase/migrations
+```
+
+They define organization management, invitations, class workflows, feature enablement, materials, class chat, assignments, exams, notifications, and live-session support.
+
+Apply migrations to the target Supabase project before running production-like flows.
+
+## Mobile Companion
+
+The sibling repository `../Eduverse-mobile-app` is the Expo mobile companion for daily student and teacher workflows. It shares Supabase-backed domain data with this web app and should use this web app's API routes for server-owned behavior such as assignment submission, chat side effects, file downloads, notification actions, and role-aware validation.
+
+## Development Notes
+
+- Prefer server routes for mutations that need validation, storage access, notification side effects, or role checks.
+- Keep server-only secrets out of client components and mobile configuration.
+- Use the feature registry when adding class-level capabilities.
+- Keep UI components consistent with the existing Radix/shadcn-style component set.
+- Use focused tests for shared domain logic and high-risk workflow behavior.
+
+## Project Status
+
+Eduverse is an active product codebase, not a blank starter. Some mock data remains for dashboard history, sample activity, and empty-state support, while core organization, class, assignment, chat, material, notification, exam, and session infrastructure is implemented through Supabase-backed modules and API routes.
