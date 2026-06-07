@@ -11,6 +11,7 @@ import {
   Save,
   Send,
   ShieldAlert,
+  Sparkles,
   Trash2,
   Users,
 } from "lucide-react"
@@ -84,6 +85,22 @@ type ExamFormState = {
   questions: QuestionEditorState[]
 }
 
+type AiExamQuestionDraft = {
+  type: "mcq" | "short"
+  prompt: string
+  points: number
+  options: string[]
+  correctAnswer: string | number | null
+}
+
+type AiExamDraft = {
+  title: string
+  durationMinutes: number
+  questions: AiExamQuestionDraft[]
+}
+
+type AiExamMode = "full_exam" | "questions"
+
 const DEFAULT_MCQ_OPTIONS = ["Option A", "Option B"] as const
 const EXAM_TITLE_REQUIRED_MESSAGE = "Exam title is required."
 const EXAM_FORM_FIELD_ATTRIBUTE = "data-exam-form-field"
@@ -130,7 +147,7 @@ export function ManagerExamScreen({
   cls,
   examApi,
 }: {
-  cls: Pick<Class, "name" | "code">
+  cls: Pick<Class, "id" | "name" | "code">
   examApi: UseClassExamResult
 }) {
   const {
@@ -167,6 +184,11 @@ export function ManagerExamScreen({
     null,
   )
   const [gradeInputs, setGradeInputs] = useState<Record<string, string>>({})
+  const [isAiDraftOpen, setIsAiDraftOpen] = useState(false)
+  const [aiDraftPrompt, setAiDraftPrompt] = useState("")
+  const [aiDraftError, setAiDraftError] = useState<string | null>(null)
+  const [aiMode, setAiMode] = useState<AiExamMode>("full_exam")
+  const [isGeneratingExamAi, setIsGeneratingExamAi] = useState(false)
 
   const exams = data?.canManage ? data.manager.exams : []
   const selectedAttempt = detail?.attempts.find(
@@ -261,6 +283,13 @@ export function ManagerExamScreen({
   function openCreate() {
     resetForm()
     setIsCreateOpen(true)
+  }
+
+  function openAiDraft(mode: AiExamMode) {
+    setAiMode(mode)
+    setAiDraftPrompt("")
+    setAiDraftError(null)
+    setIsAiDraftOpen(true)
   }
 
   async function openEdit(examId: string) {
@@ -454,6 +483,73 @@ export function ManagerExamScreen({
     }
   }
 
+  async function generateExamDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const prompt = aiDraftPrompt.trim()
+
+    if (aiMode === "full_exam" && !prompt) {
+      setAiDraftError("Describe the exam you want to create.")
+      return
+    }
+
+    setIsGeneratingExamAi(true)
+    setAiDraftError(null)
+    setFormError(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(cls.id)}/exams/ai/draft`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: aiMode,
+            prompt,
+            title: form.title,
+            durationMinutes: Number.parseInt(form.durationMinutes, 10),
+            existingQuestions: form.questions,
+          }),
+        },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        draft?: AiExamDraft
+        error?: string
+      } | null
+
+      if (!response.ok || !payload?.draft) {
+        throw new Error(payload?.error ?? "Could not generate exam.")
+      }
+
+      const nextQuestions = payload.draft.questions.map(toQuestionEditorFromAi)
+
+      setForm((current) => {
+        if (aiMode === "questions") {
+          return {
+            ...current,
+            questions: [...current.questions, ...nextQuestions],
+          }
+        }
+
+        return {
+          ...current,
+          title: payload.draft?.title ?? current.title,
+          durationMinutes: String(
+            payload.draft?.durationMinutes ?? current.durationMinutes,
+          ),
+          questions: nextQuestions,
+        }
+      })
+      setIsAiDraftOpen(false)
+      setIsCreateOpen(true)
+    } catch (error) {
+      setAiDraftError(
+        error instanceof Error ? error.message : "Could not generate exam.",
+      )
+    } finally {
+      setIsGeneratingExamAi(false)
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
@@ -473,10 +569,21 @@ export function ManagerExamScreen({
             {isRefreshing ? " · Refreshing..." : ""}
           </p>
         </div>
-        <Button size="sm" className="gap-2" onClick={openCreate}>
-          <PlusCircle className="w-4 h-4" />
-          New Exam
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={() => openAiDraft("full_exam")}
+          >
+            <Sparkles className="h-4 w-4" />
+            AI Draft
+          </Button>
+          <Button size="sm" className="gap-2" onClick={openCreate}>
+            <PlusCircle className="w-4 h-4" />
+            New Exam
+          </Button>
+        </div>
       </div>
 
       {errorMessage && (
@@ -590,6 +697,80 @@ export function ManagerExamScreen({
       )}
 
       <Dialog
+        open={isAiDraftOpen}
+        onOpenChange={(open) => {
+          setIsAiDraftOpen(open)
+          if (!open && !isGeneratingExamAi) {
+            setAiDraftPrompt("")
+            setAiDraftError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <form onSubmit={generateExamDraft} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>
+                {aiMode === "full_exam"
+                  ? "Draft exam with AI"
+                  : "Add AI questions"}
+              </DialogTitle>
+              <DialogDescription>
+                {aiMode === "full_exam"
+                  ? "Describe the exam topic, difficulty, question mix, and goals. The draft opens in the normal exam form."
+                  : "Describe the extra questions you want. They will be added to the current exam form."}
+              </DialogDescription>
+            </DialogHeader>
+            {aiDraftError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{aiDraftError}</AlertDescription>
+              </Alert>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="ai-exam-prompt">Request</Label>
+              <Textarea
+                id="ai-exam-prompt"
+                value={aiDraftPrompt}
+                onChange={(event) => setAiDraftPrompt(event.target.value)}
+                rows={5}
+                disabled={isGeneratingExamAi}
+                placeholder={
+                  aiMode === "full_exam"
+                    ? "Create a 60-minute midterm on JavaScript fundamentals with 6 MCQs and 2 short-answer questions."
+                    : "Add 3 harder MCQs about closures and async functions."
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Review AI-generated questions and answers before publishing.
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAiDraftOpen(false)}
+                disabled={isGeneratingExamAi}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isGeneratingExamAi}>
+                {isGeneratingExamAi ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Generate
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={isCreateOpen}
         onOpenChange={(open) => {
           setIsCreateOpen(open)
@@ -684,6 +865,16 @@ export function ManagerExamScreen({
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">Questions</p>
                 <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openAiDraft("questions")}
+                    disabled={isMutating}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    AI Questions
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -1490,6 +1681,39 @@ export function ManagerExamScreen({
         }
       }),
     }))
+  }
+}
+
+function toQuestionEditorFromAi(question: AiExamQuestionDraft) {
+  if (question.type === "short") {
+    return {
+      type: "short" as const,
+      prompt: question.prompt,
+      points: String(question.points || 10),
+      options: [],
+      correctAnswerText:
+        typeof question.correctAnswer === "string"
+          ? question.correctAnswer
+          : "",
+    }
+  }
+
+  const options =
+    question.options.length >= 2
+      ? question.options
+      : ["Option A", "Option B", "Option C"]
+  const correctAnswerNumber =
+    typeof question.correctAnswer === "number" ? question.correctAnswer : 1
+
+  return {
+    type: "mcq" as const,
+    prompt: question.prompt,
+    points: String(question.points || 10),
+    options,
+    correctAnswerText: normalizeCorrectOptionNumber(
+      String(correctAnswerNumber),
+      options.length,
+    ),
   }
 }
 
