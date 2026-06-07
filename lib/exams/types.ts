@@ -30,12 +30,13 @@ export type UpsertExamInput = {
   title: string
   durationMinutes: number
   startAt: string
+  publish?: boolean
   passcode?: string
   questions: UpsertExamQuestionInput[]
 }
 
 export type StartAttemptInput = {
-  passcode: string
+  passcode?: string
 }
 
 export type SaveAnswerInput = {
@@ -154,15 +155,20 @@ export type ScheduledExamDto = {
   title: string
   durationMinutes: number
   totalPoints: number
+  questionCount: number
   startAt: string | null
   endAt: string | null
   status: ExamStatus
+  requiresPasscode: boolean
+  canStartAttempt: boolean
+  startBlockedReason: string | null
 }
 
 export type StudentExamPageState = "none" | "scheduled" | "active"
 
 export type StudentExamPageDto = {
   state: StudentExamPageState
+  visibleExams: ScheduledExamDto[]
   scheduledExam: ScheduledExamDto | null
   activeExam: StudentActiveExamDto | null
   releasedResults: ReleasedExamResultDto[]

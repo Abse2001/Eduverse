@@ -99,14 +99,18 @@ export function ExamLobby({
           "Questions can include multiple choice and short answers.",
           "Answers are auto-saved through the backend.",
           "Submitting ends the attempt immediately.",
-          "You must enter the teacher's passcode before the exam can start.",
+          requiresPasscode
+            ? "You must enter the teacher's passcode before the exam can start."
+            : null,
           "Fullscreen exam mode is required. Leaving fullscreen or switching tabs is recorded for the teacher.",
-        ].map((note) => (
-          <div key={note} className="flex items-start gap-2">
-            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
-            <span>{note}</span>
-          </div>
-        ))}
+        ]
+          .filter((note): note is string => Boolean(note))
+          .map((note) => (
+            <div key={note} className="flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+              <span>{note}</span>
+            </div>
+          ))}
       </div>
 
       {requiresPasscode && status === "live" && (

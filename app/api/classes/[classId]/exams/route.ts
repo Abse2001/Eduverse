@@ -25,6 +25,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const requestUrl = new URL(request.url)
     const detailExamId = requestUrl.searchParams.get("detailExamId")
+    const selectedExamId = requestUrl.searchParams.get("examId")
 
     if (detailExamId) {
       const payload = await loadManagerExamDetail({
@@ -39,6 +40,7 @@ export async function GET(request: Request, context: RouteContext) {
     const payload = await loadClassExamApiData({
       authSupabase: supabase,
       classId,
+      selectedExamId,
       userId: user.id,
     })
     return NextResponse.json(payload)

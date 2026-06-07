@@ -32,6 +32,9 @@ type AppNotification = {
     | "assignment_published"
     | "assignment_submitted"
     | "assignment_graded"
+    | "exam_published"
+    | "exam_submitted"
+    | "exam_results_released"
   title: string
   body: string
   href: string

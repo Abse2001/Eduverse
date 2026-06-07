@@ -9,9 +9,9 @@ import {
   FileText,
   Loader2,
   PlusCircle,
+  Save,
   Send,
   Trash2,
-  Upload,
 } from "lucide-react"
 import {
   type Dispatch,
@@ -235,6 +235,10 @@ export default function AssignmentsPage({
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    await createAssignmentWithStatus("draft")
+  }
+
+  async function createAssignmentWithStatus(status: "draft" | "published") {
     const maxScore = Number.parseFloat(createForm.maxScore)
 
     if (!createForm.allowTextSubmission && !createForm.allowFileSubmission) {
@@ -254,7 +258,7 @@ export default function AssignmentsPage({
         description: createForm.description,
         dueAt: createForm.dueAt,
         maxScore,
-        status: createForm.status,
+        status,
         allowLateSubmissions: createForm.allowLateSubmissions,
         allowTextSubmission: createForm.allowTextSubmission,
         allowFileSubmission: createForm.allowFileSubmission,
@@ -615,16 +619,6 @@ export default function AssignmentsPage({
                   }))
                 }
               />
-              <CheckRow
-                label="Publish now"
-                checked={createForm.status === "published"}
-                onCheckedChange={(checked) =>
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    status: checked ? "published" : "draft",
-                  }))
-                }
-              />
             </div>
 
             <DialogFooter>
@@ -636,7 +630,7 @@ export default function AssignmentsPage({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isMutating}>
+              <Button type="submit" variant="outline" disabled={isMutating}>
                 {isMutating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -644,8 +638,25 @@ export default function AssignmentsPage({
                   </>
                 ) : (
                   <>
-                    <Upload className="w-4 h-4" />
-                    Save
+                    <Save className="w-4 h-4" />
+                    Save draft
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                disabled={isMutating}
+                onClick={() => void createAssignmentWithStatus("published")}
+              >
+                {isMutating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Publishing
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Publish
                   </>
                 )}
               </Button>

@@ -16,9 +16,11 @@ export function useClassExam(
   classId: string,
   options?: {
     enabled?: boolean
+    selectedExamId?: string | null
   },
 ) {
   const enabled = options?.enabled ?? true
+  const selectedExamId = options?.selectedExamId ?? null
   const [data, setData] = useState<ClassExamApiDto | null>(null)
   const [isLoading, setIsLoading] = useState(enabled)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -51,8 +53,11 @@ export function useClassExam(
       setErrorMessage(null)
 
       try {
+        const searchParams = new URLSearchParams()
+        if (selectedExamId) searchParams.set("examId", selectedExamId)
+        const query = searchParams.size > 0 ? `?${searchParams}` : ""
         const response = await requestExamApi({
-          url: `/api/classes/${encodeURIComponent(classId)}/exams`,
+          url: `/api/classes/${encodeURIComponent(classId)}/exams${query}`,
           fallbackMessage: "Could not load exams.",
           retryCount: 1,
         })
@@ -80,7 +85,7 @@ export function useClassExam(
         setIsRefreshing(false)
       }
     },
-    [classId, enabled],
+    [classId, enabled, selectedExamId],
   )
 
   useEffect(() => {

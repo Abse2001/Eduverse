@@ -8,6 +8,8 @@ import {
   Loader2,
   PlusCircle,
   RotateCcw,
+  Save,
+  Send,
   ShieldAlert,
   Trash2,
   Users,
@@ -83,6 +85,26 @@ type ExamFormState = {
 }
 
 const DEFAULT_MCQ_OPTIONS = ["Option A", "Option B"] as const
+const EXAM_TITLE_REQUIRED_MESSAGE = "Exam title is required."
+const EXAM_FORM_FIELD_ATTRIBUTE = "data-exam-form-field"
+
+class ExamFormValidationError extends Error {
+  fieldKey: string
+
+  constructor(message: string, fieldKey: string) {
+    super(message)
+    this.name = "ExamFormValidationError"
+    this.fieldKey = fieldKey
+  }
+}
+
+function getExamFormField(fieldKey: string) {
+  if (typeof document === "undefined") return null
+
+  return document.querySelector<HTMLElement>(
+    `[${EXAM_FORM_FIELD_ATTRIBUTE}="${fieldKey}"]`,
+  )
+}
 
 function createQuestionEditorState(
   type: QuestionEditorState["type"] = "mcq",
@@ -129,6 +151,7 @@ export function ManagerExamScreen({
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [form, setForm] = useState<ExamFormState>(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)
+  const [invalidFormField, setInvalidFormField] = useState<string | null>(null)
   const [editingExam, setEditingExam] = useState<ManagerExamSummaryDto | null>(
     null,
   )
@@ -230,6 +253,7 @@ export function ManagerExamScreen({
   function resetForm() {
     setForm(EMPTY_FORM)
     setFormError(null)
+    setInvalidFormField(null)
     setEditingExam(null)
     setEditingPasscodeProtected(false)
   }
@@ -242,6 +266,7 @@ export function ManagerExamScreen({
   async function openEdit(examId: string) {
     try {
       setFormError(null)
+      setInvalidFormField(null)
       const nextDetail = await getExamDetail(examId)
       hydrateFormFromDetail(nextDetail)
     } catch (error) {
@@ -280,9 +305,13 @@ export function ManagerExamScreen({
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    await saveExam({ publish: false })
+  }
 
+  async function saveExam(options: { publish: boolean }) {
     try {
       setFormError(null)
+      setInvalidFormField(null)
       setSuccessMessage(null)
       const payload = toExamPayload(form, {
         editingPasscodeProtected,
@@ -290,14 +319,36 @@ export function ManagerExamScreen({
       if (editingExam) {
         await updateExam(editingExam.id, payload)
       } else {
-        await createExam(payload)
+        await createExam({
+          ...payload,
+          publish: options.publish,
+        })
       }
       setIsCreateOpen(false)
       resetForm()
     } catch (error) {
-      setFormError(
-        error instanceof Error ? error.message : "Could not save exam.",
-      )
+      const message =
+        error instanceof Error ? error.message : "Could not save exam."
+      if (error instanceof ExamFormValidationError) {
+        setFormError(null)
+        setInvalidFormField(error.fieldKey)
+        requestAnimationFrame(() => {
+          const field = getExamFormField(error.fieldKey)
+          field?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          })
+          field?.focus()
+        })
+      } else {
+        setFormError(message)
+      }
+    }
+  }
+
+  function clearInvalidFormField(fieldKey: string) {
+    if (invalidFormField === fieldKey) {
+      setInvalidFormField(null)
     }
   }
 
@@ -428,9 +479,9 @@ export function ManagerExamScreen({
         </Button>
       </div>
 
-      {(errorMessage || formError) && (
+      {errorMessage && (
         <Alert variant="destructive">
-          <AlertDescription>{errorMessage ?? formError}</AlertDescription>
+          <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
 
@@ -546,7 +597,7 @@ export function ManagerExamScreen({
         }}
       >
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-          <form onSubmit={submitForm} className="space-y-4">
+          <form onSubmit={submitForm} className="space-y-4" noValidate>
             <DialogHeader>
               <DialogTitle>
                 {editingExam ? "Edit exam" : "Create exam"}
@@ -566,27 +617,33 @@ export function ManagerExamScreen({
               <Field
                 label="Title"
                 value={form.title}
-                onChange={(value) =>
+                onChange={(value) => {
+                  clearInvalidFormField("title")
                   setForm((current) => ({ ...current, title: value }))
-                }
-                required
+                }}
+                fieldKey="title"
+                invalid={invalidFormField === "title"}
               />
               <Field
                 label="Duration (minutes)"
                 type="number"
                 value={form.durationMinutes}
-                onChange={(value) =>
+                onChange={(value) => {
+                  clearInvalidFormField("durationMinutes")
                   setForm((current) => ({ ...current, durationMinutes: value }))
-                }
+                }}
                 min="1"
-                required
+                fieldKey="durationMinutes"
+                invalid={invalidFormField === "durationMinutes"}
               />
               <div className="space-y-2 sm:col-span-2">
                 <StartTimeFields
                   value={form.startAt}
-                  onChange={(value) =>
+                  onChange={(value) => {
+                    clearInvalidFormField("startAt")
                     setForm((current) => ({ ...current, startAt: value }))
-                  }
+                  }}
+                  invalid={invalidFormField === "startAt"}
                 />
                 <p className="text-xs text-muted-foreground">
                   The exam end time is calculated automatically from the start
@@ -596,16 +653,18 @@ export function ManagerExamScreen({
               <Field
                 label="Exam Passcode"
                 value={form.passcode}
-                onChange={(value) =>
+                onChange={(value) => {
+                  clearInvalidFormField("passcode")
                   setForm((current) => ({ ...current, passcode: value }))
-                }
+                }}
                 minLength={4}
+                fieldKey="passcode"
+                invalid={invalidFormField === "passcode"}
                 placeholder={
                   editingPasscodeProtected
                     ? "Passcode already set (leave empty to keep current)"
-                    : "At least 4 characters"
+                    : "Optional, at least 4 characters"
                 }
-                required={!editingPasscodeProtected}
               />
               {editingPasscodeProtected && (
                 <p className="text-xs text-muted-foreground sm:col-span-2">
@@ -615,7 +674,8 @@ export function ManagerExamScreen({
               )}
               {!editingPasscodeProtected && (
                 <p className="text-xs text-muted-foreground sm:col-span-2">
-                  Every exam requires a passcode. Use at least 4 characters.
+                  Passcodes are optional. If you add one, use at least 4
+                  characters.
                 </p>
               )}
             </div>
@@ -675,24 +735,32 @@ export function ManagerExamScreen({
                         <Label>Prompt</Label>
                         <Textarea
                           value={question.prompt}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            clearInvalidFormField(`question-${index}-prompt`)
                             updateQuestion(index, {
                               prompt: event.target.value,
                             })
+                          }}
+                          aria-invalid={
+                            invalidFormField === `question-${index}-prompt`
                           }
+                          data-exam-form-field={`question-${index}-prompt`}
                           rows={3}
-                          required
                         />
                       </div>
                       <Field
                         label="Points"
                         type="number"
                         value={question.points}
-                        onChange={(value) =>
+                        onChange={(value) => {
+                          clearInvalidFormField(`question-${index}-points`)
                           updateQuestion(index, { points: value })
-                        }
+                        }}
                         min="1"
-                        required
+                        fieldKey={`question-${index}-points`}
+                        invalid={
+                          invalidFormField === `question-${index}-points`
+                        }
                       />
                       <div className="space-y-2">
                         <Label>Type</Label>
@@ -725,15 +793,22 @@ export function ManagerExamScreen({
                               >
                                 <Input
                                   value={option}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    clearInvalidFormField(
+                                      `question-${index}-option-${optionIndex}`,
+                                    )
                                     updateQuestionOption(
                                       index,
                                       optionIndex,
                                       event.target.value,
                                     )
-                                  }
+                                  }}
                                   placeholder={`Option ${String.fromCharCode(65 + optionIndex)}`}
-                                  required
+                                  aria-invalid={
+                                    invalidFormField ===
+                                    `question-${index}-option-${optionIndex}`
+                                  }
+                                  data-exam-form-field={`question-${index}-option-${optionIndex}`}
                                 />
                                 <Button
                                   type="button"
@@ -762,14 +837,18 @@ export function ManagerExamScreen({
                           label="Correct option number"
                           type="number"
                           value={question.correctAnswerText}
-                          onChange={(value) =>
+                          onChange={(value) => {
+                            clearInvalidFormField(`question-${index}-correct`)
                             updateQuestion(index, {
                               correctAnswerText: value,
                             })
-                          }
+                          }}
                           min="1"
                           step="1"
-                          required
+                          fieldKey={`question-${index}-correct`}
+                          invalid={
+                            invalidFormField === `question-${index}-correct`
+                          }
                         />
                         <p className="text-xs text-muted-foreground sm:col-span-2">
                           Use <strong>1</strong> for the first option,{" "}
@@ -803,18 +882,59 @@ export function ManagerExamScreen({
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isMutating}>
-                {isMutating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving
-                  </>
-                ) : editingExam ? (
-                  "Save changes"
-                ) : (
-                  "Create exam"
-                )}
-              </Button>
+              {editingExam ? (
+                <Button type="submit" disabled={isMutating}>
+                  {isMutating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving
+                    </>
+                  ) : (
+                    "Save changes"
+                  )}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateOpen(false)}
+                    disabled={isMutating}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="outline" disabled={isMutating}>
+                    {isMutating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save draft
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isMutating}
+                    onClick={() => void saveExam({ publish: true })}
+                  >
+                    {isMutating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Publishing
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        Publish
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1384,23 +1504,28 @@ function toExamPayload(
   const passcode = form.passcode.trim()
 
   if (!title) {
-    throw new Error("Exam title is required.")
+    throw new ExamFormValidationError(EXAM_TITLE_REQUIRED_MESSAGE, "title")
   }
 
   if (!form.startAt) {
-    throw new Error("Select a valid exam start date and time.")
+    throw new ExamFormValidationError(
+      "Select a valid exam start date and time.",
+      "startAt",
+    )
   }
 
   if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-    throw new Error("Duration must be greater than zero.")
-  }
-
-  if (!passcode && !options.editingPasscodeProtected) {
-    throw new Error("Exam passcode is required.")
+    throw new ExamFormValidationError(
+      "Duration must be greater than zero.",
+      "durationMinutes",
+    )
   }
 
   if (passcode && passcode.length < 4) {
-    throw new Error("Exam passcode must be at least 4 characters.")
+    throw new ExamFormValidationError(
+      "Exam passcode must be at least 4 characters.",
+      "passcode",
+    )
   }
 
   return {
@@ -1408,7 +1533,7 @@ function toExamPayload(
     durationMinutes,
     startAt: new Date(form.startAt).toISOString(),
     passcode: passcode.length > 0 ? passcode : undefined,
-    questions: form.questions.map((question) => {
+    questions: form.questions.map((question, questionIndex) => {
       const prompt = question.prompt.trim()
       const points = Number.parseInt(question.points, 10)
       const options =
@@ -1422,16 +1547,25 @@ function toExamPayload(
       const modelAnswer = question.correctAnswerText.trim()
 
       if (!prompt) {
-        throw new Error("Each question needs a prompt.")
+        throw new ExamFormValidationError(
+          "Each question needs a prompt.",
+          `question-${questionIndex}-prompt`,
+        )
       }
 
       if (!Number.isFinite(points) || points <= 0) {
-        throw new Error("Each question must be worth at least 1 point.")
+        throw new ExamFormValidationError(
+          "Each question must be worth at least 1 point.",
+          `question-${questionIndex}-points`,
+        )
       }
 
       if (question.type === "mcq") {
         if (options.length === 0) {
-          throw new Error("Multiple choice questions need at least one option.")
+          throw new ExamFormValidationError(
+            "Multiple choice questions need at least one option.",
+            `question-${questionIndex}-option-0`,
+          )
         }
 
         if (
@@ -1439,8 +1573,9 @@ function toExamPayload(
           correctOptionNumber < 1 ||
           correctOptionNumber > options.length
         ) {
-          throw new Error(
+          throw new ExamFormValidationError(
             "Correct option number must be between 1 and the number of options.",
+            `question-${questionIndex}-correct`,
           )
         }
       }
@@ -1608,7 +1743,8 @@ function Field({
   minLength,
   placeholder,
   step,
-  required = false,
+  fieldKey,
+  invalid = false,
 }: {
   label: string
   value: string
@@ -1619,7 +1755,8 @@ function Field({
   minLength?: number
   placeholder?: string
   step?: string
-  required?: boolean
+  fieldKey?: string
+  invalid?: boolean
 }) {
   return (
     <div className="space-y-2">
@@ -1633,7 +1770,8 @@ function Field({
         minLength={minLength}
         placeholder={placeholder}
         step={step}
-        required={required}
+        aria-invalid={invalid}
+        data-exam-form-field={fieldKey}
       />
     </div>
   )
@@ -1642,9 +1780,11 @@ function Field({
 function StartTimeFields({
   value,
   onChange,
+  invalid = false,
 }: {
   value: string
   onChange: (value: string) => void
+  invalid?: boolean
 }) {
   const date = getStartDatePart(value)
   const time = getStartTimeParts(value)
@@ -1660,7 +1800,8 @@ function StartTimeFields({
           onChange={(event) =>
             onChange(combineStartParts(event.target.value, time))
           }
-          required
+          aria-invalid={invalid}
+          data-exam-form-field="startAt"
         />
       </div>
       <div className="space-y-2">
@@ -1677,7 +1818,7 @@ function StartTimeFields({
             )
           }
         >
-          <SelectTrigger id="exam-start-hour">
+          <SelectTrigger id="exam-start-hour" aria-invalid={invalid}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1703,7 +1844,7 @@ function StartTimeFields({
             )
           }
         >
-          <SelectTrigger id="exam-start-minute">
+          <SelectTrigger id="exam-start-minute" aria-invalid={invalid}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1723,7 +1864,7 @@ function StartTimeFields({
             onChange(combineStartParts(date, { ...time, period }))
           }
         >
-          <SelectTrigger id="exam-start-period">
+          <SelectTrigger id="exam-start-period" aria-invalid={invalid}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
