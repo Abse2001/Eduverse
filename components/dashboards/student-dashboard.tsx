@@ -26,12 +26,23 @@ import {
   getAssignmentDerivedStatus,
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
+import type { ClassExamApiDto } from "@/lib/exams/types"
 import { getClassesForUser } from "@/lib/education/classes"
 import { STUDENT_PREVIOUS_ACADEMIC_PERIODS } from "@/lib/mock-data"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
+
+type DashboardDeadline = {
+  id: string
+  classId: string
+  title: string
+  dueAt: string
+  label: "Due" | "Opens" | "Closes"
+  type: "assignment" | "exam"
+  href: string
+}
 
 export function StudentDashboard() {
   const { authUser, classLiveSessions, currentUser, organizationClasses } =
@@ -42,7 +53,11 @@ export function StudentDashboard() {
   const [assignmentsByClass, setAssignmentsByClass] = useState<
     Record<string, ClassAssignment[]>
   >({})
+  const [examsByClass, setExamsByClass] = useState<
+    Record<string, ClassExamApiDto["student"] | null>
+  >({})
   const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
+  const [examsError, setExamsError] = useState<string | null>(null)
   const myClasses = classRows.map(toLegacyClass)
   const allAssignments = classIds.flatMap(
     (classId) => assignmentsByClass[classId] ?? [],
@@ -70,7 +85,25 @@ export function StudentDashboard() {
       (assignment) => getAssignmentDerivedStatus(assignment) === "pending",
     )
     .sort((left, right) => Date.parse(left.dueAt) - Date.parse(right.dueAt))
-    .slice(0, 4)
+  const upcomingExamDeadlines = classIds.flatMap((classId) =>
+    getStudentExamDeadlines(examsByClass[classId], classId),
+  )
+  const pendingTaskCount =
+    pendingAssignments.length + upcomingExamDeadlines.length
+  const upcomingDeadlines: DashboardDeadline[] = [
+    ...upcomingAssignments.map(
+      (assignment): DashboardDeadline => ({
+        id: assignment.id,
+        classId: assignment.classId,
+        title: assignment.title,
+        dueAt: assignment.dueAt,
+        label: "Due",
+        type: "assignment",
+        href: `/classes/${assignment.classId}/assignments`,
+      }),
+    ),
+    ...upcomingExamDeadlines,
+  ].sort((left, right) => Date.parse(left.dueAt) - Date.parse(right.dueAt))
   const overallProgress = getStudentAssignmentProgress(allAssignments)
   const currentUserId = authUser?.id ?? currentUser.id ?? null
   const classById = new Map(myClasses.map((cls) => [cls.id, cls]))
@@ -83,36 +116,53 @@ export function StudentDashboard() {
 
     if (classIds.length === 0) {
       setAssignmentsByClass({})
+      setExamsByClass({})
       setAssignmentsError(null)
+      setExamsError(null)
       return
     }
 
     Promise.all(
       classIds.map(async (classId) => {
-        const assignments = await loadClassAssignments({
-          classId,
-          currentUserId,
-          canManage: false,
-        })
+        const [assignments, examPage] = await Promise.all([
+          loadClassAssignments({
+            classId,
+            currentUserId,
+            canManage: false,
+          }),
+          loadClassExamDashboardData(classId),
+        ])
 
-        return [classId, assignments] as const
+        return [classId, assignments, examPage] as const
       }),
     )
       .then((entries) => {
         if (cancelled) return
 
-        setAssignmentsByClass(Object.fromEntries(entries))
+        setAssignmentsByClass(
+          Object.fromEntries(
+            entries.map(([classId, assignments]) => [classId, assignments]),
+          ),
+        )
+        setExamsByClass(
+          Object.fromEntries(
+            entries.map(([classId, , examPage]) => [classId, examPage]),
+          ),
+        )
         setAssignmentsError(null)
+        setExamsError(null)
       })
       .catch((error) => {
         if (cancelled) return
 
         setAssignmentsByClass({})
+        setExamsByClass({})
         setAssignmentsError(
           error instanceof Error
             ? error.message
-            : "Could not load assignment metrics.",
+            : "Could not load student dashboard metrics.",
         )
+        setExamsError(null)
       })
 
     return () => {
@@ -148,7 +198,7 @@ export function StudentDashboard() {
         />
         <StatCard
           label="Pending Tasks"
-          value={String(pendingAssignments.length)}
+          value={String(pendingTaskCount)}
           icon={Clock}
           color="amber"
         />
@@ -183,6 +233,9 @@ export function StudentDashboard() {
           <h2 className="font-semibold text-foreground">My Classes</h2>
           {assignmentsError ? (
             <p className="text-xs text-destructive">{assignmentsError}</p>
+          ) : null}
+          {examsError ? (
+            <p className="text-xs text-destructive">{examsError}</p>
           ) : null}
 
           {myClasses.map((cls) => {
@@ -272,7 +325,7 @@ export function StudentDashboard() {
 
         <div className="space-y-3">
           <h2 className="font-semibold text-foreground">Upcoming Deadlines</h2>
-          {upcomingAssignments.length === 0 ? (
+          {upcomingDeadlines.length === 0 ? (
             <Card>
               <CardContent className="p-6 text-center">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
@@ -280,15 +333,15 @@ export function StudentDashboard() {
               </CardContent>
             </Card>
           ) : (
-            upcomingAssignments.map((assignment) => {
-              const dueDate = new Date(assignment.dueAt)
+            upcomingDeadlines.map((deadline) => {
+              const dueDate = new Date(deadline.dueAt)
               const overdue = isPast(dueDate)
-              const classInfo = classById.get(assignment.classId)
+              const classInfo = classById.get(deadline.classId)
 
               return (
                 <Link
-                  key={assignment.id}
-                  href={`/classes/${assignment.classId}/assignments`}
+                  key={`${deadline.type}:${deadline.id}`}
+                  href={deadline.href}
                 >
                   <Card className="hover:shadow-md transition-shadow cursor-pointer">
                     <CardContent className="p-3 flex items-start gap-3">
@@ -300,7 +353,7 @@ export function StudentDashboard() {
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">
-                          {assignment.title}
+                          {deadline.title}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {classInfo?.code ?? "Class"}
@@ -313,14 +366,14 @@ export function StudentDashboard() {
                               : "text-muted-foreground",
                           )}
                         >
-                          Due {format(dueDate, "MMM d, h:mm a")}
+                          {deadline.label} {format(dueDate, "MMM d, h:mm a")}
                         </p>
                       </div>
                       <Badge
                         variant="secondary"
                         className="text-[10px] shrink-0"
                       >
-                        assignment
+                        {deadline.type}
                       </Badge>
                     </CardContent>
                   </Card>
@@ -413,4 +466,132 @@ function getStudentAssignmentProgress(assignments: ClassAssignment[]) {
   ).length
 
   return Math.round((completed / assignments.length) * 100)
+}
+
+async function loadClassExamDashboardData(classId: string) {
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(classId)}/exams`,
+    { cache: "no-store" },
+  )
+  const payload = (await response.json().catch(() => null)) as
+    | (ClassExamApiDto & { error?: string })
+    | { error?: string }
+    | null
+
+  if (!response.ok || !payload || ("error" in payload && payload.error)) {
+    if (
+      response.status === 403 &&
+      payload?.error?.toLowerCase().includes("exam feature is disabled")
+    ) {
+      return null
+    }
+
+    throw new Error(payload?.error ?? "Could not load exams.")
+  }
+
+  return (payload as ClassExamApiDto).student
+}
+
+function getStudentExamDeadlines(
+  page: ClassExamApiDto["student"] | null | undefined,
+  classId: string,
+): DashboardDeadline[] {
+  if (!page) return []
+
+  const activeAttemptExamId = page.activeExam?.attempt
+    ? page.activeExam.id
+    : null
+  const visibleExamDeadlines = page.visibleExams.flatMap(
+    (exam): DashboardDeadline[] => {
+      if (exam.id === activeAttemptExamId) return []
+
+      const dueAt =
+        exam.status === "live"
+          ? (exam.endAt ?? exam.startAt)
+          : (exam.startAt ?? exam.endAt)
+      if (!isFutureDate(dueAt)) return []
+
+      return [
+        {
+          id: exam.id,
+          classId,
+          title: exam.title,
+          dueAt,
+          label: exam.status === "live" ? "Closes" : "Opens",
+          type: "exam",
+          href: `/classes/${classId}/exam`,
+        },
+      ]
+    },
+  )
+
+  const activeAttempt = page.activeExam?.attempt ?? null
+  if (page.activeExam && activeAttempt) {
+    const activeExam = page.activeExam
+    const dueAt = activeAttempt.deadlineAt
+    if (!isFutureDate(dueAt)) return visibleExamDeadlines
+
+    return [
+      ...visibleExamDeadlines,
+      {
+        id: activeExam.id,
+        classId: activeExam.classId,
+        title: activeExam.title,
+        dueAt,
+        label: "Due",
+        type: "exam",
+        href: `/classes/${activeExam.classId}/exam`,
+      },
+    ]
+  }
+
+  if (visibleExamDeadlines.length > 0) {
+    return visibleExamDeadlines
+  }
+
+  if (page.state === "scheduled" && page.scheduledExam) {
+    const dueAt = page.scheduledExam.startAt ?? page.scheduledExam.endAt
+    if (!isFutureDate(dueAt)) return []
+
+    return [
+      {
+        id: page.scheduledExam.id,
+        classId,
+        title: page.scheduledExam.title,
+        dueAt,
+        label: "Opens",
+        type: "exam",
+        href: `/classes/${classId}/exam`,
+      },
+    ]
+  }
+
+  if (page.state === "active" && page.activeExam) {
+    const activeExam = page.activeExam
+    if (!activeExam.attempt && !activeExam.canStartAttempt) return []
+
+    const dueAt =
+      activeExam.attempt?.deadlineAt ?? activeExam.endAt ?? activeExam.startAt
+    if (!isFutureDate(dueAt)) return []
+
+    return [
+      {
+        id: activeExam.id,
+        classId: activeExam.classId,
+        title: activeExam.title,
+        dueAt,
+        label: activeExam.attempt ? "Due" : "Closes",
+        type: "exam",
+        href: `/classes/${activeExam.classId}/exam`,
+      },
+    ]
+  }
+
+  return []
+}
+
+function isFutureDate(value: string | null | undefined): value is string {
+  if (!value) return false
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) && timestamp > Date.now()
 }

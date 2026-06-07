@@ -7,6 +7,9 @@ export type NotificationType =
   | "assignment_published"
   | "assignment_submitted"
   | "assignment_graded"
+  | "exam_published"
+  | "exam_submitted"
+  | "exam_results_released"
 
 type NotificationTarget =
   | {
@@ -85,7 +88,7 @@ export function notificationHref({
   itemId,
 }: {
   classId: string
-  section: "chat" | "session" | "materials" | "assignments"
+  section: "chat" | "session" | "materials" | "assignments" | "exam"
   itemId?: string
 }) {
   const base = `/classes/${encodeURIComponent(classId)}/${section}`

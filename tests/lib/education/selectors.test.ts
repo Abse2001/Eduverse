@@ -115,9 +115,13 @@ describe("resolveStudentExamPageState", () => {
           title: "Final",
           durationMinutes: 90,
           totalPoints: 120,
+          questionCount: 12,
           startAt: "2026-05-05T10:00:00Z",
           endAt: "2026-05-05T11:30:00Z",
           status: "upcoming",
+          requiresPasscode: false,
+          canStartAttempt: false,
+          startBlockedReason: null,
         },
       }),
     ).toEqual("active")

@@ -136,20 +136,13 @@ describe("resolveExamPasscodeHash", () => {
     expect(isExamPasscodeValid(nextPasscodeHash, "new-passcode")).toEqual(true)
   })
 
-  test("reports a missing stored passcode only when the exam truly has none", () => {
-    try {
+  test("returns null when an exam has no passcode configured", () => {
+    expect(
       resolveExamPasscodeHash({
         existingPasscodeHash: null,
         nextPasscode: "",
-      })
-      throw new Error("Expected resolveExamPasscodeHash to throw.")
-    } catch (error) {
-      expect(
-        error instanceof Error
-          ? error.message
-          : "Expected resolveExamPasscodeHash to throw.",
-      ).toEqual("This exam is missing its required passcode.")
-    }
+      }),
+    ).toEqual(null)
   })
 })
 

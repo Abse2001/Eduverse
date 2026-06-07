@@ -1,6 +1,7 @@
 "use client"
 
 import { use } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   ClassFeatureDisabledFallback,
   ClassRouteFallback,
@@ -17,6 +18,8 @@ export default function ExamPage({
   params: Promise<{ classId: string }>
 }) {
   const { classId } = use(params)
+  const searchParams = useSearchParams()
+  const selectedExamId = searchParams.get("examId")
   const { currentUser, isAuthLoading, isAuthenticated } = useApp()
 
   const { cls, classRow, isLoading, errorMessage, isFeatureDisabled } =
@@ -24,6 +27,7 @@ export default function ExamPage({
 
   const examApi = useClassExam(classId, {
     enabled: !isAuthLoading && isAuthenticated,
+    selectedExamId,
   })
   const {
     data: exam,
@@ -67,6 +71,7 @@ export default function ExamPage({
     <ExamScreen
       cls={cls}
       page={exam?.student ?? null}
+      selectedExamId={selectedExamId}
       isLoading={examLoading}
       isMutating={isSubmitting}
       errorMessage={examErrorMessage ?? errorMessage}

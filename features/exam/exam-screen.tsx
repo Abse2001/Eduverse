@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
+import Link from "next/link"
 import {
   AlertCircle,
   ChevronLeft,
@@ -10,7 +11,9 @@ import {
   Send,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import type { JsonValue, StudentExamPageDto } from "@/lib/exams/types"
 import { resolveStudentExamPageState } from "@/lib/education/selectors"
@@ -26,6 +29,12 @@ import {
   useExamSession,
 } from "./use-exam-session"
 
+const EXAM_STATUS_BADGE_CLASS = {
+  live: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  upcoming:
+    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+} as const
+
 type ClassInfo = {
   name: string
   code: string
@@ -34,6 +43,7 @@ type ClassInfo = {
 export function ExamScreen({
   cls,
   page,
+  selectedExamId,
   isLoading,
   isMutating,
   errorMessage,
@@ -44,6 +54,7 @@ export function ExamScreen({
 }: {
   cls: ClassInfo
   page: StudentExamPageDto | null
+  selectedExamId?: string | null
   isLoading: boolean
   isMutating: boolean
   errorMessage: string | null
@@ -197,28 +208,106 @@ export function ExamScreen({
     )
   }
 
+  if (
+    !selectedExamId &&
+    !activeExam?.attempt &&
+    page &&
+    page.visibleExams.length > 1
+  ) {
+    return (
+      <div className="p-6 space-y-4 max-w-4xl mx-auto">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Exams</h1>
+          <p className="text-sm text-muted-foreground">
+            {cls.name} &middot; {cls.code}
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {page.visibleExams.map((exam) => {
+            const actionLabel =
+              exam.status === "live"
+                ? exam.endAt
+                  ? `Closes ${format(new Date(exam.endAt), "MMM d, h:mm a")}`
+                  : "Available"
+                : exam.startAt
+                  ? `Opens ${format(new Date(exam.startAt), "MMM d, h:mm a")}`
+                  : "Scheduled"
+
+            return (
+              <Link
+                key={exam.id}
+                href={`?examId=${encodeURIComponent(exam.id)}`}
+                className="block"
+              >
+                <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardContent className="p-4 flex items-center justify-between gap-4">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-foreground truncate">
+                          {exam.title}
+                        </p>
+                        <Badge
+                          variant="secondary"
+                          className={
+                            exam.status === "live"
+                              ? EXAM_STATUS_BADGE_CLASS.live
+                              : EXAM_STATUS_BADGE_CLASS.upcoming
+                          }
+                        >
+                          {exam.status === "live" ? "Live" : "Upcoming"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {exam.durationMinutes} min &middot; {exam.totalPoints}{" "}
+                        pts &middot; {actionLabel}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   if (state === "scheduled" && page?.scheduledExam) {
     return (
-      <ExamLobby
-        title={page.scheduledExam.title}
-        className={cls.name}
-        classCode={cls.code}
-        status={page.scheduledExam.status}
-        questionCount={null}
-        durationMinutes={page.scheduledExam.durationMinutes}
-        totalPoints={page.scheduledExam.totalPoints}
-        requiresPasscode
-        startBlockedReason={null}
-        passcode=""
-        onPasscodeChange={() => {}}
-        onStart={() => {}}
-        disabled
-        actionLabel={
-          page.scheduledExam.startAt
-            ? `Opens ${format(new Date(page.scheduledExam.startAt), "MMM d, h:mm a")}`
-            : "Scheduled"
-        }
-      />
+      <div className="space-y-3">
+        {selectedExamId && page.visibleExams.length > 1 ? (
+          <div className="px-6 pt-6 max-w-lg mx-auto">
+            <Link
+              href="?"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              All exams
+            </Link>
+          </div>
+        ) : null}
+        <ExamLobby
+          title={page.scheduledExam.title}
+          className={cls.name}
+          classCode={cls.code}
+          status={page.scheduledExam.status}
+          questionCount={null}
+          durationMinutes={page.scheduledExam.durationMinutes}
+          totalPoints={page.scheduledExam.totalPoints}
+          requiresPasscode
+          startBlockedReason={null}
+          passcode=""
+          onPasscodeChange={() => {}}
+          onStart={() => {}}
+          disabled
+          actionLabel={
+            page.scheduledExam.startAt
+              ? `Opens ${format(new Date(page.scheduledExam.startAt), "MMM d, h:mm a")}`
+              : "Scheduled"
+          }
+        />
+      </div>
     )
   }
 
@@ -231,6 +320,16 @@ export function ExamScreen({
   if (!activeExam.attempt) {
     return (
       <div className="space-y-4">
+        {selectedExamId && (page?.visibleExams.length ?? 0) > 1 ? (
+          <div className="px-6 pt-6 max-w-lg mx-auto">
+            <Link
+              href="?"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              All exams
+            </Link>
+          </div>
+        ) : null}
         {(errorMessage || actionError) && (
           <div className="p-6 pb-0 max-w-lg mx-auto">
             <Alert variant="destructive">

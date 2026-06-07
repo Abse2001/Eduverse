@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { writeExamAuditLog } from "@/lib/exams/audit"
 import {
   canTeacherGradeQuestion,
@@ -252,12 +253,13 @@ const examInputSchema = z.object({
   title: z.string().trim().min(1),
   durationMinutes: z.number().int().positive(),
   startAt: z.string().datetime(),
+  publish: z.boolean().optional(),
   passcode: z.string().trim().optional(),
   questions: z.array(examQuestionInputSchema).min(1),
 })
 
 const startAttemptInputSchema = z.object({
-  passcode: z.string().trim().min(1, EXAM_PASSCODE_REQUIRED_MESSAGE),
+  passcode: z.string().trim().optional(),
 })
 
 const saveAnswerInputSchema = z.object({
@@ -314,9 +316,26 @@ export function parseIntegrityEventInput(body: unknown) {
 export async function loadClassExamApiData(input: {
   authSupabase: SupabaseClient
   classId: string
+  selectedExamId?: string | null
   userId: string
 }) {
   const context = await loadClassContext(input)
+
+  if (context.selectedRole === "student" && context.isStudentMember) {
+    return {
+      canManage: false,
+      manager: null,
+      student: await loadStudentExamPage({
+        authSupabase: input.authSupabase,
+        classId: context.classId,
+        organizationId: context.organizationId,
+        selectedExamId: input.selectedExamId,
+        userId: input.userId,
+        selectedRole: context.selectedRole,
+        isStudentMember: context.isStudentMember,
+      }),
+    } satisfies ClassExamApiDto
+  }
 
   if (context.canManage) {
     return {
@@ -335,6 +354,7 @@ export async function loadClassExamApiData(input: {
       authSupabase: input.authSupabase,
       classId: context.classId,
       organizationId: context.organizationId,
+      selectedExamId: input.selectedExamId,
       userId: input.userId,
       selectedRole: context.selectedRole,
       isStudentMember: context.isStudentMember,
@@ -372,6 +392,12 @@ export async function createExam(input: {
     input.body.startAt,
     input.body.durationMinutes,
   )
+  const publishedAt = input.body.publish ? new Date().toISOString() : null
+  const status = normalizeExamStatus({
+    published_at: publishedAt,
+    start_at: examWindow.startAt,
+    end_at: examWindow.endAt,
+  })
   const examId = await runSchemaCompatible(
     "exams",
     async () => {
@@ -386,6 +412,8 @@ export async function createExam(input: {
           start_at: examWindow.startAt,
           end_at: examWindow.endAt,
           created_by_user_id: input.userId,
+          published_at: publishedAt,
+          status,
           passcode_hash: passcodeHash,
         })
         .select("id")
@@ -409,6 +437,7 @@ export async function createExam(input: {
           start_at: examWindow.startAt,
           end_at: examWindow.endAt,
           created_by_user_id: input.userId,
+          status,
         })
         .select("id")
         .single()
@@ -450,8 +479,23 @@ export async function createExam(input: {
       classId: context.classId,
       title: input.body.title,
       questionCount: input.body.questions.length,
+      publishedAt,
     },
   })
+
+  if (publishedAt) {
+    await notifyExamPublished({
+      supabase: input.authSupabase,
+      organizationId: context.organizationId,
+      actorUserId: input.userId,
+      classId: context.classId,
+      examId,
+      title: input.body.title,
+      startAt: examWindow.startAt,
+      endAt: examWindow.endAt,
+      durationMinutes: input.body.durationMinutes,
+    })
+  }
 
   return loadManagerExamDetail({
     authSupabase: input.authSupabase,
@@ -619,6 +663,18 @@ export async function publishExam(input: {
     payload: {
       publishedAt: exam.published_at ?? now,
     },
+  })
+
+  await notifyExamPublished({
+    supabase: input.authSupabase,
+    organizationId: context.organizationId,
+    actorUserId: input.userId,
+    classId: context.classId,
+    examId: input.examId,
+    title: exam.title,
+    startAt: exam.start_at,
+    endAt: exam.end_at,
+    durationMinutes: Number(exam.duration_minutes),
   })
 
   return loadManagerExamDetail({
@@ -948,6 +1004,14 @@ export async function submitExamAttempt(input: {
     autoSubmitted: false,
   })
   const exam = await loadExamById(admin, input.examId, input.classId)
+  await notifyExamSubmitted({
+    supabase: input.authSupabase,
+    organizationId: attempt.organization_id,
+    actorUserId: input.userId,
+    classId: input.classId,
+    exam,
+    attempt: nextAttempt,
+  })
   return buildStudentReleasedResultDto({
     admin,
     exam,
@@ -1121,6 +1185,18 @@ export async function gradeExamAttempt(input: {
   })
 
   const exam = await loadExamById(admin, input.examId, input.classId)
+
+  await notifyExamResultsReleased({
+    supabase: input.authSupabase,
+    organizationId: context.organizationId,
+    actorUserId: input.userId,
+    classId: input.classId,
+    exam,
+    attempt: refreshedAttempt,
+    releasedAt:
+      refreshedAttempt.results_released_at ?? new Date().toISOString(),
+  })
+
   return buildManagerExamDetailResponse(admin, exam)
 }
 
@@ -1168,10 +1244,19 @@ export async function releaseExamAttempt(input: {
     },
   })
 
-  return buildManagerExamDetailResponse(
-    admin,
-    await loadExamById(admin, input.examId, input.classId),
-  )
+  const exam = await loadExamById(admin, input.examId, input.classId)
+
+  await notifyExamResultsReleased({
+    supabase: input.authSupabase,
+    organizationId: context.organizationId,
+    actorUserId: input.userId,
+    classId: input.classId,
+    exam,
+    attempt,
+    releasedAt,
+  })
+
+  return buildManagerExamDetailResponse(admin, exam)
 }
 
 export async function applyExamIntegrityAction(input: {
@@ -1383,6 +1468,25 @@ export async function loadReleasedExamResultsForClass(input: {
 }) {
   const context = await loadClassContext(input)
 
+  if (context.selectedRole === "student" && context.isStudentMember) {
+    const student = await loadStudentExamPage({
+      authSupabase: input.authSupabase,
+      classId: context.classId,
+      organizationId: context.organizationId,
+      userId: input.userId,
+      selectedRole: context.selectedRole,
+      isStudentMember: context.isStudentMember,
+    })
+
+    return {
+      exams: [] as ManagerExamSummaryDto[],
+      results:
+        student.releasedResults.length > 0
+          ? student.releasedResults.map(toReleasedExamSummary)
+          : student.history,
+    }
+  }
+
   if (context.canManage) {
     return {
       exams: await loadManagerExamSummaries(context.classId),
@@ -1544,6 +1648,7 @@ async function loadStudentExamPage(input: {
   authSupabase: SupabaseClient
   classId: string
   organizationId: string
+  selectedExamId?: string | null
   userId: string
   selectedRole: AppRole | null
   isStudentMember: boolean
@@ -1553,6 +1658,7 @@ async function loadStudentExamPage(input: {
   if (input.selectedRole !== "student" || !input.isStudentMember) {
     return {
       state: "none",
+      visibleExams: [],
       scheduledExam: null,
       activeExam: null,
       releasedResults: [],
@@ -1576,13 +1682,24 @@ async function loadStudentExamPage(input: {
     : null
 
   if (openAttempt && attemptExpired(openAttempt, openAttemptExam)) {
-    await submitAttemptInternal({
+    const submittedAttempt = await submitAttemptInternal({
       admin,
       attempt: openAttempt,
       userId: input.userId,
       organizationId: input.organizationId,
       autoSubmitted: true,
     })
+    const exam = openAttemptExam ?? examsById.get(openAttempt.exam_id) ?? null
+    if (exam) {
+      await notifyExamSubmitted({
+        supabase: input.authSupabase,
+        organizationId: input.organizationId,
+        actorUserId: input.userId,
+        classId: input.classId,
+        exam,
+        attempt: submittedAttempt,
+      })
+    }
 
     return loadStudentExamPage(input)
   }
@@ -1593,11 +1710,18 @@ async function loadStudentExamPage(input: {
     exams: allExams,
   })
   const history = releasedResults.map(toReleasedExamSummary)
+  const visibleExams = await buildStudentVisibleExams({
+    admin,
+    attempts,
+    exams: publishedExams,
+    userId: input.userId,
+  })
 
   const selection = resolveStudentExamPageSelection({
     allExams,
     publishedExams,
     attempts,
+    selectedExamId: input.selectedExamId,
   })
   const activeAttempt = selection.activeAttempt
   const activeExam = selection.activeExam
@@ -1617,6 +1741,7 @@ async function loadStudentExamPage(input: {
 
     return {
       state: "active",
+      visibleExams,
       scheduledExam: null,
       activeExam: await buildStudentActiveExamDto({
         admin,
@@ -1635,7 +1760,10 @@ async function loadStudentExamPage(input: {
   if (scheduledExam) {
     return {
       state: "scheduled",
-      scheduledExam: toScheduledExam(scheduledExam),
+      visibleExams,
+      scheduledExam:
+        visibleExams.find((exam) => exam.id === scheduledExam.id) ??
+        toScheduledExam(scheduledExam),
       activeExam: null,
       releasedResults,
       history,
@@ -1644,6 +1772,7 @@ async function loadStudentExamPage(input: {
 
   return {
     state: "none",
+    visibleExams,
     scheduledExam: null,
     activeExam: null,
     releasedResults,
@@ -1677,16 +1806,12 @@ async function buildStudentActiveExamDto(input: {
     startAt: input.exam.start_at,
     endAt: input.exam.end_at,
     status: normalizeExamStatus(input.exam),
-    requiresPasscode: true,
+    requiresPasscode: Boolean(input.exam.passcode_hash),
     examModeEnabled: input.examModeEnabled,
-    canStartAttempt: input.attempt
-      ? true
-      : Boolean(input.exam.passcode_hash) && (input.canStartAttempt ?? true),
+    canStartAttempt: input.attempt ? true : (input.canStartAttempt ?? true),
     startBlockedReason: input.attempt
       ? null
-      : input.exam.passcode_hash
-        ? (input.startBlockedReason ?? null)
-        : EXAM_PASSCODE_MISSING_MESSAGE,
+      : (input.startBlockedReason ?? null),
     attempt: input.attempt
       ? toStudentAttemptDto(input.attempt, input.exam)
       : null,
@@ -2990,6 +3115,137 @@ async function loadAvailableRetakeCounts(
   return counts
 }
 
+async function notifyExamPublished(input: {
+  supabase: SupabaseClient
+  organizationId: string
+  actorUserId: string
+  classId: string
+  examId: string
+  title: string
+  startAt: string | null
+  endAt: string | null
+  durationMinutes: number
+}) {
+  await sendNotification({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    target: { type: "class", classId: input.classId },
+    notificationType: "exam_published",
+    title: "New exam published",
+    body: input.title,
+    href: notificationHref({
+      classId: input.classId,
+      section: "exam",
+      itemId: input.examId,
+    }),
+    metadata: {
+      examId: input.examId,
+      startAt: input.startAt,
+      endAt: input.endAt,
+      durationMinutes: input.durationMinutes,
+    },
+    eventKey: `exam_published:${input.examId}`,
+  }).catch(() => null)
+}
+
+async function notifyExamSubmitted(input: {
+  supabase: SupabaseClient
+  organizationId: string
+  actorUserId: string
+  classId: string
+  exam: ExamRow
+  attempt: ExamAttemptRow
+}) {
+  const [{ data: classData }, { data: profileData }] = await Promise.all([
+    input.supabase
+      .from("classes")
+      .select("teacher_user_id")
+      .eq("id", input.classId)
+      .eq("organization_id", input.organizationId)
+      .maybeSingle(),
+    input.supabase
+      .from("profiles")
+      .select("display_name, email")
+      .eq("id", input.actorUserId)
+      .maybeSingle(),
+  ])
+  const teacherUserId = readString(classData?.teacher_user_id)
+  if (!teacherUserId) return
+
+  const studentName =
+    readString(profileData?.display_name) ||
+    readString(profileData?.email)?.split("@")[0] ||
+    "A student"
+
+  await sendNotification({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    target: {
+      type: "person",
+      userId: teacherUserId,
+      role: "teacher",
+      classId: input.classId,
+    },
+    notificationType: "exam_submitted",
+    title: input.attempt.auto_submitted_at
+      ? "Exam auto-submitted"
+      : "Exam submitted",
+    body: `${studentName} submitted ${input.exam.title}.`,
+    href: notificationHref({
+      classId: input.classId,
+      section: "exam",
+      itemId: input.exam.id,
+    }),
+    metadata: {
+      examId: input.exam.id,
+      attemptId: input.attempt.id,
+      studentUserId: input.actorUserId,
+      submittedAt: input.attempt.submitted_at,
+      autoSubmitted: Boolean(input.attempt.auto_submitted_at),
+    },
+    eventKey: `exam_submitted:${input.attempt.id}:${input.attempt.submitted_at}`,
+  }).catch(() => null)
+}
+
+async function notifyExamResultsReleased(input: {
+  supabase: SupabaseClient
+  organizationId: string
+  actorUserId: string
+  classId: string
+  exam: ExamRow
+  attempt: ExamAttemptRow
+  releasedAt: string
+}) {
+  await sendNotification({
+    supabase: input.supabase,
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    target: {
+      type: "person",
+      userId: input.attempt.student_user_id,
+      role: "student",
+      classId: input.classId,
+    },
+    notificationType: "exam_results_released",
+    title: "Exam results released",
+    body: `${input.exam.title} results are available.`,
+    href: notificationHref({
+      classId: input.classId,
+      section: "exam",
+      itemId: input.exam.id,
+    }),
+    metadata: {
+      examId: input.exam.id,
+      attemptId: input.attempt.id,
+      score: input.attempt.total_score,
+      releasedAt: input.releasedAt,
+    },
+    eventKey: `exam_results_released:${input.attempt.id}:${input.releasedAt}`,
+  }).catch(() => null)
+}
+
 function readRequiredString(value: unknown, label: string) {
   if (typeof value === "string" && value.length > 0) return value
   throw new Error(`${label} is missing.`)
@@ -3254,10 +3510,10 @@ async function ensureExamCanStart(exam: ExamRow) {
 
 export function isExamPasscodeValid(
   passcodeHash: string | null,
-  passcode: string,
+  passcode: string | undefined,
 ) {
   if (!passcodeHash) return false
-  const inputPasscodeHash = hashPasscode(passcode)
+  const inputPasscodeHash = hashPasscode(passcode ?? "")
 
   if (!inputPasscodeHash) {
     return false
@@ -3266,14 +3522,15 @@ export function isExamPasscodeValid(
   return safeCompareHex(passcodeHash, inputPasscodeHash)
 }
 
-export function hashExamPasscode(passcode: string | undefined): string {
-  return hashPasscode(requireExamPasscode(passcode))!
+export function hashExamPasscode(passcode: string | undefined): string | null {
+  const normalized = normalizeOptionalExamPasscode(passcode)
+  return normalized ? hashPasscode(normalized) : null
 }
 
 export function resolveExamPasscodeHash(input: {
   existingPasscodeHash: string | null
   nextPasscode: string | undefined | null
-}): string {
+}): string | null {
   const nextPasscode = input.nextPasscode?.trim() ?? ""
 
   if (nextPasscode.length > 0) {
@@ -3284,7 +3541,7 @@ export function resolveExamPasscodeHash(input: {
     return input.existingPasscodeHash
   }
 
-  throw new Error(EXAM_PASSCODE_MISSING_MESSAGE)
+  return null
 }
 
 export function resolvePasscodeCooldown(input: {
@@ -3332,10 +3589,10 @@ async function validateStartAttemptPasscode(input: {
   examId: string
   studentUserId: string
   passcodeHash: string | null
-  passcode: string
+  passcode: string | undefined
 }) {
   if (!input.passcodeHash) {
-    throw new Error(EXAM_PASSCODE_MISSING_MESSAGE)
+    return
   }
 
   const failedAttempts = await loadPasscodeFailureAuditRows({
@@ -3462,6 +3719,15 @@ function compareExamsByStartDesc<
   )
 }
 
+function compareExamsByStartAsc<
+  TExam extends Pick<ExamRow, "start_at" | "created_at">,
+>(left: TExam, right: TExam) {
+  return (
+    Date.parse(left.start_at ?? left.created_at) -
+    Date.parse(right.start_at ?? right.created_at)
+  )
+}
+
 function compareReleasedAttemptsDesc(
   left: ExamAttemptRow,
   right: ExamAttemptRow,
@@ -3539,14 +3805,23 @@ export function resolveStudentExamPageSelection<
   publishedExams: TExam[]
   attempts: TAttempt[]
   now?: number
+  selectedExamId?: string | null
 }) {
   const now = input.now ?? Date.now()
   const examsById = new Map(input.allExams.map((exam) => [exam.id, exam]))
+  const publishedExamsById = new Map(
+    input.publishedExams.map((exam) => [exam.id, exam]),
+  )
   const activeAttempt =
     input.attempts.find((attempt) => attempt.status === "in_progress") ?? null
+  const selectedExam = input.selectedExamId
+    ? (publishedExamsById.get(input.selectedExamId) ?? null)
+    : null
   const activeExam = activeAttempt
     ? (examsById.get(activeAttempt.exam_id) ?? null)
-    : (selectCurrentLiveExam(input.publishedExams, now) ?? null)
+    : selectedExam && normalizeExamStatus(selectedExam, now) === "live"
+      ? selectedExam
+      : (selectCurrentLiveExam(input.publishedExams, now) ?? null)
 
   if (activeExam) {
     return {
@@ -3558,7 +3833,12 @@ export function resolveStudentExamPageSelection<
     }
   }
 
-  const scheduledExam = selectScheduledExam(input.publishedExams, now) ?? null
+  const scheduledExam =
+    selectedExam &&
+    selectedExam.start_at &&
+    Date.parse(selectedExam.start_at) > now
+      ? selectedExam
+      : (selectScheduledExam(input.publishedExams, now) ?? null)
   if (scheduledExam) {
     return {
       state: "scheduled" as const,
@@ -3633,11 +3913,19 @@ function hashPasscode(passcode: string) {
 }
 
 function requireExamPasscode(passcode: string | undefined) {
-  const normalized = passcode?.trim() ?? ""
+  const normalized = normalizeOptionalExamPasscode(passcode)
 
   if (!normalized) {
     throw new Error(EXAM_PASSCODE_REQUIRED_MESSAGE)
   }
+
+  return normalized
+}
+
+function normalizeOptionalExamPasscode(passcode: string | undefined) {
+  const normalized = passcode?.trim() ?? ""
+
+  if (!normalized) return null
 
   if (normalized.length < EXAM_PASSCODE_MIN_LENGTH) {
     throw new Error(
@@ -3672,10 +3960,18 @@ async function syncExamPasscodeHashStorage(input: {
   organizationId: string
   classId: string
   examId: string
-  passcodeHash: string
+  passcodeHash: string | null
 }) {
+  if (!input.passcodeHash) {
+    await removeExamPasscodeHashFallback(input)
+    return
+  }
+
   if (schemaModes.exams === "base") {
-    await upsertExamPasscodeHashFallback(input)
+    await upsertExamPasscodeHashFallback({
+      ...input,
+      passcodeHash: input.passcodeHash,
+    })
     return
   }
 
@@ -3832,15 +4128,69 @@ function sanitizePayload(value: Record<string, unknown>) {
   )
 }
 
-function toScheduledExam(exam: ExamRow) {
+async function buildStudentVisibleExams(input: {
+  admin: SupabaseClient
+  attempts: ExamAttemptRow[]
+  exams: ExamRow[]
+  userId: string
+}) {
+  const visibleExams = input.exams
+    .filter((exam) => normalizeExamStatus(exam) !== "ended")
+    .sort(compareExamsByStartAsc)
+
+  return Promise.all(
+    visibleExams.map(async (exam) => {
+      const status = normalizeExamStatus(exam)
+      const activeAttempt =
+        input.attempts.find(
+          (attempt) =>
+            attempt.exam_id === exam.id && attempt.status === "in_progress",
+        ) ?? null
+      const availableRetakeCount =
+        status === "live" && !activeAttempt
+          ? await loadAvailableRetakeCount(input.admin, exam.id, input.userId)
+          : 0
+      const attemptAvailability =
+        status === "live" && !activeAttempt
+          ? resolveExamAttemptAvailability({
+              attempts: input.attempts.filter(
+                (attempt) => attempt.exam_id === exam.id,
+              ),
+              availableRetakeCount,
+            })
+          : null
+
+      return toScheduledExam(exam, {
+        canStartAttempt: activeAttempt
+          ? true
+          : (attemptAvailability?.canStart ?? status === "live"),
+        startBlockedReason: activeAttempt
+          ? null
+          : (attemptAvailability?.reason ?? null),
+      })
+    }),
+  )
+}
+
+function toScheduledExam(
+  exam: ExamRow,
+  options?: {
+    canStartAttempt?: boolean
+    startBlockedReason?: string | null
+  },
+) {
   return {
     id: exam.id,
     title: exam.title,
     durationMinutes: Number(exam.duration_minutes),
     totalPoints: Number(exam.total_points),
+    questionCount: 0,
     startAt: exam.start_at,
     endAt: exam.end_at,
     status: normalizeExamStatus(exam),
+    requiresPasscode: Boolean(exam.passcode_hash),
+    canStartAttempt: options?.canStartAttempt ?? false,
+    startBlockedReason: options?.startBlockedReason ?? null,
   }
 }
 
