@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Brain,
   ChartColumn,
   ClipboardList,
   FileText,
@@ -21,6 +22,7 @@ export const FEATURE_KEYS = [
   "home",
   "chat",
   "materials",
+  "ai",
   "assignments",
   "sessions",
   "exam",
@@ -83,6 +85,16 @@ export const FEATURE_REGISTRY = [
     routeSegment: "materials",
     defaultEnabled: true,
     sortOrder: 30,
+    renderInClassNav: true,
+  },
+  {
+    key: "ai",
+    label: "AI",
+    icon: Brain,
+    parentKey: null,
+    routeSegment: "ai",
+    defaultEnabled: true,
+    sortOrder: 35,
     renderInClassNav: true,
   },
   {

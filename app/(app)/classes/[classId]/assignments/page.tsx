@@ -11,6 +11,7 @@ import {
   PlusCircle,
   Save,
   Send,
+  Sparkles,
   Trash2,
 } from "lucide-react"
 import {
@@ -58,6 +59,7 @@ import {
   ClassRouteFallback,
   useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
+import { MarkdownContent } from "@/features/ai/markdown-content"
 import {
   type AssignmentDerivedStatus,
   type ClassAssignment,
@@ -80,6 +82,17 @@ type CreateForm = {
   allowFileSubmission: boolean
   files: File[]
 }
+
+type AiAssignmentDraftPayload = {
+  title?: string
+  description?: string
+  maxScore?: number
+  allowTextSubmission?: boolean
+  allowFileSubmission?: boolean
+}
+
+type AiSupportMode = "rubric" | "alternate_questions"
+type AiSupportTarget = `create:${AiSupportMode}` | `edit:${AiSupportMode}`
 
 const STATUS_CONFIG: Record<
   AssignmentDerivedStatus,
@@ -206,6 +219,13 @@ export default function AssignmentsPage({
     useState<ClassAssignmentSubmission | null>(null)
   const [gradeScore, setGradeScore] = useState("")
   const [gradeFeedback, setGradeFeedback] = useState("")
+  const [isAiDraftOpen, setIsAiDraftOpen] = useState(false)
+  const [aiDraftPrompt, setAiDraftPrompt] = useState("")
+  const [aiDraftError, setAiDraftError] = useState<string | null>(null)
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false)
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
+  const [aiSupportTarget, setAiSupportTarget] =
+    useState<AiSupportTarget | null>(null)
 
   const studentCount = classRow?.students.length ?? 0
   const visibleAssignments = useMemo(() => {
@@ -402,6 +422,163 @@ export default function AssignmentsPage({
     }
   }
 
+  async function generateAssignmentDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const prompt = aiDraftPrompt.trim()
+    if (!prompt) {
+      setAiDraftError("Describe what the assignment should cover.")
+      return
+    }
+
+    setIsGeneratingDraft(true)
+    setAiDraftError(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/assignments/ai/draft`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        draft?: AiAssignmentDraftPayload
+        error?: string
+      } | null
+
+      if (!response.ok || !payload?.draft) {
+        throw new Error(payload?.error ?? "Could not generate assignment.")
+      }
+
+      setCreateForm((prev) => ({
+        ...prev,
+        title:
+          typeof payload.draft?.title === "string"
+            ? payload.draft.title
+            : prev.title,
+        description:
+          typeof payload.draft?.description === "string"
+            ? payload.draft.description
+            : prev.description,
+        maxScore:
+          typeof payload.draft?.maxScore === "number"
+            ? String(payload.draft.maxScore)
+            : prev.maxScore,
+        allowTextSubmission: payload.draft?.allowTextSubmission !== false,
+        allowFileSubmission: payload.draft?.allowFileSubmission === true,
+      }))
+      setAiDraftPrompt("")
+      setIsAiDraftOpen(false)
+      setIsCreateOpen(true)
+    } catch (error) {
+      setAiDraftError(
+        error instanceof Error
+          ? error.message
+          : "Could not generate assignment.",
+      )
+    } finally {
+      setIsGeneratingDraft(false)
+    }
+  }
+
+  async function generateSubmissionFeedback() {
+    if (!reviewAssignment || !selectedSubmission) return
+
+    setIsGeneratingFeedback(true)
+    setFormError(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(
+          classId,
+        )}/assignments/${encodeURIComponent(
+          reviewAssignment.id,
+        )}/submissions/${encodeURIComponent(
+          selectedSubmission.id,
+        )}/ai/feedback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ score: gradeScore }),
+        },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        feedback?: string
+        error?: string
+      } | null
+
+      if (!response.ok || !payload?.feedback) {
+        throw new Error(payload?.error ?? "Could not draft feedback.")
+      }
+
+      setGradeFeedback(payload.feedback)
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not draft feedback.",
+      )
+    } finally {
+      setIsGeneratingFeedback(false)
+    }
+  }
+
+  async function generateAssignmentSupport({
+    form,
+    mode,
+    setForm,
+    target,
+  }: {
+    form: CreateForm
+    mode: AiSupportMode
+    setForm: Dispatch<SetStateAction<CreateForm>>
+    target: AiSupportTarget
+  }) {
+    if (!form.title.trim() && !form.description.trim()) {
+      setFormError("Add a title or notes before generating AI support.")
+      return
+    }
+
+    setAiSupportTarget(target)
+    setFormError(null)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/assignments/ai/support`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode,
+            title: form.title,
+            description: form.description,
+            maxScore: Number.parseFloat(form.maxScore),
+          }),
+        },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        content?: string
+        error?: string
+      } | null
+
+      if (!response.ok || !payload?.content) {
+        throw new Error(payload?.error ?? "Could not generate AI support.")
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        description: appendAiSection(prev.description, payload.content ?? ""),
+      }))
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Could not generate AI support.",
+      )
+    } finally {
+      setAiSupportTarget(null)
+    }
+  }
+
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -412,14 +589,25 @@ export default function AssignmentsPage({
           </p>
         </div>
         {canManage && (
-          <Button
-            size="sm"
-            className="gap-2"
-            onClick={() => setIsCreateOpen(true)}
-          >
-            <PlusCircle className="w-4 h-4" />
-            New Assignment
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setIsAiDraftOpen(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              AI Draft
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => setIsCreateOpen(true)}
+            >
+              <PlusCircle className="w-4 h-4" />
+              New Assignment
+            </Button>
+          </div>
         )}
       </div>
 
@@ -479,6 +667,72 @@ export default function AssignmentsPage({
       )}
 
       <Dialog
+        open={isAiDraftOpen}
+        onOpenChange={(open) => {
+          setIsAiDraftOpen(open)
+          if (!open && !isGeneratingDraft) {
+            setAiDraftPrompt("")
+            setAiDraftError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <form onSubmit={generateAssignmentDraft} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Draft assignment with AI</DialogTitle>
+              <DialogDescription>
+                Describe the topic, goals, and student level. The draft opens in
+                the normal assignment form before publishing.
+              </DialogDescription>
+            </DialogHeader>
+            {aiDraftError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{aiDraftError}</AlertDescription>
+              </Alert>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="ai-assignment-prompt">Request</Label>
+              <Textarea
+                id="ai-assignment-prompt"
+                value={aiDraftPrompt}
+                onChange={(event) => setAiDraftPrompt(event.target.value)}
+                disabled={isGeneratingDraft}
+                rows={5}
+                placeholder="Create a 100-point lab assignment about sorting algorithms for first-year CS students, with a short rubric."
+              />
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              The selected free model may log prompts and outputs, so avoid
+              personal or sensitive student information.
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAiDraftOpen(false)}
+                disabled={isGeneratingDraft}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isGeneratingDraft}>
+                {isGeneratingDraft ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Drafting
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Generate
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={isCreateOpen}
         onOpenChange={(open) => {
           setIsCreateOpen(open)
@@ -520,7 +774,24 @@ export default function AssignmentsPage({
               </div>
 
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="assignment-description">Notes</Label>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="assignment-description">Notes</Label>
+                  <AssignmentAiButtons
+                    disabled={isMutating || isGeneratingDraft}
+                    loadingMode={getSupportModeForTarget(
+                      aiSupportTarget,
+                      "create",
+                    )}
+                    onGenerate={(mode) =>
+                      generateAssignmentSupport({
+                        form: createForm,
+                        mode,
+                        setForm: setCreateForm,
+                        target: `create:${mode}`,
+                      })
+                    }
+                  />
+                </div>
                 <Textarea
                   id="assignment-description"
                   value={createForm.description}
@@ -693,6 +964,18 @@ export default function AssignmentsPage({
                 form={editForm}
                 setForm={setEditForm}
                 isMutating={isMutating}
+                generatingSupportMode={getSupportModeForTarget(
+                  aiSupportTarget,
+                  "edit",
+                )}
+                onGenerateSupport={(mode) =>
+                  generateAssignmentSupport({
+                    form: editForm,
+                    mode,
+                    setForm: setEditForm,
+                    target: `edit:${mode}`,
+                  })
+                }
               />
 
               {editAssignment.files.length > 0 && (
@@ -944,7 +1227,24 @@ export default function AssignmentsPage({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="grade-feedback">Feedback</Label>
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="grade-feedback">Feedback</Label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5"
+                          onClick={generateSubmissionFeedback}
+                          disabled={isGeneratingFeedback || isMutating}
+                        >
+                          {isGeneratingFeedback ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          Draft feedback
+                        </Button>
+                      </div>
                       <Textarea
                         id="grade-feedback"
                         value={gradeFeedback}
@@ -1117,9 +1417,9 @@ function AssignmentDialogHeader({
         {assignment.maxScore} points
       </DialogDescription>
       {assignment.description && (
-        <p className="pt-2 text-sm leading-6 text-foreground">
-          {assignment.description}
-        </p>
+        <div className="pt-2">
+          <MarkdownContent content={assignment.description} />
+        </div>
       )}
     </DialogHeader>
   )
@@ -1173,6 +1473,51 @@ function CheckRow({
       />
       {label}
     </label>
+  )
+}
+
+function AssignmentAiButtons({
+  disabled,
+  loadingMode,
+  onGenerate,
+}: {
+  disabled: boolean
+  loadingMode: AiSupportMode | null
+  onGenerate: (mode: AiSupportMode) => void
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1.5"
+        disabled={disabled || Boolean(loadingMode)}
+        onClick={() => onGenerate("rubric")}
+      >
+        {loadingMode === "rubric" ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Sparkles className="h-3.5 w-3.5" />
+        )}
+        Rubric
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1.5"
+        disabled={disabled || Boolean(loadingMode)}
+        onClick={() => onGenerate("alternate_questions")}
+      >
+        {loadingMode === "alternate_questions" ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Sparkles className="h-3.5 w-3.5" />
+        )}
+        Questions
+      </Button>
+    </div>
   )
 }
 
@@ -1231,12 +1576,16 @@ function DeadlineFields({
 
 function AssignmentFormFields({
   form,
+  generatingSupportMode,
   setForm,
   isMutating,
+  onGenerateSupport,
 }: {
   form: CreateForm
+  generatingSupportMode?: AiSupportMode | null
   setForm: Dispatch<SetStateAction<CreateForm>>
   isMutating: boolean
+  onGenerateSupport?: (mode: AiSupportMode) => void
 }) {
   return (
     <>
@@ -1253,7 +1602,16 @@ function AssignmentFormFields({
           />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="edit-assignment-description">Notes</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="edit-assignment-description">Notes</Label>
+            {onGenerateSupport ? (
+              <AssignmentAiButtons
+                disabled={isMutating}
+                loadingMode={generatingSupportMode ?? null}
+                onGenerate={onGenerateSupport}
+              />
+            ) : null}
+          </div>
           <Textarea
             id="edit-assignment-description"
             value={form.description}
@@ -1340,6 +1698,19 @@ function AssignmentFormFields({
       </div>
     </>
   )
+}
+
+function appendAiSection(description: string, content: string) {
+  return [description.trim(), content.trim()].filter(Boolean).join("\n\n")
+}
+
+function getSupportModeForTarget(
+  target: AiSupportTarget | null,
+  prefix: "create" | "edit",
+): AiSupportMode | null {
+  if (!target?.startsWith(`${prefix}:`)) return null
+
+  return target.endsWith(":rubric") ? "rubric" : "alternate_questions"
 }
 
 function toDatetimeLocalValue(value: string) {

@@ -9,6 +9,7 @@ import {
   Loader2,
   PlusCircle,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   Video,
@@ -40,6 +41,7 @@ import {
   type ClassMaterial,
   useClassMaterials,
 } from "@/features/materials/use-class-materials"
+import { MarkdownContent } from "@/features/ai/markdown-content"
 import {
   downloadCachedMedia,
   loadCachedMedia,
@@ -109,6 +111,12 @@ export default function MaterialsPage({
   const [openingMaterialId, setOpeningMaterialId] = useState<string | null>(
     null,
   )
+  const [summaryMaterial, setSummaryMaterial] = useState<ClassMaterial | null>(
+    null,
+  )
+  const [materialSummary, setMaterialSummary] = useState("")
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [isSummarizing, setIsSummarizing] = useState(false)
 
   if (!cls) {
     return (
@@ -229,6 +237,40 @@ export default function MaterialsPage({
     }
   }
 
+  async function summarizeMaterial(material: ClassMaterial) {
+    setSummaryMaterial(material)
+    setMaterialSummary("")
+    setSummaryError(null)
+    setIsSummarizing(true)
+
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(
+          classId,
+        )}/materials/${encodeURIComponent(material.id)}/ai/summary`,
+        { method: "POST" },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        summary?: string
+        error?: string
+      } | null
+
+      if (!response.ok || !payload?.summary) {
+        throw new Error(payload?.error ?? "Could not summarize material.")
+      }
+
+      setMaterialSummary(payload.summary)
+    } catch (error) {
+      setSummaryError(
+        error instanceof Error
+          ? error.message
+          : "Could not summarize material.",
+      )
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
   return (
     <div className="p-6 space-y-5 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -313,6 +355,7 @@ export default function MaterialsPage({
               isOpening={openingMaterialId === material.id}
               onOpen={() => openMaterial(material)}
               onDownload={() => openMaterial(material, "attachment")}
+              onSummarize={() => summarizeMaterial(material)}
               onDelete={canUpload ? () => removeMaterial(material) : undefined}
             />
           ))}
@@ -403,6 +446,60 @@ export default function MaterialsPage({
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(summaryMaterial)}
+        onOpenChange={(open) => {
+          if (!open && !isSummarizing) {
+            setSummaryMaterial(null)
+            setMaterialSummary("")
+            setSummaryError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {summaryMaterial?.title ?? "Study summary"}
+            </DialogTitle>
+            <DialogDescription>
+              AI-generated study support for this material.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Avoid using AI with personal or sensitive material.
+          </p>
+          {summaryError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{summaryError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {isSummarizing ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Creating study summary...
+            </div>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto rounded-lg border bg-muted/30 p-4">
+              {materialSummary ? (
+                <MarkdownContent content={materialSummary} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No summary yet.</p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSummaryMaterial(null)}
+              disabled={isSummarizing}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -412,12 +509,14 @@ function MaterialCard({
   isOpening,
   onOpen,
   onDownload,
+  onSummarize,
   onDelete,
 }: {
   material: ClassMaterial
   isOpening: boolean
   onOpen: () => void
   onDownload: () => void
+  onSummarize: () => void
   onDelete?: () => void
 }) {
   const cfg = TYPE_CONFIG[material.type]
@@ -493,6 +592,16 @@ function MaterialCard({
             {material.source === "chat" ? "Chat" : cfg.label}
           </Badge>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={onSummarize}
+              disabled={isOpening}
+            >
+              <Sparkles className="h-3 w-3" />
+              Study
+            </Button>
             {onDelete ? (
               <Button
                 variant="ghost"
