@@ -108,7 +108,9 @@ export async function loadClassAiContext({
         .limit(20),
       supabase
         .from("exams")
-        .select("title, duration_minutes, total_points, start_at, end_at, status")
+        .select(
+          "title, duration_minutes, total_points, start_at, end_at, status",
+        )
         .eq("class_id", classId)
         .order("start_at", { ascending: true })
         .limit(8),
