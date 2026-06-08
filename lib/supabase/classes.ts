@@ -1,11 +1,11 @@
-import { createClient } from "@/lib/supabase/client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Class } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase/client"
 import {
-  loadClassExtensionSettings,
-  loadClassFeatureSettings,
   type ClassExtensionSetting,
   type FeatureSetting,
+  loadClassExtensionSettings,
+  loadClassFeatureSettings,
 } from "@/lib/supabase/features"
 
 export type ClassRole = "teacher" | "student" | "ta"
@@ -32,7 +32,6 @@ export type OrganizationClass = {
   teacher_user_id: string | null
   color: string | null
   description: string
-  schedule_text: string | null
   room: string | null
   semester: string | null
   is_archived: boolean
@@ -60,7 +59,7 @@ export async function loadOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, subject, teacher_user_id, color, description, schedule_text, room, semester, is_archived",
+      "id, organization_id, name, code, subject, teacher_user_id, color, description, room, semester, is_archived",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -76,7 +75,7 @@ export async function loadClass(classId: string, client?: SupabaseClient) {
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, subject, teacher_user_id, color, description, schedule_text, room, semester, is_archived",
+      "id, organization_id, name, code, subject, teacher_user_id, color, description, room, semester, is_archived",
     )
     .eq("id", classId)
     .eq("is_archived", false)
@@ -99,7 +98,6 @@ export function toLegacyClass(classRow: OrganizationClass): Class {
     color: classRow.color ?? "indigo",
     description: classRow.description,
     studentIds: classRow.students.map((student) => student.id),
-    schedule: classRow.schedule_text ?? "No schedule",
     room: classRow.room ?? "No room",
     semester: classRow.semester ?? "",
   }

@@ -1,6 +1,5 @@
 "use client"
 
-import { FormEvent, useMemo, useState, useTransition } from "react"
 import {
   Edit3,
   LoaderCircle,
@@ -9,6 +8,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react"
+import { type FormEvent, useMemo, useState, useTransition } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,16 +30,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { type OrganizationClass } from "@/lib/supabase/classes"
+import { Textarea } from "@/components/ui/textarea"
+import { useApp } from "@/lib/store"
+import type { OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
-import type { FeatureDefinition, FeatureSetting } from "@/lib/supabase/features"
 import type {
   ClassExtensionSetting,
+  FeatureDefinition,
+  FeatureSetting,
   OrganizationExtension,
 } from "@/lib/supabase/features"
-import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
@@ -50,7 +51,6 @@ type ClassFormState = {
   teacherEmail: string
   color: string
   description: string
-  scheduleText: string
   room: string
   semester: string
 }
@@ -65,8 +65,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   teacherEmail: "",
   color: "indigo",
   description: "",
-  scheduleText: "",
-  room: "",
+  room: "Online",
   semester: "Spring 2026",
 }
 
@@ -169,8 +168,7 @@ export function ClassesTab() {
       teacherEmail: classItem.teacher?.email ?? "",
       color: classItem.color ?? "indigo",
       description: classItem.description,
-      scheduleText: classItem.schedule_text ?? "",
-      room: classItem.room ?? "",
+      room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
     })
     setClassFeatureValues(
@@ -222,7 +220,6 @@ export function ClassesTab() {
             teacher_email: classForm.teacherEmail,
             class_color: classForm.color,
             class_description: classForm.description,
-            class_schedule_text: classForm.scheduleText,
             class_room: classForm.room,
             class_semester: classForm.semester,
           }
@@ -234,7 +231,6 @@ export function ClassesTab() {
             teacher_email: classForm.teacherEmail,
             class_color: classForm.color,
             class_description: classForm.description,
-            class_schedule_text: classForm.scheduleText,
             class_room: classForm.room,
             class_semester: classForm.semester,
           }
@@ -627,19 +623,6 @@ export function ClassesTab() {
                   }
                 />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="class-schedule">Schedule</Label>
-              <Input
-                id="class-schedule"
-                value={classForm.scheduleText}
-                onChange={(event) =>
-                  setClassForm((value) => ({
-                    ...value,
-                    scheduleText: event.target.value,
-                  }))
-                }
-              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="class-description">Description</Label>
