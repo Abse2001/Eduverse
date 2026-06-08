@@ -15,6 +15,7 @@ interface ExamHeaderProps {
   timeLeft: number
   isSaving: boolean
   saveError: string | null
+  hasUnsavedChanges: boolean
   isSubmitting: boolean
   onSubmit: () => void
 }
@@ -29,6 +30,7 @@ export function ExamHeader({
   timeLeft,
   isSaving,
   saveError,
+  hasUnsavedChanges,
   isSubmitting,
   onSubmit,
 }: ExamHeaderProps) {
@@ -57,7 +59,13 @@ export function ExamHeader({
           saveError ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        {saveError ? "Save failed" : isSaving ? "Autosaving..." : "Saved"}
+        {saveError
+          ? "Save failed"
+          : isSaving
+            ? "Saving..."
+            : hasUnsavedChanges
+              ? "Unsaved"
+              : "Saved"}
       </span>
       <div
         className={cn(

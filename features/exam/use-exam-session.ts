@@ -20,12 +20,12 @@ export function useExamSession(input: {
   const [timeLeft, setTimeLeft] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [dirtyQuestionIds, setDirtyQuestionIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isExamModeBlocked, setIsExamModeBlocked] = useState(false)
   const [examModeError, setExamModeError] = useState<string | null>(null)
-  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map(),
-  )
   const autoSubmitRef = useRef(false)
   const examModeEnabled = input.activeExam?.examModeEnabled === true
 
@@ -41,6 +41,7 @@ export function useExamSession(input: {
 
     setAnswers(nextAnswers)
     setCurrentQuestionIndex(0)
+    setDirtyQuestionIds(new Set())
     autoSubmitRef.current = false
     setIsExamModeBlocked(false)
     setExamModeError(null)
@@ -140,41 +141,33 @@ export function useExamSession(input: {
     }
   }, [examModeEnabled, input.activeExam?.attempt, input.onRecordEvent])
 
-  useEffect(() => {
-    return () => {
-      for (const timer of timersRef.current.values()) {
-        clearTimeout(timer)
-      }
-      timersRef.current.clear()
-    }
-  }, [])
-
   function setAnswer(questionId: string, value: JsonValue | null) {
     setAnswers((current) => ({ ...current, [questionId]: value }))
+    setDirtyQuestionIds((current) => new Set(current).add(questionId))
     setSaveError(null)
-
-    const existingTimer = timersRef.current.get(questionId)
-    if (existingTimer) clearTimeout(existingTimer)
-
-    const timer = setTimeout(() => {
-      void saveAnswer(questionId, value)
-    }, 500)
-
-    timersRef.current.set(questionId, timer)
   }
 
-  async function saveAnswer(questionId: string, value: JsonValue | null) {
-    if (!input.activeExam?.attempt) return
+  async function saveAnswer(
+    questionId: string,
+    value: JsonValue | null = answers[questionId] ?? null,
+  ) {
+    if (!input.activeExam?.attempt) return false
 
     setIsSaving(true)
     try {
       await input.onSaveAnswer(questionId, value)
-      timersRef.current.delete(questionId)
+      setDirtyQuestionIds((current) => {
+        const next = new Set(current)
+        next.delete(questionId)
+        return next
+      })
       setSaveError(null)
+      return true
     } catch (error) {
       setSaveError(
         error instanceof Error ? error.message : "Could not save answer.",
       )
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -185,16 +178,12 @@ export function useExamSession(input: {
 
     setIsSubmitting(true)
     try {
-      for (const timer of timersRef.current.values()) {
-        clearTimeout(timer)
-      }
-      timersRef.current.clear()
-
       const pendingSaves = Object.entries(answers).map(([questionId, answer]) =>
         input.onSaveAnswer(questionId, answer),
       )
 
       await Promise.allSettled(pendingSaves)
+      setDirtyQuestionIds(new Set())
       await input.onSubmit()
     } catch {
       autoSubmitRef.current = false
@@ -222,11 +211,13 @@ export function useExamSession(input: {
     timeLeft,
     isSaving,
     saveError,
+    hasUnsavedChanges: dirtyQuestionIds.size > 0,
     isSubmitting,
     isExamModeBlocked,
     examModeError,
     setCurrentQuestionIndex,
     setAnswer,
+    saveAnswer,
     submitExam,
     resumeExamMode,
   }

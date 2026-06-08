@@ -388,12 +388,12 @@ export default function MaterialsPage({
 
             <div className="space-y-2">
               <Label htmlFor="material-file">File</Label>
-              <Input
+              <MaterialFilePicker
                 id="material-file"
-                type="file"
                 accept="image/*,application/pdf,video/*,.ppt,.pptx,.odp,.key"
-                onChange={(event) => selectUploadFile(event.target.files?.[0])}
                 disabled={isUploading}
+                selectedText={selectedFile?.name ?? ""}
+                onFile={selectUploadFile}
               />
             </div>
 
@@ -631,6 +631,48 @@ function MaterialCard({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function MaterialFilePicker({
+  id,
+  accept,
+  disabled,
+  selectedText,
+  onFile,
+}: {
+  id: string
+  accept: string
+  disabled: boolean
+  selectedText: string
+  onFile: (file?: File) => void
+}) {
+  return (
+    <>
+      <label
+        htmlFor={id}
+        className={cn(
+          "flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-input bg-muted/20 px-4 py-5 text-center transition-colors hover:bg-muted/40",
+          "has-focus-visible:border-ring has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50",
+          disabled && "cursor-not-allowed opacity-50",
+        )}
+      >
+        <Input
+          id={id}
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(event) => onFile(event.target.files?.[0])}
+          disabled={disabled}
+        />
+        <Upload className="mb-2 h-5 w-5 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Choose file</span>
+        <span className="mt-1 text-xs text-muted-foreground">
+          Add a class material file
+        </span>
+      </label>
+      <p className="min-h-4 text-xs text-muted-foreground">{selectedText}</p>
+    </>
   )
 }
 

@@ -24,7 +24,7 @@ export function getExamMonitorSummary(
       suspiciousStudents.add(attempt.studentUserId)
     }
 
-    if (attempt.resultsReleasedAt) {
+    if (attempt.status === "graded") {
       gradedStudents.add(attempt.studentUserId)
     }
   }
@@ -34,6 +34,21 @@ export function getExamMonitorSummary(
     gradedStudents: gradedStudents.size,
     enteredStudents: enteredStudents.size,
   }
+}
+
+export function getCurrentAttemptsByStudent(
+  attempts: ManagerAttemptSummaryDto[],
+) {
+  const attemptsByStudent = new Map<string, ManagerAttemptSummaryDto>()
+
+  for (const attempt of attempts) {
+    const current = attemptsByStudent.get(attempt.studentUserId)
+    if (!current || compareAttemptsByRecency(attempt, current) > 0) {
+      attemptsByStudent.set(attempt.studentUserId, attempt)
+    }
+  }
+
+  return [...attemptsByStudent.values()].sort(compareAttemptsByDisplayName)
 }
 
 export function getEndedExamApprovalStatus(
@@ -59,6 +74,45 @@ export function getEndedExamApprovalStatus(
         label: "Waiting for approval",
         tone: "pending" as const,
       }
+}
+
+function compareAttemptsByRecency(
+  left: Pick<
+    ManagerAttemptSummaryDto,
+    "attemptNumber" | "startedAt" | "submittedAt" | "id"
+  >,
+  right: Pick<
+    ManagerAttemptSummaryDto,
+    "attemptNumber" | "startedAt" | "submittedAt" | "id"
+  >,
+) {
+  if (left.attemptNumber !== right.attemptNumber) {
+    return left.attemptNumber - right.attemptNumber
+  }
+
+  const leftTime = Date.parse(left.submittedAt ?? left.startedAt ?? "")
+  const rightTime = Date.parse(right.submittedAt ?? right.startedAt ?? "")
+  const normalizedLeftTime = Number.isNaN(leftTime) ? 0 : leftTime
+  const normalizedRightTime = Number.isNaN(rightTime) ? 0 : rightTime
+
+  if (normalizedLeftTime !== normalizedRightTime) {
+    return normalizedLeftTime - normalizedRightTime
+  }
+
+  return left.id.localeCompare(right.id)
+}
+
+function compareAttemptsByDisplayName(
+  left: Pick<ManagerAttemptSummaryDto, "studentDisplayName" | "studentEmail">,
+  right: Pick<ManagerAttemptSummaryDto, "studentDisplayName" | "studentEmail">,
+) {
+  const nameComparison = left.studentDisplayName.localeCompare(
+    right.studentDisplayName,
+  )
+
+  return nameComparison === 0
+    ? left.studentEmail.localeCompare(right.studentEmail)
+    : nameComparison
 }
 
 export function resolveSelectedAttemptId(input: {
@@ -121,8 +175,12 @@ export function getAttemptGradeIndicator(
     return "Voided"
   }
 
+  if (attempt.status === "in_progress") {
+    return "In progress"
+  }
+
   if (attempt.resultsReleasedAt) {
-    return "Released"
+    return "Results released"
   }
 
   if (attempt.needsManualReview) {
@@ -133,5 +191,5 @@ export function getAttemptGradeIndicator(
     return "Pending score"
   }
 
-  return "Awaiting approval"
+  return "Ready to release"
 }

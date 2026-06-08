@@ -60,6 +60,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const { canNavigateToPath, isLocked, lock } = useExamLock()
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
+  const isCollapsed = collapsed || isLocked
 
   const userClasses = activeOrganization
     ? getClassesForUser(organizationClasses, currentUser)
@@ -85,15 +86,20 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       <aside
         className={cn(
           "flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300 shrink-0",
-          collapsed ? "w-16" : "w-60",
+          isCollapsed ? "w-16" : "w-60",
         )}
       >
         {/* Dashboard link */}
         <div className="relative flex items-center h-14 px-2 border-b border-sidebar-border">
-          {collapsed ? (
+          {isCollapsed ? (
             <button
-              onClick={() => setCollapsed(false)}
-              className="flex h-9 flex-1 items-center rounded-lg px-2 transition-opacity hover:opacity-90"
+              onClick={() => {
+                if (!isLocked) setCollapsed(false)
+              }}
+              className={cn(
+                "flex h-9 flex-1 items-center rounded-lg px-2 transition-opacity",
+                isLocked ? "cursor-default" : "hover:opacity-90",
+              )}
               aria-label="Expand sidebar"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
@@ -143,7 +149,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 icon={item.icon}
                 href={item.href}
                 active={active}
-                collapsed={collapsed}
+                collapsed={isCollapsed}
               />
             )
           })}
@@ -154,16 +160,11 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               <p
                 className={cn(
                   "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1.5 transition-opacity duration-150",
-                  collapsed && "opacity-0",
+                  isCollapsed && "opacity-0",
                 )}
               >
                 Classes
               </p>
-              {isLocked && !collapsed && (
-                <p className="px-2 pb-1 text-[11px] text-amber-500">
-                  Exam mode active. Navigation is locked to the exam.
-                </p>
-              )}
               {userClasses.map((cls) => {
                 const isActiveClass = activeClassId === cls.id
                 const classNavFeatures = activeOrganization
@@ -190,7 +191,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       icon={BookOpen}
                       href={classHref}
                       active={isActiveClass}
-                      collapsed={collapsed}
+                      collapsed={isCollapsed}
                       colorDot={cls.color ?? undefined}
                       live={liveClassIds.has(cls.id)}
                       disabled={classDisabled}
@@ -199,7 +200,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       <div
                         className={cn(
                           "ml-4 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1 overflow-hidden transition-opacity duration-150",
-                          collapsed && "opacity-0 pointer-events-none",
+                          isCollapsed && "opacity-0 pointer-events-none",
                         )}
                       >
                         {classNavFeatures.map((feature) => (

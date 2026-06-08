@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import Link from "next/link"
 import {
@@ -78,8 +78,6 @@ export function ExamScreen({
   const [passcode, setPasscode] = useState("")
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const pendingSaveRef = useRef<Promise<void> | null>(null)
-
   const state = page ? resolveStudentExamPageState(page) : "none"
   const activeExam = page?.activeExam ?? null
   const { setExamLock } = useExamLock()
@@ -90,11 +88,13 @@ export function ExamScreen({
     timeLeft,
     isSaving,
     saveError,
+    hasUnsavedChanges,
     isSubmitting,
     isExamModeBlocked,
     examModeError,
     setCurrentQuestionIndex,
     setAnswer,
+    saveAnswer: saveCurrentAnswer,
     submitExam,
     resumeExamMode,
   } = useExamSession({
@@ -103,26 +103,18 @@ export function ExamScreen({
     onSaveAnswer: async (questionId, answer) => {
       if (!activeExam?.attempt) return
 
-      const p = onSaveAnswer({
+      await onSaveAnswer({
         examId: activeExam.id,
         attemptId: activeExam.attempt.id,
         questionId,
         answer,
       })
-
-      pendingSaveRef.current = p
-      await p
     },
 
     onSubmit: async () => {
       if (!activeExam?.attempt) return
 
       setActionError(null)
-
-      if (pendingSaveRef.current) {
-        await pendingSaveRef.current
-      }
-
       await onSubmitExam(activeExam.id, activeExam.attempt.id)
     },
 
@@ -414,6 +406,7 @@ export function ExamScreen({
         timeLeft={timeLeft}
         isSaving={isSaving}
         saveError={saveError}
+        hasUnsavedChanges={hasUnsavedChanges}
         isSubmitting={isSubmitting}
         onSubmit={() => void submitExam()}
       />
@@ -449,9 +442,10 @@ export function ExamScreen({
             {currentQuestionIndex < activeExam.questions.length - 1 ? (
               <Button
                 size="sm"
-                onClick={() =>
+                onClick={() => {
+                  void saveCurrentAnswer(question.id)
                   setCurrentQuestionIndex(currentQuestionIndex + 1)
-                }
+                }}
               >
                 Next
                 <ChevronRight className="w-4 h-4" />
@@ -471,10 +465,21 @@ export function ExamScreen({
       </div>
 
       {activeExam.examModeEnabled && isExamModeBlocked && (
-        <div className="fixed inset-0 flex items-center justify-center">
-          <Button onClick={() => void resumeExamMode()}>
-            Resume fullscreen
-          </Button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-lg border bg-card p-4 text-center shadow-lg">
+            <p className="text-sm font-semibold text-foreground">
+              Exam mode paused
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Return to fullscreen to continue.
+            </p>
+            <Button
+              className="mt-4 w-full"
+              onClick={() => void resumeExamMode()}
+            >
+              Resume fullscreen
+            </Button>
+          </div>
         </div>
       )}
     </div>

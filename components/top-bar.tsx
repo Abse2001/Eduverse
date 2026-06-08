@@ -8,7 +8,7 @@ import { OrganizationMenu } from "@/components/top-bar/organization-menu"
 import { RoleMenu } from "@/components/top-bar/role-menu"
 
 export function TopBar() {
-  const { isLocked, lock } = useExamLock()
+  const { isLocked } = useExamLock()
 
   return (
     <header className="h-14 border-b border-border flex items-center px-4 gap-3 bg-card/80 backdrop-blur-sm">
@@ -23,27 +23,19 @@ export function TopBar() {
         </div>
       ) : (
         <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">
+          <div className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
             Exam mode active
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {lock?.examTitle ?? "Active exam"} is locking navigation for this
-            student attempt.
-          </p>
+          </div>
         </div>
       )}
 
       {/* Right side */}
-      {!isLocked ? (
+      {!isLocked && (
         <div className="ml-auto flex items-center gap-2">
           <RoleMenu />
           <OrganizationMenu />
           <NotificationsMenu />
           <AccountMenu />
-        </div>
-      ) : (
-        <div className="ml-auto rounded-full border px-3 py-1 text-xs text-amber-600 dark:text-amber-300">
-          Exam route locked
         </div>
       )}
     </header>

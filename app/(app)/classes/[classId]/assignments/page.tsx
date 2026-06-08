@@ -13,6 +13,7 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Upload,
 } from "lucide-react"
 import {
   type Dispatch,
@@ -93,6 +94,32 @@ type AiAssignmentDraftPayload = {
 
 type AiSupportMode = "rubric" | "alternate_questions"
 type AiSupportTarget = `create:${AiSupportMode}` | `edit:${AiSupportMode}`
+
+type AssignmentCreateFieldKey =
+  | "title"
+  | "dueAt"
+  | "maxScore"
+  | "submissionModes"
+
+const ASSIGNMENT_FORM_FIELD_ATTRIBUTE = "data-assignment-form-field"
+
+class AssignmentFormValidationError extends Error {
+  fieldKey: AssignmentCreateFieldKey
+
+  constructor(message: string, fieldKey: AssignmentCreateFieldKey) {
+    super(message)
+    this.name = "AssignmentFormValidationError"
+    this.fieldKey = fieldKey
+  }
+}
+
+function getAssignmentFormField(fieldKey: AssignmentCreateFieldKey) {
+  if (typeof document === "undefined") return null
+
+  return document.querySelector<HTMLElement>(
+    `[${ASSIGNMENT_FORM_FIELD_ATTRIBUTE}="${fieldKey}"]`,
+  )
+}
 
 const STATUS_CONFIG: Record<
   AssignmentDerivedStatus,
@@ -204,6 +231,8 @@ export default function AssignmentsPage({
   })
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM)
+  const [invalidCreateField, setInvalidCreateField] =
+    useState<AssignmentCreateFieldKey | null>(null)
   const [editAssignment, setEditAssignment] = useState<ClassAssignment | null>(
     null,
   )
@@ -251,6 +280,7 @@ export default function AssignmentsPage({
   function resetCreateForm() {
     setCreateForm(EMPTY_CREATE_FORM)
     setFormError(null)
+    setInvalidCreateField(null)
   }
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
@@ -259,20 +289,10 @@ export default function AssignmentsPage({
   }
 
   async function createAssignmentWithStatus(status: "draft" | "published") {
-    const maxScore = Number.parseFloat(createForm.maxScore)
-
-    if (!createForm.allowTextSubmission && !createForm.allowFileSubmission) {
-      setFormError("Enable text, file, or both submission modes.")
-      return
-    }
-
-    if (!Number.isFinite(maxScore) || maxScore <= 0) {
-      setFormError("Max points must be greater than zero.")
-      return
-    }
-
     try {
       setFormError(null)
+      setInvalidCreateField(null)
+      const maxScore = validateCreateForm(createForm)
       await createAssignment({
         title: createForm.title,
         description: createForm.description,
@@ -287,9 +307,30 @@ export default function AssignmentsPage({
       resetCreateForm()
       setIsCreateOpen(false)
     } catch (error) {
-      setFormError(
-        error instanceof Error ? error.message : "Could not create assignment.",
-      )
+      if (error instanceof AssignmentFormValidationError) {
+        setFormError(null)
+        setInvalidCreateField(error.fieldKey)
+        requestAnimationFrame(() => {
+          const field = getAssignmentFormField(error.fieldKey)
+          field?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          })
+          field?.focus()
+        })
+      } else {
+        setFormError(
+          error instanceof Error
+            ? error.message
+            : "Could not create assignment.",
+        )
+      }
+    }
+  }
+
+  function clearInvalidCreateField(fieldKey: AssignmentCreateFieldKey) {
+    if (invalidCreateField === fieldKey) {
+      setInvalidCreateField(null)
     }
   }
 
@@ -740,36 +781,34 @@ export default function AssignmentsPage({
         }}
       >
         <DialogContent className="max-w-2xl">
-          <form onSubmit={submitCreate} className="space-y-4">
+          <form onSubmit={submitCreate} className="space-y-4" noValidate>
             <DialogHeader>
               <DialogTitle>Create assignment</DialogTitle>
-              <DialogDescription>
-                Draft or publish work for this class.
-              </DialogDescription>
             </DialogHeader>
 
-            {(formError || assignmentsError) && (
+            {formError && (
               <Alert variant="destructive">
-                <AlertDescription>
-                  {formError ?? assignmentsError}
-                </AlertDescription>
+                <AlertDescription>{formError}</AlertDescription>
               </Alert>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="assignment-title">Title</Label>
+                <RequiredLabel htmlFor="assignment-title">Title</RequiredLabel>
                 <Input
                   id="assignment-title"
                   value={createForm.title}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    clearInvalidCreateField("title")
                     setCreateForm((prev) => ({
                       ...prev,
                       title: event.target.value,
                     }))
-                  }
+                  }}
                   disabled={isMutating}
                   placeholder="Essay draft"
+                  aria-invalid={invalidCreateField === "title"}
+                  data-assignment-form-field="title"
                 />
               </div>
 
@@ -811,51 +850,55 @@ export default function AssignmentsPage({
                 <DeadlineFields
                   idPrefix="assignment"
                   value={createForm.dueAt}
-                  onChange={(dueAt) =>
+                  onChange={(dueAt) => {
+                    clearInvalidCreateField("dueAt")
                     setCreateForm((prev) => ({ ...prev, dueAt }))
-                  }
+                  }}
                   disabled={isMutating}
+                  invalid={invalidCreateField === "dueAt"}
+                  fieldKey="dueAt"
+                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="assignment-score">Max points</Label>
+                <RequiredLabel htmlFor="assignment-score">
+                  Max points
+                </RequiredLabel>
                 <Input
                   id="assignment-score"
                   type="number"
                   min="1"
                   step="0.5"
                   value={createForm.maxScore}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    clearInvalidCreateField("maxScore")
                     setCreateForm((prev) => ({
                       ...prev,
                       maxScore: event.target.value,
                     }))
-                  }
+                  }}
                   disabled={isMutating}
+                  aria-invalid={invalidCreateField === "maxScore"}
+                  data-assignment-form-field="maxScore"
                 />
               </div>
 
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="assignment-files">Prompt files</Label>
-                <Input
+                <AssignmentFilePicker
                   id="assignment-files"
-                  type="file"
                   multiple
-                  onChange={(event) =>
+                  disabled={isMutating}
+                  selectedText={formatSelectedFileText(createForm.files)}
+                  description="Attach prompt files for students"
+                  onFiles={(files) =>
                     setCreateForm((prev) => ({
                       ...prev,
-                      files: Array.from(event.target.files ?? []),
+                      files,
                     }))
                   }
-                  disabled={isMutating}
                 />
-                {createForm.files.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {createForm.files.length} file
-                    {createForm.files.length === 1 ? "" : "s"} selected
-                  </p>
-                )}
               </div>
             </div>
 
@@ -863,22 +906,27 @@ export default function AssignmentsPage({
               <CheckRow
                 label="Accept text responses"
                 checked={createForm.allowTextSubmission}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked) => {
+                  clearInvalidCreateField("submissionModes")
                   setCreateForm((prev) => ({
                     ...prev,
                     allowTextSubmission: checked,
                   }))
-                }
+                }}
+                invalid={invalidCreateField === "submissionModes"}
+                fieldKey="submissionModes"
               />
               <CheckRow
                 label="Accept file"
                 checked={createForm.allowFileSubmission}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked) => {
+                  clearInvalidCreateField("submissionModes")
                   setCreateForm((prev) => ({
                     ...prev,
                     allowFileSubmission: checked,
                   }))
-                }
+                }}
+                invalid={invalidCreateField === "submissionModes"}
               />
               <CheckRow
                 label="Accept late submissions"
@@ -1045,13 +1093,12 @@ export default function AssignmentsPage({
               {selectedAssignment.allowFileSubmission && (
                 <div className="space-y-2">
                   <Label htmlFor="submission-file">File</Label>
-                  <Input
+                  <AssignmentFilePicker
                     id="submission-file"
-                    type="file"
-                    onChange={(event) =>
-                      setSubmissionFile(event.target.files?.[0] ?? null)
-                    }
                     disabled={isMutating}
+                    selectedText={submissionFile?.name ?? ""}
+                    description="Attach your assignment file"
+                    onFiles={(files) => setSubmissionFile(files[0] ?? null)}
                   />
                   {selectedAssignment.mySubmission?.fileOriginalFilename && (
                     <p className="text-xs text-muted-foreground">
@@ -1112,15 +1159,15 @@ export default function AssignmentsPage({
         }}
       >
         {reviewAssignment && classRow && (
-          <DialogContent className="max-w-[calc(100vw-2rem)] lg:max-w-5xl">
+          <DialogContent className="h-[min(42rem,calc(100vh-2rem))] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:max-w-5xl">
             <DialogHeader>
               <DialogTitle>{reviewAssignment.title}</DialogTitle>
               <DialogDescription>
                 Review submissions from the class roster.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-              <div className="min-w-0 rounded-lg border">
+            <div className="grid min-h-0 min-w-0 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+              <div className="min-h-0 min-w-0 overflow-y-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1179,7 +1226,7 @@ export default function AssignmentsPage({
                 </Table>
               </div>
 
-              <div className="min-w-0 rounded-lg border p-4">
+              <div className="min-h-0 min-w-0 overflow-y-auto rounded-lg border p-4">
                 {selectedSubmission ? (
                   <form onSubmit={submitGrade} className="space-y-4">
                     {formError && (
@@ -1267,7 +1314,7 @@ export default function AssignmentsPage({
                     </Button>
                   </form>
                 ) : (
-                  <div className="grid min-h-64 min-w-0 place-items-center px-4 text-center text-sm text-muted-foreground">
+                  <div className="grid h-full min-w-0 place-items-center px-4 text-center text-sm text-muted-foreground">
                     <p className="max-w-48 text-wrap leading-6">
                       Select a submitted student to review their work.
                     </p>
@@ -1425,6 +1472,108 @@ function AssignmentDialogHeader({
   )
 }
 
+function RequiredLabel({
+  children,
+  ...props
+}: React.ComponentProps<typeof Label>) {
+  return (
+    <Label {...props}>
+      {children}
+      <span className="ml-1 text-destructive" aria-hidden="true">
+        *
+      </span>
+    </Label>
+  )
+}
+
+function AssignmentFilePicker({
+  id,
+  multiple = false,
+  disabled = false,
+  description,
+  selectedText,
+  onFiles,
+}: {
+  id: string
+  multiple?: boolean
+  disabled?: boolean
+  description: string
+  selectedText: string
+  onFiles: (files: File[]) => void
+}) {
+  return (
+    <>
+      <label
+        htmlFor={id}
+        className={cn(
+          "flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-input bg-muted/20 px-4 py-5 text-center transition-colors hover:bg-muted/40",
+          "has-focus-visible:border-ring has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50",
+          disabled && "cursor-not-allowed opacity-50",
+        )}
+      >
+        <Input
+          id={id}
+          type="file"
+          multiple={multiple}
+          className="sr-only"
+          onChange={(event) => onFiles(Array.from(event.target.files ?? []))}
+          disabled={disabled}
+        />
+        <Upload className="mb-2 h-5 w-5 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">
+          Choose {multiple ? "files" : "file"}
+        </span>
+        <span className="mt-1 text-xs text-muted-foreground">
+          {description}
+        </span>
+      </label>
+      <p className="min-h-4 text-xs text-muted-foreground">{selectedText}</p>
+    </>
+  )
+}
+
+function formatSelectedFileText(files: File[]) {
+  if (files.length === 0) return ""
+
+  return `${files.length} file${files.length === 1 ? "" : "s"} selected`
+}
+
+function validateCreateForm(form: CreateForm) {
+  const title = form.title.trim()
+  const dueAt = form.dueAt.trim()
+  const maxScore = Number.parseFloat(form.maxScore)
+
+  if (!title) {
+    throw new AssignmentFormValidationError(
+      "Assignment title is required.",
+      "title",
+    )
+  }
+
+  if (!dueAt || Number.isNaN(Date.parse(dueAt))) {
+    throw new AssignmentFormValidationError(
+      "Assignment due date is required.",
+      "dueAt",
+    )
+  }
+
+  if (!Number.isFinite(maxScore) || maxScore <= 0) {
+    throw new AssignmentFormValidationError(
+      "Max points must be greater than zero.",
+      "maxScore",
+    )
+  }
+
+  if (!form.allowTextSubmission && !form.allowFileSubmission) {
+    throw new AssignmentFormValidationError(
+      "Enable text, file, or both submission modes.",
+      "submissionModes",
+    )
+  }
+
+  return maxScore
+}
+
 function AssignmentFiles({
   assignment,
   onOpen,
@@ -1460,16 +1609,29 @@ function CheckRow({
   label,
   checked,
   onCheckedChange,
+  invalid = false,
+  fieldKey,
 }: {
   label: string
   checked: boolean
   onCheckedChange: (checked: boolean) => void
+  invalid?: boolean
+  fieldKey?: AssignmentCreateFieldKey
 }) {
   return (
-    <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+    <label
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-[color,box-shadow]",
+        invalid &&
+          "border-destructive ring-[3px] ring-destructive/20 dark:ring-destructive/40",
+      )}
+      tabIndex={fieldKey ? -1 : undefined}
+      data-assignment-form-field={fieldKey}
+    >
       <Checkbox
         checked={checked}
         onCheckedChange={(value) => onCheckedChange(value === true)}
+        aria-invalid={invalid}
       />
       {label}
     </label>
@@ -1526,11 +1688,17 @@ function DeadlineFields({
   value,
   onChange,
   disabled,
+  invalid = false,
+  fieldKey,
+  required = false,
 }: {
   idPrefix: string
   value: string
   onChange: (value: string) => void
   disabled: boolean
+  invalid?: boolean
+  fieldKey?: AssignmentCreateFieldKey
+  required?: boolean
 }) {
   const date = getDeadlineDatePart(value)
   const time = getDeadlineTimePart(value)
@@ -1538,7 +1706,13 @@ function DeadlineFields({
   return (
     <div className="grid gap-2 sm:grid-cols-[1fr_9.5rem]">
       <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
+        {required ? (
+          <RequiredLabel htmlFor={`${idPrefix}-due-date`}>
+            Due date
+          </RequiredLabel>
+        ) : (
+          <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
+        )}
         <Input
           id={`${idPrefix}-due-date`}
           type="date"
@@ -1547,6 +1721,8 @@ function DeadlineFields({
             onChange(combineDeadlineParts(event.target.value, time))
           }
           disabled={disabled}
+          aria-invalid={invalid}
+          data-assignment-form-field={fieldKey}
         />
       </div>
       <div className="space-y-2">
@@ -1558,7 +1734,11 @@ function DeadlineFields({
           }
           disabled={disabled}
         >
-          <SelectTrigger id={`${idPrefix}-due-time`} className="w-full">
+          <SelectTrigger
+            id={`${idPrefix}-due-time`}
+            className="w-full"
+            aria-invalid={invalid}
+          >
             <SelectValue placeholder="Choose time" />
           </SelectTrigger>
           <SelectContent>
@@ -1649,17 +1829,18 @@ function AssignmentFormFields({
         </div>
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="edit-assignment-files">Add prompt files</Label>
-          <Input
+          <AssignmentFilePicker
             id="edit-assignment-files"
-            type="file"
             multiple
-            onChange={(event) =>
+            disabled={isMutating}
+            selectedText={formatSelectedFileText(form.files)}
+            description="Attach additional prompt files"
+            onFiles={(files) =>
               setForm((prev) => ({
                 ...prev,
-                files: Array.from(event.target.files ?? []),
+                files,
               }))
             }
-            disabled={isMutating}
           />
         </div>
       </div>

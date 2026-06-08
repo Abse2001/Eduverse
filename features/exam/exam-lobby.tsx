@@ -40,9 +40,9 @@ export function ExamLobby({
   actionLabel: string
 }) {
   return (
-    <div className="p-6 flex flex-col items-center justify-center gap-6 max-w-lg mx-auto pt-20">
-      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <BookOpen className="w-8 h-8 text-primary" />
+    <div className="mx-auto flex max-w-2xl flex-col items-center justify-center gap-4 p-6">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+        <BookOpen className="h-6 w-6 text-primary" />
       </div>
       <div className="text-center space-y-1">
         <Badge
@@ -63,7 +63,7 @@ export function ExamLobby({
               ? "Scheduled"
               : "Ended"}
         </Badge>
-        <h1 className="text-2xl font-bold text-foreground text-balance">
+        <h1 className="text-xl font-bold text-foreground text-balance">
           {title}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -71,46 +71,44 @@ export function ExamLobby({
         </p>
       </div>
       <Card className="w-full">
-        <CardContent className="p-4 grid grid-cols-3 divide-x divide-border text-center">
+        <CardContent className="grid grid-cols-3 divide-x divide-border p-3 text-center">
           <div className="px-4">
-            <p className="text-2xl font-bold text-foreground">
+            <p className="text-xl font-bold text-foreground">
               {questionCount ?? "?"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Questions</p>
           </div>
           <div className="px-4">
-            <p className="text-2xl font-bold text-foreground">
+            <p className="text-xl font-bold text-foreground">
               {durationMinutes}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Minutes</p>
           </div>
           <div className="px-4">
-            <p className="text-2xl font-bold text-foreground">{totalPoints}</p>
+            <p className="text-xl font-bold text-foreground">{totalPoints}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Total pts</p>
           </div>
         </CardContent>
       </Card>
-      <div className="w-full space-y-2 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground text-center text-sm">
-          Before you begin:
-        </p>
-        {[
-          "Once started, the timer cannot be paused.",
-          "Questions can include multiple choice and short answers.",
-          "Answers are auto-saved through the backend.",
-          "Submitting ends the attempt immediately.",
-          requiresPasscode
-            ? "You must enter the teacher's passcode before the exam can start."
-            : null,
-          "Fullscreen exam mode is required. Leaving fullscreen or switching tabs is recorded for the teacher.",
-        ]
-          .filter((note): note is string => Boolean(note))
-          .map((note) => (
-            <div key={note} className="flex items-start gap-2">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
-              <span>{note}</span>
-            </div>
-          ))}
+      <div className="w-full space-y-2 rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+        <p className="text-sm font-medium text-foreground">Before you begin:</p>
+        <div className="space-y-2">
+          {[
+            "Timer cannot be paused.",
+            "Questions may be multiple choice or short answer.",
+            "Answers are auto-saved.",
+            "Submitting ends the attempt immediately.",
+            requiresPasscode ? "Teacher passcode is required." : null,
+            "Fullscreen is required; leaving fullscreen or switching tabs is recorded.",
+          ]
+            .filter((note): note is string => Boolean(note))
+            .map((note) => (
+              <div key={note} className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span>{note}</span>
+              </div>
+            ))}
+        </div>
       </div>
 
       {requiresPasscode && status === "live" && (
@@ -135,11 +133,13 @@ export function ExamLobby({
         </div>
       )}
 
-      {startBlockedReason ? (
-        <div className="w-full rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          {startBlockedReason}
-        </div>
-      ) : null}
+      <div className="min-h-10 w-full">
+        {startBlockedReason ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {startBlockedReason}
+          </div>
+        ) : null}
+      </div>
 
       <Button
         size="lg"

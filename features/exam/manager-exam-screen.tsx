@@ -13,7 +13,6 @@ import {
   ShieldAlert,
   Sparkles,
   Trash2,
-  Users,
 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -37,16 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { StatCard } from "@/components/shared/stat-card"
 import type {
   GradeAttemptInput,
   ManagerExamDetailDto,
@@ -63,6 +54,7 @@ import {
   getEndedExamApprovalStatus,
   getAttemptGradeIndicator,
   getAttemptMonitorStatus,
+  getCurrentAttemptsByStudent,
   getExamMonitorSummary,
   isAttemptSuspicious,
   resolveSelectedAttemptId,
@@ -191,13 +183,17 @@ export function ManagerExamScreen({
   const [isGeneratingExamAi, setIsGeneratingExamAi] = useState(false)
 
   const exams = data?.canManage ? data.manager.exams : []
-  const selectedAttempt = detail?.attempts.find(
+  const currentAttempts = detail
+    ? getCurrentAttemptsByStudent(detail.attempts)
+    : []
+  const selectedAttempt = currentAttempts.find(
     (attempt) => attempt.id === selectedAttemptId,
   )
   const isLiveMonitor = detail?.exam.status === "live"
-  const monitorSummary = detail ? getExamMonitorSummary(detail.attempts) : null
+  const monitorSummary = detail ? getExamMonitorSummary(currentAttempts) : null
+  const currentAttemptCount = currentAttempts.length
   const suspiciousAttemptCount =
-    detail?.attempts.filter(isAttemptSuspicious).length ?? 0
+    currentAttempts.filter(isAttemptSuspicious).length
   const detailApprovalStatus = detail
     ? getEndedExamApprovalStatus(detail.exam)
     : null
@@ -261,12 +257,28 @@ export function ManagerExamScreen({
     nextSelectedAttemptId: string | null,
   ) {
     setDetail(nextDetail)
+    const currentAttempts = getCurrentAttemptsByStudent(nextDetail.attempts)
+    const previouslySelectedAttempt = nextSelectedAttemptId
+      ? nextDetail.attempts.find(
+          (attempt) => attempt.id === nextSelectedAttemptId,
+        )
+      : null
+    const currentAttemptForSelectedStudent = previouslySelectedAttempt
+      ? currentAttempts.find(
+          (attempt) =>
+            attempt.studentUserId === previouslySelectedAttempt.studentUserId,
+        )
+      : null
     const resolvedAttemptId = resolveSelectedAttemptId({
-      attempts: nextDetail.attempts,
-      currentSelectedAttemptId: nextSelectedAttemptId,
+      attempts: currentAttempts,
+      currentSelectedAttemptId:
+        currentAttemptForSelectedStudent?.id ??
+        nextSelectedAttemptId ??
+        currentAttempts[0]?.id ??
+        null,
     })
     const resolvedAttempt =
-      nextDetail.attempts.find((attempt) => attempt.id === resolvedAttemptId) ??
+      currentAttempts.find((attempt) => attempt.id === resolvedAttemptId) ??
       null
     setSelectedAttemptId(resolvedAttemptId)
     setGradeInputs(buildGradeInputsForAttempt(resolvedAttempt))
@@ -783,9 +795,6 @@ export function ManagerExamScreen({
               <DialogTitle>
                 {editingExam ? "Edit exam" : "Create exam"}
               </DialogTitle>
-              <DialogDescription>
-                Build and publish a secure class exam.
-              </DialogDescription>
             </DialogHeader>
 
             {formError && (
@@ -804,6 +813,7 @@ export function ManagerExamScreen({
                 }}
                 fieldKey="title"
                 invalid={invalidFormField === "title"}
+                required
               />
               <Field
                 label="Duration (minutes)"
@@ -816,6 +826,7 @@ export function ManagerExamScreen({
                 min="1"
                 fieldKey="durationMinutes"
                 invalid={invalidFormField === "durationMinutes"}
+                required
               />
               <div className="space-y-2 sm:col-span-2">
                 <StartTimeFields
@@ -825,14 +836,11 @@ export function ManagerExamScreen({
                     setForm((current) => ({ ...current, startAt: value }))
                   }}
                   invalid={invalidFormField === "startAt"}
+                  required
                 />
-                <p className="text-xs text-muted-foreground">
-                  The exam end time is calculated automatically from the start
-                  time and duration.
-                </p>
               </div>
               <Field
-                label="Exam Passcode"
+                label="Exam passcode"
                 value={form.passcode}
                 onChange={(value) => {
                   clearInvalidFormField("passcode")
@@ -847,18 +855,6 @@ export function ManagerExamScreen({
                     : "Optional, at least 4 characters"
                 }
               />
-              {editingPasscodeProtected && (
-                <p className="text-xs text-muted-foreground sm:col-span-2">
-                  Leave the passcode blank to keep the current exam passcode, or
-                  enter a new one with at least 4 characters to replace it.
-                </p>
-              )}
-              {!editingPasscodeProtected && (
-                <p className="text-xs text-muted-foreground sm:col-span-2">
-                  Passcodes are optional. If you add one, use at least 4
-                  characters.
-                </p>
-              )}
             </div>
 
             <div className="space-y-3">
@@ -923,7 +919,7 @@ export function ManagerExamScreen({
                   <CardContent className="space-y-3">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-2 sm:col-span-2">
-                        <Label>Prompt</Label>
+                        <RequiredLabel>Question</RequiredLabel>
                         <Textarea
                           value={question.prompt}
                           onChange={(event) => {
@@ -952,6 +948,7 @@ export function ManagerExamScreen({
                         invalid={
                           invalidFormField === `question-${index}-points`
                         }
+                        required
                       />
                       <div className="space-y-2">
                         <Label>Type</Label>
@@ -975,13 +972,16 @@ export function ManagerExamScreen({
                     {question.type === "mcq" && (
                       <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
                         <div className="space-y-2">
-                          <Label>Options</Label>
+                          <RequiredLabel>Options</RequiredLabel>
                           <div className="space-y-2">
                             {question.options.map((option, optionIndex) => (
                               <div
                                 key={`${index}-option-${optionIndex}`}
                                 className="flex items-center gap-2"
                               >
+                                <span className="flex h-9 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/50 text-sm font-medium text-muted-foreground">
+                                  {optionIndex + 1}
+                                </span>
                                 <Input
                                   value={option}
                                   onChange={(event) => {
@@ -1000,6 +1000,7 @@ export function ManagerExamScreen({
                                     `question-${index}-option-${optionIndex}`
                                   }
                                   data-exam-form-field={`question-${index}-option-${optionIndex}`}
+                                  className="flex-1"
                                 />
                                 <Button
                                   type="button"
@@ -1040,11 +1041,8 @@ export function ManagerExamScreen({
                           invalid={
                             invalidFormField === `question-${index}-correct`
                           }
+                          required
                         />
-                        <p className="text-xs text-muted-foreground sm:col-span-2">
-                          Use <strong>1</strong> for the first option,{" "}
-                          <strong>2</strong> for the second, and so on.
-                        </p>
                       </div>
                     )}
 
@@ -1061,10 +1059,6 @@ export function ManagerExamScreen({
                           rows={3}
                           placeholder="Optional. If provided, this short answer will be graded automatically."
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Leave this blank to require manual grading for the
-                          short answer.
-                        </p>
                       </div>
                     )}
                   </CardContent>
@@ -1167,11 +1161,11 @@ export function ManagerExamScreen({
                 </Badge>
               ) : null}
             </DialogTitle>
-            <DialogDescription>
-              {isLiveMonitor
-                ? "Live control panel for monitoring students, integrity events, and grading progress."
-                : "Review completed attempts, grading, and released results."}
-            </DialogDescription>
+            {!isLiveMonitor && (
+              <DialogDescription>
+                Review completed attempts, grading, and released results.
+              </DialogDescription>
+            )}
           </DialogHeader>
 
           {detailError && (
@@ -1192,383 +1186,302 @@ export function ManagerExamScreen({
               Loading exam detail...
             </div>
           ) : detail ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <StatCard
-                  icon={ShieldAlert}
-                  label="Suspicious students"
-                  value={String(monitorSummary?.suspiciousStudents ?? 0)}
-                  color="amber"
-                />
-                <StatCard
-                  icon={CheckCircle2}
-                  label="Graded students"
-                  value={String(monitorSummary?.gradedStudents ?? 0)}
-                  color="emerald"
-                />
-                <StatCard
-                  icon={Users}
-                  label="Students entered"
-                  value={String(monitorSummary?.enteredStudents ?? 0)}
-                  color="indigo"
-                />
-              </div>
+            <div className="grid min-h-0 gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
+              <div className="min-h-0 rounded-lg border bg-muted/10">
+                <div className="border-b p-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-base font-semibold">
+                        {monitorSummary?.enteredStudents ?? 0}/
+                        {currentAttemptCount}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Submitted
+                      </p>
+                    </div>
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-base font-semibold">
+                        {monitorSummary?.gradedStudents ?? 0}/
+                        {currentAttemptCount}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Graded
+                      </p>
+                    </div>
+                    <div className="rounded-md border bg-background p-2">
+                      <p className="text-base font-semibold">
+                        {suspiciousAttemptCount}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Alerts
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">
-                    {isLiveMonitor ? "Student monitor" : "Student attempts"}
-                  </CardTitle>
-                  <DialogDescription className="m-0 text-xs">
-                    {detail.attempts.length} student
-                    {detail.attempts.length === 1 ? "" : "s"}{" "}
-                    {suspiciousAttemptCount > 0
-                      ? `• ${suspiciousAttemptCount} suspicious`
-                      : "• no suspicious activity"}
-                    . Select a card to open full details.
-                  </DialogDescription>
-                </CardHeader>
-                <CardContent>
-                  {detail.attempts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
+                <div className="max-h-[32vh] overflow-y-auto p-2 lg:max-h-[58vh]">
+                  {currentAttempts.length === 0 ? (
+                    <p className="p-3 text-sm text-muted-foreground">
                       No attempts yet.
                     </p>
                   ) : (
-                    <div className="max-h-[56vh] overflow-y-auto pr-1">
-                      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                        {detail.attempts.map((attempt) => {
-                          const monitorStatus = getAttemptMonitorStatus(attempt)
-                          const suspicious = isAttemptSuspicious(attempt)
+                    <div className="space-y-1.5">
+                      {currentAttempts.map((attempt) => {
+                        const monitorStatus = getAttemptMonitorStatus(attempt)
+                        const gradeIndicator = getAttemptGradeIndicator(attempt)
+                        const suspicious = isAttemptSuspicious(attempt)
+                        const isSelected = attempt.id === selectedAttemptId
 
-                          return (
-                            <button
-                              key={attempt.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedAttemptId(attempt.id)
-                                setGradeInputs(
-                                  buildGradeInputsForAttempt(attempt),
-                                )
-                              }}
-                              className={cn(
-                                "w-full rounded-xl border p-4 text-left transition-colors",
-                                suspicious
-                                  ? "border-red-500/60 bg-red-500/10 hover:bg-red-500/15"
-                                  : "bg-background hover:bg-muted/40",
-                                attempt.id === selectedAttemptId &&
-                                  (suspicious
-                                    ? "ring-2 ring-red-500/30"
-                                    : "border-primary bg-primary/5 ring-2 ring-primary/20"),
-                              )}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 space-y-2">
-                                  <p className="truncate text-sm font-semibold text-foreground">
-                                    {attempt.studentDisplayName}
-                                  </p>
-                                  <Badge
-                                    variant={
-                                      suspicious ? "destructive" : "secondary"
-                                    }
-                                  >
-                                    {monitorStatus}
-                                  </Badge>
-                                </div>
-                                {attempt.integrityEvents.length > 0 ? (
-                                  <div className="shrink-0 rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-300">
-                                    {attempt.integrityEvents.length} alert
-                                    {attempt.integrityEvents.length === 1
-                                      ? ""
-                                      : "s"}
-                                  </div>
-                                ) : null}
-                              </div>
-                              <p className="mt-3 text-xs text-muted-foreground">
-                                {suspicious
-                                  ? "Suspicious activity detected. Open to review events and actions."
-                                  : "Normal activity. Open to review grading and attempt details."}
+                        return (
+                          <button
+                            key={attempt.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAttemptId(attempt.id)
+                              setGradeInputs(
+                                buildGradeInputsForAttempt(attempt),
+                              )
+                            }}
+                            className={cn(
+                              "w-full rounded-md border px-3 py-2 text-left transition-colors",
+                              isSelected
+                                ? "border-primary bg-primary/5"
+                                : "bg-background hover:bg-muted/40",
+                              suspicious &&
+                                !isSelected &&
+                                "border-destructive/30 bg-destructive/5",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="min-w-0 truncate text-sm font-medium">
+                                {attempt.studentDisplayName}
                               </p>
-                            </button>
-                          )
-                        })}
-                      </div>
+                              {attempt.integrityEvents.length > 0 ? (
+                                <Badge variant="destructive">
+                                  {attempt.integrityEvents.length}
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Badge variant="outline">{monitorStatus}</Badge>
+                              <Badge variant="outline">{gradeIndicator}</Badge>
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              <Sheet
-                open={Boolean(selectedAttempt)}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    setSelectedAttemptId(null)
-                  }
-                }}
-              >
-                <SheetContent
-                  side="right"
-                  className="w-full overflow-y-auto sm:max-w-2xl"
-                >
-                  {selectedAttempt ? (
-                    <>
-                      <SheetHeader className="border-b px-6 py-5">
-                        <SheetTitle className="text-base">
-                          {selectedAttempt.studentDisplayName}
-                        </SheetTitle>
-                        <SheetDescription className="space-y-1">
-                          <span className="block">
+              <div className="min-h-0 rounded-lg border">
+                {selectedAttempt ? (
+                  <div className="flex max-h-[58vh] min-h-[44vh] flex-col lg:min-h-[58vh]">
+                    <div className="border-b p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-base font-semibold">
+                            {selectedAttempt.studentDisplayName}
+                          </h3>
+                          <p className="truncate text-xs text-muted-foreground">
                             {selectedAttempt.studentEmail}
-                          </span>
-                          <span className="block">
-                            {selectedAttemptGradeIndicator} &middot; Attempt{" "}
-                            {selectedAttempt.attemptNumber} &middot;{" "}
-                            {selectedAttempt.totalScore === null
-                              ? "Score pending"
-                              : `${selectedAttempt.totalScore} points`}
-                          </span>
-                        </SheetDescription>
-                      </SheetHeader>
-
-                      <div className="space-y-4 p-6">
+                          </p>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                          <Badge
-                            variant={
-                              selectedAttemptMonitorStatus === "Suspicious"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
+                          <Badge variant="outline">
                             {selectedAttemptMonitorStatus}
                           </Badge>
-                          {selectedAttempt.resultsReleasedAt ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                              Released
-                            </Badge>
-                          ) : null}
+                          <Badge variant="outline">
+                            {selectedAttemptGradeIndicator}
+                          </Badge>
                         </div>
-
-                        <div className="rounded-lg border bg-muted/20 p-3">
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            Student overview
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+                        <div className="rounded-md bg-muted/40 p-2">
+                          <p className="text-muted-foreground">Attempt</p>
+                          <p className="font-medium">
+                            {selectedAttempt.attemptNumber}
                           </p>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">
-                                Monitor status
-                              </p>
-                              <p className="text-sm font-medium">
-                                {selectedAttemptMonitorStatus}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">
-                                Grade state
-                              </p>
-                              <p className="text-sm font-medium">
-                                {selectedAttemptGradeIndicator}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">
-                                Retakes available
-                              </p>
-                              <p className="text-sm font-medium">
-                                {selectedAttempt.availableRetakeCount}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">
-                                Exam mode alerts
-                              </p>
-                              <p className="text-sm font-medium">
-                                {selectedAttempt.integrityEvents.length}
-                              </p>
-                            </div>
-                          </div>
                         </div>
+                        <div className="rounded-md bg-muted/40 p-2">
+                          <p className="text-muted-foreground">Score</p>
+                          <p className="font-medium">
+                            {selectedAttempt.totalScore === null
+                              ? "Pending"
+                              : selectedAttempt.totalScore}
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-muted/40 p-2">
+                          <p className="text-muted-foreground">Retakes</p>
+                          <p className="font-medium">
+                            {selectedAttempt.availableRetakeCount}
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-muted/40 p-2">
+                          <p className="text-muted-foreground">Events</p>
+                          <p className="font-medium">
+                            {selectedAttempt.integrityEvents.length}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
 
-                        <div className="space-y-3">
-                          <Label>Grade information</Label>
-                          {detail.questions.map((question) => {
-                            const answer = selectedAttempt.answers.find(
-                              (candidate) =>
-                                candidate.questionId === question.id,
-                            )
-                            const teacherCanGradeQuestion =
-                              canTeacherGradeQuestion({
-                                questionType: question.type,
-                                correctAnswer: question.correctAnswer,
-                              })
+                    <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Answers</Label>
+                          <span className="text-xs text-muted-foreground">
+                            {detail.questions.length} question
+                            {detail.questions.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        {detail.questions.map((question, index) => {
+                          const answer = selectedAttempt.answers.find(
+                            (candidate) => candidate.questionId === question.id,
+                          )
+                          const teacherCanGradeQuestion =
+                            canTeacherGradeQuestion({
+                              questionType: question.type,
+                              correctAnswer: question.correctAnswer,
+                            })
 
-                            return (
-                              <div
-                                key={question.id}
-                                className="rounded-lg border p-3 space-y-3"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="space-y-1">
+                          return (
+                            <div
+                              key={question.id}
+                              className="rounded-lg border p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <Badge variant="secondary">
+                                      Q{index + 1}
+                                    </Badge>
+                                    <Badge variant="outline">
                                       {question.type === "mcq"
                                         ? "MCQ"
                                         : "Short answer"}
                                     </Badge>
-                                    <p className="text-sm font-medium">
-                                      {question.prompt}
-                                    </p>
                                   </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {question.points} pts
-                                  </span>
-                                </div>
-                                <div className="rounded-md bg-muted/50 p-3 text-xs whitespace-pre-wrap">
-                                  {formatManagerAnswer(answer?.answer)}
-                                </div>
-                                <div
-                                  className={cn(
-                                    "grid gap-3",
-                                    teacherCanGradeQuestion
-                                      ? "sm:grid-cols-2"
-                                      : "sm:grid-cols-1",
-                                  )}
-                                >
-                                  <Field
-                                    label="Auto score"
-                                    value={
-                                      answer?.autoScore === null ||
-                                      answer?.autoScore === undefined
-                                        ? ""
-                                        : String(answer.autoScore)
-                                    }
-                                    disabled
-                                  />
-                                  {teacherCanGradeQuestion ? (
-                                    <Field
-                                      label="Teacher score"
-                                      type="number"
-                                      value={gradeInputs[question.id] ?? ""}
-                                      onChange={(value) =>
-                                        setGradeInputs((current) => ({
-                                          ...current,
-                                          [question.id]: value,
-                                        }))
-                                      }
-                                      disabled={!canGradeSelectedAttempt}
-                                      min="0"
-                                    />
-                                  ) : null}
-                                </div>
-                                {!teacherCanGradeQuestion ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    This answer is graded automatically and is
-                                    not editable.
+                                  <p className="mt-2 text-sm font-medium">
+                                    {question.prompt}
                                   </p>
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">
-                                    Manual grading is required because no model
-                                    answer was provided for this short answer.
-                                  </p>
-                                )}
+                                </div>
+                                <span className="shrink-0 text-xs text-muted-foreground">
+                                  {question.points} pts
+                                </span>
                               </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Exam mode events</Label>
-                          {selectedAttempt.integrityEvents.length === 0 ? (
-                            <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                              No fullscreen or tab-switch events recorded for
-                              this attempt.
+                              <div className="mt-3 rounded-md bg-muted/40 p-3 text-xs whitespace-pre-wrap">
+                                {formatManagerAnswer(answer?.answer)}
+                              </div>
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <Field
+                                  label="Auto score"
+                                  value={
+                                    answer?.autoScore === null ||
+                                    answer?.autoScore === undefined
+                                      ? ""
+                                      : String(answer.autoScore)
+                                  }
+                                  disabled
+                                />
+                                {teacherCanGradeQuestion ? (
+                                  <Field
+                                    label="Teacher score"
+                                    type="number"
+                                    value={gradeInputs[question.id] ?? ""}
+                                    onChange={(value) =>
+                                      setGradeInputs((current) => ({
+                                        ...current,
+                                        [question.id]: value,
+                                      }))
+                                    }
+                                    disabled={!canGradeSelectedAttempt}
+                                    min="0"
+                                  />
+                                ) : null}
+                              </div>
                             </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {selectedAttempt.integrityEvents.map((event) => {
-                                const formattedEvent = formatIntegrityEvent({
-                                  eventType: event.eventType,
-                                  payload: event.payload,
-                                })
-
-                                return (
-                                  <div
-                                    key={event.key}
-                                    className="rounded-lg border p-3 text-xs"
-                                  >
-                                    <div className="flex items-center justify-between gap-3">
-                                      <span className="font-semibold text-foreground">
-                                        {formattedEvent.title}
-                                      </span>
-                                      <span className="text-muted-foreground">
-                                        {format(
-                                          new Date(event.createdAt),
-                                          "MMM d, h:mm:ss a",
-                                        )}
-                                      </span>
-                                    </div>
-                                    <p className="mt-2 text-muted-foreground">
-                                      {formattedEvent.detail}
-                                    </p>
-                                    {Object.keys(event.payload).length > 0 ? (
-                                      <details className="mt-2 rounded-md bg-muted/40 p-2">
-                                        <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
-                                          Details
-                                        </summary>
-                                        <pre className="mt-2 whitespace-pre-wrap text-[11px] text-muted-foreground">
-                                          {JSON.stringify(
-                                            event.payload,
-                                            null,
-                                            2,
-                                          )}
-                                        </pre>
-                                      </details>
-                                    ) : null}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-
-                        {!isLiveMonitor ? (
-                          <p className="text-xs text-muted-foreground">
-                            Void controls are only active while the exam is
-                            live.
-                          </p>
-                        ) : null}
-
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            onClick={() => void submitGrades()}
-                            disabled={isMutating || !canGradeSelectedAttempt}
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            Approve grade
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => void grantSelectedRetake()}
-                            disabled={isMutating || !canGrantSelectedRetake}
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            Grant retake
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            onClick={() => void updateSelectedIntegrity("void")}
-                            disabled={
-                              !isLiveMonitor ||
-                              isMutating ||
-                              selectedAttempt.status === "voided"
-                            }
-                          >
-                            <ShieldAlert className="w-4 h-4" />
-                            Void attempt
-                          </Button>
-                        </div>
+                          )
+                        })}
                       </div>
-                    </>
-                  ) : null}
-                </SheetContent>
-              </Sheet>
+
+                      <div className="space-y-2">
+                        <Label>Exam mode events</Label>
+                        {selectedAttempt.integrityEvents.length === 0 ? (
+                          <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                            No events recorded.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {selectedAttempt.integrityEvents.map((event) => {
+                              const formattedEvent = formatIntegrityEvent({
+                                eventType: event.eventType,
+                                payload: event.payload,
+                              })
+
+                              return (
+                                <div
+                                  key={event.key}
+                                  className="rounded-lg border p-3 text-xs"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="font-medium text-foreground">
+                                      {formattedEvent.title}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {format(
+                                        new Date(event.createdAt),
+                                        "MMM d, h:mm:ss a",
+                                      )}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-muted-foreground">
+                                    {formattedEvent.detail}
+                                  </p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 border-t p-4">
+                      <Button
+                        onClick={() => void submitGrades()}
+                        disabled={isMutating || !canGradeSelectedAttempt}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Save grade
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => void grantSelectedRetake()}
+                        disabled={isMutating || !canGrantSelectedRetake}
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Grant retake
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => void updateSelectedIntegrity("void")}
+                        disabled={
+                          !isLiveMonitor ||
+                          isMutating ||
+                          selectedAttempt.status === "voided"
+                        }
+                      >
+                        <ShieldAlert className="w-4 h-4" />
+                        Void
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid min-h-[58vh] place-items-center p-6 text-sm text-muted-foreground">
+                    Select a student.
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="text-sm text-muted-foreground py-12 text-center">
@@ -1622,7 +1535,7 @@ export function ManagerExamScreen({
           }
         }
 
-        return { ...question, type }
+        return { ...question, type, options: [], correctAnswerText: "" }
       }),
     }))
   }
@@ -1772,7 +1685,7 @@ function toExamPayload(
 
       if (!prompt) {
         throw new ExamFormValidationError(
-          "Each question needs a prompt.",
+          "Each question field is required.",
           `question-${questionIndex}-prompt`,
         )
       }
@@ -1957,6 +1870,20 @@ function combineStartParts(
   return Number.isNaN(startAt.getTime()) ? "" : startAt.toISOString()
 }
 
+function RequiredLabel({
+  children,
+  ...props
+}: React.ComponentProps<typeof Label>) {
+  return (
+    <Label {...props}>
+      {children}
+      <span className="ml-1 text-destructive" aria-hidden="true">
+        *
+      </span>
+    </Label>
+  )
+}
+
 function Field({
   label,
   value,
@@ -1969,6 +1896,7 @@ function Field({
   step,
   fieldKey,
   invalid = false,
+  required = false,
 }: {
   label: string
   value: string
@@ -1981,10 +1909,15 @@ function Field({
   step?: string
   fieldKey?: string
   invalid?: boolean
+  required?: boolean
 }) {
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      {required ? (
+        <RequiredLabel>{label}</RequiredLabel>
+      ) : (
+        <Label>{label}</Label>
+      )}
       <Input
         type={type}
         value={value}
@@ -2005,10 +1938,12 @@ function StartTimeFields({
   value,
   onChange,
   invalid = false,
+  required = false,
 }: {
   value: string
   onChange: (value: string) => void
   invalid?: boolean
+  required?: boolean
 }) {
   const date = getStartDatePart(value)
   const time = getStartTimeParts(value)
@@ -2016,7 +1951,11 @@ function StartTimeFields({
   return (
     <div className="grid gap-2 sm:grid-cols-[1fr_5.5rem_5.5rem_4.75rem]">
       <div className="space-y-2">
-        <Label htmlFor="exam-start-date">Start date</Label>
+        {required ? (
+          <RequiredLabel htmlFor="exam-start-date">Start date</RequiredLabel>
+        ) : (
+          <Label htmlFor="exam-start-date">Start date</Label>
+        )}
         <Input
           id="exam-start-date"
           type="date"

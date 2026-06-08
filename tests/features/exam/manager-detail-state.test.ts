@@ -4,6 +4,7 @@ import {
   getEndedExamApprovalStatus,
   getAttemptGradeIndicator,
   getAttemptMonitorStatus,
+  getCurrentAttemptsByStudent,
   getExamMonitorSummary,
   isAttemptSuspicious,
   resolveSelectedAttemptId,
@@ -80,6 +81,39 @@ describe("buildGradeInputsForAttempt", () => {
   })
 })
 
+describe("getCurrentAttemptsByStudent", () => {
+  test("keeps only the latest attempt for each student", () => {
+    const latestAttempt = {
+      ...attempt,
+      id: "attempt-2",
+      status: "submitted" as const,
+      attemptNumber: 2,
+      submittedAt: "2026-05-04T09:20:00Z",
+      totalScore: null,
+    }
+
+    expect(getCurrentAttemptsByStudent([attempt, latestAttempt])).toEqual([
+      latestAttempt,
+    ])
+  })
+
+  test("keeps separate students sorted by display name", () => {
+    const secondStudentAttempt = {
+      ...attempt,
+      id: "attempt-3",
+      studentUserId: "student-2",
+      studentDisplayName: "Another Student",
+      studentEmail: "another@example.com",
+    }
+
+    expect(
+      getCurrentAttemptsByStudent([attempt, secondStudentAttempt]).map(
+        (item) => item.studentDisplayName,
+      ),
+    ).toEqual(["Another Student", "Student One"])
+  })
+})
+
 describe("monitor card helpers", () => {
   test("marks attempts with integrity events as suspicious", () => {
     expect(
@@ -114,7 +148,7 @@ describe("monitor card helpers", () => {
         status: "graded",
         totalScore: 19,
       }),
-    ).toEqual("Released")
+    ).toEqual("Results released")
   })
 
   test("shows needs grading for manual-review attempts", () => {
@@ -126,6 +160,17 @@ describe("monitor card helpers", () => {
         totalScore: null,
       }),
     ).toEqual("Needs grading")
+  })
+
+  test("shows ready to release for graded unreleased attempts", () => {
+    expect(
+      getAttemptGradeIndicator({
+        resultsReleasedAt: null,
+        needsManualReview: false,
+        status: "graded",
+        totalScore: 19,
+      }),
+    ).toEqual("Ready to release")
   })
 
   test("shows voided when the attempt was voided", () => {
@@ -169,6 +214,22 @@ describe("monitor card helpers", () => {
       suspiciousStudents: 1,
       gradedStudents: 1,
       enteredStudents: 2,
+    })
+  })
+
+  test("counts graded students before results are released", () => {
+    expect(
+      getExamMonitorSummary([
+        {
+          ...attempt,
+          status: "graded",
+          resultsReleasedAt: null,
+        },
+      ]),
+    ).toEqual({
+      suspiciousStudents: 0,
+      gradedStudents: 1,
+      enteredStudents: 1,
     })
   })
 
