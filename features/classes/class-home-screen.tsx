@@ -19,6 +19,7 @@ import {
   useState,
   useTransition,
 } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -504,7 +505,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
   return (
     <>
-      <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      <div className="p-6 space-y-5 max-w-6xl mx-auto">
         {errorMessage ? (
           <Alert variant="destructive">
             <AlertTitle>Class action failed</AlertTitle>
@@ -545,16 +546,18 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
           )}
         >
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-white/70 text-sm font-medium">
-                {classItem.code} &middot; {classItem.subject}
-              </p>
-              <h1 className="text-2xl font-bold mt-1 text-balance">
-                {classItem.name}
-              </h1>
-              <p className="text-white/80 text-sm mt-2 leading-relaxed max-w-xl">
-                {classItem.description || "No description yet."}
-              </p>
+            <div className="min-w-0">
+              <ClassPageHeader
+                title={classItem.name}
+                code={classItem.code}
+                section="Home"
+                inverse
+                detail={
+                  <p className="max-w-xl text-sm leading-relaxed text-white/80">
+                    {classItem.description || "No description yet."}
+                  </p>
+                }
+              />
               {isLive ? (
                 <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1.5 text-sm font-semibold text-white">
                   <span className="h-2 w-2 rounded-full bg-emerald-300" />

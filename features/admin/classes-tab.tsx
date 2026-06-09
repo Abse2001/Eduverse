@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
@@ -47,7 +48,6 @@ import { CLASS_COLOR_MAP } from "@/lib/view-config"
 type ClassFormState = {
   name: string
   code: string
-  subject: string
   teacherEmail: string
   color: string
   description: string
@@ -61,7 +61,6 @@ type ExtensionValueMap = Record<string, boolean>
 const EMPTY_CLASS_FORM: ClassFormState = {
   name: "",
   code: "",
-  subject: "",
   teacherEmail: "",
   color: "indigo",
   description: "",
@@ -164,7 +163,6 @@ export function ClassesTab() {
     setClassForm({
       name: classItem.name,
       code: classItem.code,
-      subject: classItem.subject,
       teacherEmail: classItem.teacher?.email ?? "",
       color: classItem.color ?? "indigo",
       description: classItem.description,
@@ -216,7 +214,6 @@ export function ClassesTab() {
             target_class_id: editingClass.id,
             class_name: classForm.name,
             class_code: classForm.code,
-            class_subject: classForm.subject,
             teacher_email: classForm.teacherEmail,
             class_color: classForm.color,
             class_description: classForm.description,
@@ -227,7 +224,6 @@ export function ClassesTab() {
             target_org_id: activeOrganization.id,
             class_name: classForm.name,
             class_code: classForm.code,
-            class_subject: classForm.subject,
             teacher_email: classForm.teacherEmail,
             class_color: classForm.color,
             class_description: classForm.description,
@@ -539,20 +535,6 @@ export function ClassesTab() {
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="class-subject">Subject</Label>
-                <Input
-                  id="class-subject"
-                  value={classForm.subject}
-                  onChange={(event) =>
-                    setClassForm((value) => ({
-                      ...value,
-                      subject: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="teacher-email">Teacher email</Label>
                 <Input
@@ -987,6 +969,7 @@ function buildClassFeatureRows(
 
     rowsByKey.set(definition.key, {
       ...definition,
+      label: getFeatureDisplayLabel(definition),
       checked: orgEnabled
         ? (classFeatureValues[definition.key] ?? true)
         : false,

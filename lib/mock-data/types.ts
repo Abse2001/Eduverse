@@ -37,7 +37,6 @@ export interface ClassHistoryRecord {
   id: string
   name: string
   code: string
-  subject: string
   teacherName: string
   semester: string
   students: number
@@ -50,7 +49,6 @@ export interface Class {
   id: string
   name: string
   code: string
-  subject: string
   teacherId: string
   color: string
   description: string

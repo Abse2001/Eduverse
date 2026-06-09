@@ -24,7 +24,9 @@ export default function ClassAiPage({
   }
 
   if (isFeatureDisabled) {
-    return <ClassFeatureDisabledFallback classId={classId} featureLabel="AI" />
+    return (
+      <ClassFeatureDisabledFallback classId={classId} featureLabel="AI Agent" />
+    )
   }
 
   return <ClassAiScreen cls={cls} />

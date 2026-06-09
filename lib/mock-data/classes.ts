@@ -5,7 +5,6 @@ export const CLASSES: Class[] = [
     id: "c1",
     name: "Data Structures & Algorithms",
     code: "CS301",
-    subject: "Computer Science",
     teacherId: "t1",
     color: "indigo",
     description:
@@ -18,7 +17,6 @@ export const CLASSES: Class[] = [
     id: "c2",
     name: "Web Development Bootcamp",
     code: "WD101",
-    subject: "Software Engineering",
     teacherId: "t2",
     color: "emerald",
     description:
@@ -31,7 +29,6 @@ export const CLASSES: Class[] = [
     id: "c3",
     name: "Machine Learning Fundamentals",
     code: "ML201",
-    subject: "Artificial Intelligence",
     teacherId: "t1",
     color: "violet",
     description:

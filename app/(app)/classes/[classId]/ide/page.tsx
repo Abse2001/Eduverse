@@ -2,7 +2,6 @@
 
 import {
   CheckCircle2,
-  Code2,
   Folder,
   FolderOpen,
   Globe,
@@ -14,7 +13,8 @@ import {
   X,
 } from "lucide-react"
 import dynamic from "next/dynamic"
-import { use, useMemo, useRef, useState } from "react"
+import { use, useEffect, useMemo, useRef, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import {
   ResizableHandle,
@@ -115,6 +115,7 @@ export default function IdePage({
   const [fontSize, setFontSize] = useState(14)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const terminalIdRef = useRef(INITIAL_TERMINAL.length + 1)
+  const isDarkMode = useResolvedDarkMode()
 
   const activeEntry = workspace[activePath]
   const activeContent = activeEntry?.content ?? ""
@@ -124,8 +125,8 @@ export default function IdePage({
     [workspace, activePath],
   )
   const previewDocument = useMemo(
-    () => buildPreviewDocument(workspace, activePath),
-    [workspace, activePath],
+    () => buildPreviewDocument(workspace, activePath, isDarkMode),
+    [workspace, activePath, isDarkMode],
   )
 
   function appendTerminal(
@@ -392,26 +393,21 @@ export default function IdePage({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="flex h-[calc(100vh-3.5rem)] min-h-[680px] flex-col overflow-hidden bg-[#10131a] text-slate-100">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-slate-800 bg-[#171b24] px-3">
+      <div className="flex h-[calc(100vh-3.5rem)] min-h-[680px] flex-col overflow-hidden bg-background text-foreground">
+        <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-4 py-2">
           <div className="flex min-w-0 items-center gap-2 pr-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-indigo-500 text-white">
-              <Code2 className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold leading-4 text-white">
-                {cls.name}
-              </h1>
-              <p className="truncate text-[11px] leading-3 text-slate-400">
-                {cls.code} IDE
-              </p>
-            </div>
+            <ClassPageHeader
+              title={cls.name}
+              code={cls.code}
+              section="IDE"
+              size="compact"
+            />
           </div>
 
-          <Separator orientation="vertical" className="h-6 bg-slate-800" />
+          <Separator orientation="vertical" className="h-6" />
 
           <Select value={templateId} onValueChange={switchTemplate}>
-            <SelectTrigger className="h-8 w-40 border-slate-700 bg-slate-900 text-xs text-slate-100">
+            <SelectTrigger className="h-8 w-40 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -423,7 +419,7 @@ export default function IdePage({
             </SelectContent>
           </Select>
 
-          <div className="hidden min-w-0 max-w-80 text-xs text-slate-400 lg:block">
+          <div className="hidden min-w-0 max-w-80 text-xs text-muted-foreground lg:block">
             {activeTemplate.description}
           </div>
 
@@ -442,7 +438,7 @@ export default function IdePage({
             </ToolbarButton>
             <Button
               size="sm"
-              className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-700"
+              className="h-8 gap-1.5 px-3 text-xs"
               onClick={runActiveFile}
             >
               <Play className="h-3.5 w-3.5" />
@@ -450,8 +446,8 @@ export default function IdePage({
             </Button>
             <Button
               size="sm"
-              variant="secondary"
-              className="h-8 gap-1.5 border border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800"
+              variant="outline"
+              className="h-8 gap-1.5 px-3 text-xs"
               onClick={() => setSavedAt(new Date())}
             >
               <Save className="h-3.5 w-3.5" />
@@ -467,9 +463,9 @@ export default function IdePage({
           <ResizablePanel defaultSize={72} minSize={36}>
             <ResizablePanelGroup direction="horizontal" className="min-h-0">
               <ResizablePanel defaultSize={18} minSize={14} maxSize={35}>
-                <aside className="flex h-full min-h-0 flex-col bg-[#141821]">
-                  <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-800 px-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-400">
+                <aside className="flex h-full min-h-0 flex-col bg-card">
+                  <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                       <FolderOpen className="h-3.5 w-3.5" />
                       Files
                     </div>
@@ -501,26 +497,26 @@ export default function IdePage({
                       onRename={renameWorkspacePath}
                     />
                   </div>
-                  <div className="border-t border-slate-800 px-3 py-2 text-[11px] text-slate-400">
+                  <div className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
                     {SUPPORTED_LANGUAGES.join(" / ")}
                   </div>
                 </aside>
               </ResizablePanel>
 
-              <ResizableHandle className="bg-slate-800" withHandle />
+              <ResizableHandle className="bg-border" withHandle />
 
               <ResizablePanel defaultSize={52} minSize={30}>
-                <section className="flex h-full min-w-0 flex-col overflow-hidden bg-[#1d222d]">
-                  <div className="flex h-10 shrink-0 items-end overflow-x-auto border-b border-slate-800 bg-[#171b24]">
+                <section className="flex h-full min-w-0 flex-col overflow-hidden bg-background">
+                  <div className="flex h-10 shrink-0 items-end overflow-x-auto border-b border-border bg-card">
                     {openPaths.map((path) => (
                       <button
                         key={path}
                         type="button"
                         onClick={() => openFile(path)}
                         className={cn(
-                          "group flex h-10 max-w-48 shrink-0 items-center gap-2 border-r border-slate-800 px-3 text-xs text-slate-400",
+                          "group flex h-10 max-w-48 shrink-0 items-center gap-2 border-r border-border px-3 text-xs text-muted-foreground",
                           activePath === path &&
-                            "border-t-2 border-t-indigo-400 bg-[#1d222d] text-slate-100",
+                            "border-t-2 border-t-primary bg-background text-foreground",
                         )}
                       >
                         <FileIcon
@@ -543,7 +539,7 @@ export default function IdePage({
                                 closeFile(path)
                               }
                             }}
-                            className="rounded p-0.5 opacity-0 hover:bg-slate-700 group-hover:opacity-100"
+                            className="rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
                             aria-label={`Close ${basename(path)}`}
                           >
                             <X className="h-3 w-3" />
@@ -558,7 +554,7 @@ export default function IdePage({
                       <MonacoEditor
                         height="100%"
                         language={languageForPath(activePath)}
-                        theme="vs-dark"
+                        theme={isDarkMode ? "vs-dark" : "vs"}
                         value={activeContent}
                         onChange={(value) => updateActiveFile(value ?? "")}
                         path={activePath}
@@ -580,7 +576,7 @@ export default function IdePage({
                         }}
                       />
                     ) : (
-                      <div className="grid h-full place-items-center text-sm text-slate-500">
+                      <div className="grid h-full place-items-center text-sm text-muted-foreground">
                         Open a file from the tree.
                       </div>
                     )}
@@ -588,18 +584,15 @@ export default function IdePage({
                 </section>
               </ResizablePanel>
 
-              <ResizableHandle
-                className="bg-slate-800 max-lg:hidden"
-                withHandle
-              />
+              <ResizableHandle className="bg-border max-lg:hidden" withHandle />
 
               <ResizablePanel
                 className="max-lg:hidden"
                 defaultSize={30}
                 minSize={20}
               >
-                <aside className="flex h-full min-h-0 flex-col bg-[#141821]">
-                  <div className="flex h-10 shrink-0 items-center border-b border-slate-800">
+                <aside className="flex h-full min-h-0 flex-col bg-card">
+                  <div className="flex h-10 shrink-0 items-center border-b border-border">
                     <PreviewTab
                       active={previewMode === "preview"}
                       label="Preview"
@@ -617,7 +610,7 @@ export default function IdePage({
                   {previewMode === "preview" ? (
                     <iframe
                       title="Project preview"
-                      className="min-h-0 flex-1 bg-white"
+                      className="min-h-0 flex-1 bg-background"
                       sandbox="allow-scripts allow-forms allow-modals"
                       srcDoc={previewDocument}
                     />
@@ -631,25 +624,25 @@ export default function IdePage({
             </ResizablePanelGroup>
           </ResizablePanel>
 
-          <ResizableHandle className="bg-slate-800" withHandle />
+          <ResizableHandle className="bg-border" withHandle />
 
           <ResizablePanel defaultSize={28} minSize={10}>
-            <section className="flex h-full min-h-0 flex-col bg-[#0b0f16]">
+            <section className="flex h-full min-h-0 flex-col bg-card">
               <button
                 type="button"
-                className="flex h-10 w-full shrink-0 items-center gap-2 border-b border-slate-800 px-3 text-left text-xs font-semibold text-slate-300"
+                className="flex h-10 w-full shrink-0 items-center gap-2 border-b border-border px-3 text-left text-xs font-semibold text-foreground"
                 onClick={() => setTerminalOpen((open) => !open)}
               >
-                <SquareTerminal className="h-4 w-4 text-emerald-400" />
+                <SquareTerminal className="h-4 w-4 text-muted-foreground" />
                 Terminal
-                <span className="font-normal text-slate-500">{cwd}</span>
+                <span className="font-normal text-muted-foreground">{cwd}</span>
                 {savedAt ? (
-                  <span className="ml-auto flex items-center gap-1 font-normal text-slate-500">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="ml-auto flex items-center gap-1 font-normal text-muted-foreground">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                     Saved {savedAt.toLocaleTimeString()}
                   </span>
                 ) : (
-                  <span className="ml-auto font-normal text-slate-500">
+                  <span className="ml-auto font-normal text-muted-foreground">
                     Virtual CLI
                   </span>
                 )}
@@ -658,16 +651,17 @@ export default function IdePage({
 
               {terminalOpen ? (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="min-h-0 flex-1 overflow-auto px-3 py-2 font-mono text-xs leading-5">
+                  <div className="min-h-0 flex-1 overflow-auto bg-muted/20 px-3 py-2 font-mono text-xs leading-5">
                     {terminalLines.map((line) => (
                       <pre
                         key={line.id}
                         className={cn(
                           "whitespace-pre-wrap",
-                          line.kind === "input" && "text-sky-300",
-                          line.kind === "output" && "text-slate-300",
-                          line.kind === "error" && "text-rose-300",
-                          line.kind === "success" && "text-emerald-300",
+                          line.kind === "input" && "text-primary",
+                          line.kind === "output" && "text-foreground",
+                          line.kind === "error" && "text-destructive",
+                          line.kind === "success" &&
+                            "text-emerald-700 dark:text-emerald-400",
                         )}
                       >
                         {line.text}
@@ -676,9 +670,9 @@ export default function IdePage({
                   </div>
                   <form
                     onSubmit={submitTerminal}
-                    className="flex h-10 shrink-0 items-center gap-2 border-t border-slate-800 px-3 font-mono text-xs"
+                    className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3 font-mono text-xs"
                   >
-                    <span className="text-slate-500">{cwd} $</span>
+                    <span className="text-muted-foreground">{cwd} $</span>
                     <input
                       value={terminalInput}
                       onChange={(event) => setTerminalInput(event.target.value)}
@@ -688,7 +682,7 @@ export default function IdePage({
                           submitTerminalCommand()
                         }
                       }}
-                      className="h-full min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-600"
+                      className="h-full min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
                       placeholder="Try: help, ls, mkdir src, touch app.js, mv app.js main.js, rm main.js"
                       spellCheck={false}
                     />
@@ -701,6 +695,41 @@ export default function IdePage({
       </div>
     </TooltipProvider>
   )
+}
+
+function useResolvedDarkMode() {
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  useEffect(() => {
+    function readDarkMode() {
+      const root = document.documentElement
+      const theme = root.dataset.theme
+
+      setIsDarkMode(
+        root.classList.contains("dark") ||
+          document.body.classList.contains("dark") ||
+          theme === "dark",
+      )
+    }
+
+    readDarkMode()
+
+    const observer = new MutationObserver(readDarkMode)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    })
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    })
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
+
+  return isDarkMode
 }
 
 function ToolbarButton({
@@ -718,7 +747,7 @@ function ToolbarButton({
         <button
           type="button"
           onClick={onClick}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {children}
         </button>
@@ -741,7 +770,7 @@ function IconButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-100"
+      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       aria-label={label}
       title={label}
     >
@@ -766,8 +795,8 @@ function PreviewTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full flex-1 items-center justify-center gap-2 border-r border-slate-800 text-xs font-semibold text-slate-500",
-        active && "bg-[#1d222d] text-slate-100",
+        "flex h-full flex-1 items-center justify-center gap-2 border-r border-border text-xs font-semibold text-muted-foreground",
+        active && "bg-background text-foreground",
       )}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -779,7 +808,7 @@ function PreviewTab({
 function ProblemsList({ problems }: { problems: string[] }) {
   if (problems.length === 0) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+      <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300">
         <CheckCircle2 className="h-4 w-4" />
         No problems found in the current browser checks.
       </div>
@@ -791,7 +820,7 @@ function ProblemsList({ problems }: { problems: string[] }) {
       {problems.map((problem) => (
         <div
           key={problem}
-          className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
         >
           {problem}
         </div>

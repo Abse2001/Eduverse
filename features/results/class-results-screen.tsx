@@ -17,6 +17,7 @@ import {
   Trophy,
 } from "lucide-react"
 import { useMemo, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -152,15 +153,8 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
   const pageError = assignmentsApi.errorMessage ?? examApi.errorMessage
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-muted-foreground">
-          {cls.code} / Results
-        </p>
-        <h1 className="text-2xl font-semibold tracking-normal text-foreground">
-          {cls.name}
-        </h1>
-      </div>
+    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      <ClassPageHeader title={cls.name} code={cls.code} section="Results" />
 
       {pageError ? (
         <Alert variant="destructive">
