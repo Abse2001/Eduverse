@@ -55,7 +55,6 @@ export interface Class {
   color: string
   description: string
   studentIds: string[]
-  schedule: string
   room: string
   semester: string
 }

@@ -1,7 +1,5 @@
 "use client"
 
-import Link from "next/link"
-import { useEffect, useState } from "react"
 import {
   BarChart3,
   BookOpen,
@@ -14,6 +12,8 @@ import {
   Users,
   Video,
 } from "lucide-react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -150,162 +150,129 @@ export function TeacherDashboard() {
         />
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-3">
-          <h2 className="font-semibold text-foreground">Your Classes</h2>
-          {assignmentsError ? (
-            <p className="text-xs text-destructive">{assignmentsError}</p>
-          ) : null}
+      <div className="space-y-3">
+        <h2 className="font-semibold text-foreground">Your Classes</h2>
+        {assignmentsError ? (
+          <p className="text-xs text-destructive">{assignmentsError}</p>
+        ) : null}
 
-          {myClasses.map((cls) => {
-            const students = classRowById.get(cls.id)?.students ?? []
-            const assignments = assignmentsByClass[cls.id] ?? []
-            const submittedAssignments = assignments.reduce(
-              (sum, assignment) =>
-                sum +
-                assignment.submissions.filter(
-                  (submission) => !submission.gradedAt,
-                ).length,
-              0,
-            )
-            const progress = getTeacherGradingProgress(assignments)
+        {myClasses.map((cls) => {
+          const students = classRowById.get(cls.id)?.students ?? []
+          const assignments = assignmentsByClass[cls.id] ?? []
+          const submittedAssignments = assignments.reduce(
+            (sum, assignment) =>
+              sum +
+              assignment.submissions.filter(
+                (submission) => !submission.gradedAt,
+              ).length,
+            0,
+          )
+          const progress = getTeacherGradingProgress(assignments)
 
-            return (
-              <Card key={cls.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={cn(
-                        "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
-                        CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
-                      )}
-                    >
-                      {cls.code.slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-sm text-foreground">
-                          {cls.name}
-                        </p>
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {cls.schedule}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {cls.code} &middot; {cls.room}
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          Completion
-                        </span>
-                        <div className="flex-1">
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {progress}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 mt-3">
-                        <div className="flex -space-x-1.5">
-                          {students.slice(0, 4).map((student) => (
-                            <Avatar
-                              key={student.id}
-                              className="w-6 h-6 ring-2 ring-card"
-                            >
-                              <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-                                {getInitials(student.display_name)}
-                              </AvatarFallback>
-                            </Avatar>
-                          ))}
-                          {students.length > 4 ? (
-                            <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[9px] text-muted-foreground font-medium">
-                              +{students.length - 4}
-                            </div>
-                          ) : null}
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {students.length} students
-                        </span>
-                        {submittedAssignments > 0 ? (
-                          <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                            {submittedAssignments} to grade
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
-                    <Link href={`/classes/${cls.id}/chat`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <MessageSquare className="w-3 h-3" /> Chat
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/session`}>
-                      <Button size="sm" className="w-full text-xs gap-1.5">
-                        <Video className="w-3 h-3" /> Start Session
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/assignments`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <PlusCircle className="w-3 h-3" /> Create Assignment
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/materials`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <Upload className="w-3 h-3" /> Upload Material
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h2 className="font-semibold text-foreground">
-              Today&apos;s Schedule
-            </h2>
-            {myClasses.slice(0, 3).map((cls) => (
-              <Card key={cls.id}>
-                <CardContent className="p-3 flex items-center gap-3">
+          return (
+            <Card key={cls.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
                   <div
                     className={cn(
-                      "w-2 h-10 rounded-full shrink-0",
+                      "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
                       CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
                     )}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {cls.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {cls.schedule}
-                    </p>
+                  >
+                    {cls.code.slice(0, 2)}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-sm text-foreground">
+                        {cls.name}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {cls.code} &middot; {cls.room}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-[11px] text-muted-foreground">
+                        Completion
+                      </span>
+                      <div className="flex-1">
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {progress}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="flex -space-x-1.5">
+                        {students.slice(0, 4).map((student) => (
+                          <Avatar
+                            key={student.id}
+                            className="w-6 h-6 ring-2 ring-card"
+                          >
+                            <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                              {getInitials(student.display_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                        ))}
+                        {students.length > 4 ? (
+                          <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[9px] text-muted-foreground font-medium">
+                            +{students.length - 4}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {students.length} students
+                      </span>
+                      {submittedAssignments > 0 ? (
+                        <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {submittedAssignments} to grade
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                  <Link href={`/classes/${cls.id}/chat`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs gap-1.5"
+                    >
+                      <MessageSquare className="w-3 h-3" /> Chat
+                    </Button>
+                  </Link>
+                  <Link href={`/classes/${cls.id}/session`}>
+                    <Button size="sm" className="w-full text-xs gap-1.5">
+                      <Video className="w-3 h-3" /> Start Session
+                    </Button>
+                  </Link>
+                  <Link href={`/classes/${cls.id}/assignments`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs gap-1.5"
+                    >
+                      <PlusCircle className="w-3 h-3" /> Create Assignment
+                    </Button>
+                  </Link>
+                  <Link href={`/classes/${cls.id}/materials`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs gap-1.5"
+                    >
+                      <Upload className="w-3 h-3" /> Upload Material
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <div className="space-y-3">

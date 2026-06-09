@@ -1,8 +1,22 @@
 "use client"
 
-import { useState } from "react"
 import { format } from "date-fns"
-import { ChartColumn, ClipboardList, FileText } from "lucide-react"
+import {
+  AlertCircle,
+  ArrowRight,
+  BarChart3,
+  BookOpenCheck,
+  CheckCircle2,
+  ClipboardList,
+  FileText,
+  GraduationCap,
+  ListChecks,
+  SearchX,
+  ShieldCheck,
+  Timer,
+  Trophy,
+} from "lucide-react"
+import { useMemo, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,21 +27,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  type ClassAssignment,
+  useClassAssignments,
+} from "@/features/assignments/use-class-assignments"
 import {
   ClassFeatureDisabledFallback,
   ClassRouteFallback,
   useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
-import {
-  useClassAssignments,
-  type ClassAssignment,
-} from "@/features/assignments/use-class-assignments"
 import { ExamResults } from "@/features/exam/exam-results"
 import { useClassExam } from "@/features/exam/use-class-exam"
+import type {
+  ManagerExamSummaryDto,
+  ReleasedExamResultDto,
+} from "@/lib/exams/types"
 import { resolveClassFeatures } from "@/lib/features/feature-registry"
-import type { ReleasedExamResultDto } from "@/lib/exams/types"
 import { useApp } from "@/lib/store"
+import { cn } from "@/lib/utils"
 
 type StudentAssignmentResult = {
   id: string
@@ -46,7 +74,12 @@ type ManagerAssignmentResultSummary = {
   gradedCount: number
   submittedCount: number
   pendingCount: number
+  averageScore: number | null
 }
+
+type ResultRecord =
+  | (StudentAssignmentResult & { kind: "assignment"; date: string })
+  | (ReleasedExamResultDto & { kind: "exam"; date: string })
 
 export function ClassResultsScreen({ classId }: { classId: string }) {
   const { authUser, currentUser, activeOrganization, featureDefinitions } =
@@ -84,6 +117,26 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
   const [selectedExamResult, setSelectedExamResult] =
     useState<ReleasedExamResultDto | null>(null)
 
+  const studentAssignmentResults = useMemo(
+    () =>
+      canManage ? [] : getStudentAssignmentResults(assignmentsApi.assignments),
+    [assignmentsApi.assignments, canManage],
+  )
+  const studentExamResults = useMemo(
+    () =>
+      !canManage && examApi.data && !examApi.data.canManage
+        ? getStudentExamResults(examApi.data.student)
+        : [],
+    [canManage, examApi.data],
+  )
+  const managerAssignmentSummaries = useMemo(
+    () =>
+      canManage ? getManagerAssignmentResults(assignmentsApi.assignments) : [],
+    [assignmentsApi.assignments, canManage],
+  )
+  const managerExamSummaries =
+    canManage && examApi.data?.canManage ? examApi.data.manager.exams : []
+
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
@@ -96,274 +149,58 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
     )
   }
 
-  const studentAssignmentResults = canManage
-    ? []
-    : getStudentAssignmentResults(assignmentsApi.assignments)
-  const studentExamResults =
-    !canManage && examApi.data && !examApi.data.canManage
-      ? getStudentExamResults(examApi.data.student)
-      : []
-  const managerAssignmentSummaries = canManage
-    ? getManagerAssignmentResults(assignmentsApi.assignments)
-    : []
-  const managerExamSummaries =
-    canManage && examApi.data?.canManage ? examApi.data.manager.exams : []
-  const assignmentResultsCount = studentAssignmentResults.length
-  const examResultsCount = studentExamResults.length
-  const gradedAssignmentsCount = managerAssignmentSummaries.reduce(
-    (total, assignment) => total + assignment.gradedCount,
-    0,
-  )
-  const releasedExamResultsCount = managerExamSummaries.reduce(
-    (total, exam) => total + exam.attemptCounts.released,
-    0,
-  )
+  const pageError = assignmentsApi.errorMessage ?? examApi.errorMessage
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{cls.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {cls.code} &middot; Results
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1.5">
-          <ChartColumn className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">
-            {canManage ? "Class overview" : "Your records"}
-          </span>
-        </div>
+    <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-muted-foreground">
+          {cls.code} / Results
+        </p>
+        <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+          {cls.name}
+        </h1>
       </div>
 
-      {(assignmentsApi.errorMessage || examApi.errorMessage) && (
+      {pageError ? (
         <Alert variant="destructive">
-          <AlertDescription>
-            {assignmentsApi.errorMessage ?? examApi.errorMessage}
-          </AlertDescription>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{pageError}</AlertDescription>
         </Alert>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SummaryCard
-          icon={FileText}
-          label={canManage ? "Graded assignments" : "Assignment results"}
-          value={canManage ? gradedAssignmentsCount : assignmentResultsCount}
-        />
-        <SummaryCard
-          icon={ClipboardList}
-          label={canManage ? "Released exam results" : "Exam results"}
-          value={canManage ? releasedExamResultsCount : examResultsCount}
-        />
-      </div>
+      ) : null}
 
       {canManage ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Assignment Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {assignmentsApi.isLoading ? (
-                <LoadingRow label="Loading assignment results..." />
-              ) : managerAssignmentSummaries.length === 0 ? (
-                <EmptyState label="No assignment results yet." />
-              ) : (
-                managerAssignmentSummaries.map((assignment) => (
-                  <div
-                    key={assignment.id}
-                    className="rounded-lg border p-3 space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {assignment.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Due{" "}
-                          {format(new Date(assignment.dueAt), "MMM d, h:mm a")}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {assignment.maxScore} pts
-                      </Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{assignment.gradedCount} graded</span>
-                      <span>{assignment.submittedCount} submitted</span>
-                      <span>{assignment.pendingCount} pending</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                Exam Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {examFeatureEnabled && examApi.isLoading && !examApi.data ? (
-                <LoadingRow label="Loading exam results..." />
-              ) : !examFeatureEnabled ? (
-                <EmptyState label="Exam results are disabled for this class." />
-              ) : managerExamSummaries.length === 0 ? (
-                <EmptyState label="No exam results yet." />
-              ) : (
-                managerExamSummaries.map((exam) => (
-                  <div
-                    key={exam.id}
-                    className="rounded-lg border p-3 space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {exam.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {exam.startAt
-                            ? format(new Date(exam.startAt), "MMM d, h:mm a")
-                            : "No start time"}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {formatExamStatus(exam.status)}
-                      </Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>{exam.attemptCounts.inProgress} in progress</span>
-                      <span>{exam.attemptCounts.submitted} submitted</span>
-                      <span>{exam.attemptCounts.graded} graded</span>
-                      <span>{exam.attemptCounts.released} released</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <TeacherResultsView
+          assignmentsLoading={assignmentsApi.isLoading}
+          examFeatureEnabled={examFeatureEnabled}
+          examsLoading={examApi.isLoading && !examApi.data}
+          assignmentSummaries={managerAssignmentSummaries}
+          examSummaries={managerExamSummaries}
+        />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Assignment Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {assignmentsApi.isLoading ? (
-                <LoadingRow label="Loading assignment results..." />
-              ) : studentAssignmentResults.length === 0 ? (
-                <EmptyState label="Graded assignment results will appear here." />
-              ) : (
-                studentAssignmentResults.map((assignment) => (
-                  <div key={assignment.id} className="rounded-lg border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {assignment.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Graded{" "}
-                          {format(
-                            new Date(assignment.gradedAt),
-                            "MMM d, h:mm a",
-                          )}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {assignment.score}/{assignment.maxScore}
-                      </Badge>
-                    </div>
-                    {assignment.feedback ? (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {assignment.feedback}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                Exam Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {examFeatureEnabled && examApi.isLoading && !examApi.data ? (
-                <LoadingRow label="Loading exam results..." />
-              ) : !examFeatureEnabled ? (
-                <EmptyState label="Exam results are disabled for this class." />
-              ) : studentExamResults.length === 0 ? (
-                <EmptyState label="Released exam results will appear here." />
-              ) : (
-                studentExamResults.map((result) => (
-                  <button
-                    key={result.attemptId}
-                    type="button"
-                    onClick={() => setSelectedExamResult(result)}
-                    className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {result.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Released{" "}
-                          {format(
-                            new Date(
-                              result.releasedAt ??
-                                result.submittedAt ??
-                                new Date(0).toISOString(),
-                            ),
-                            "MMM d, h:mm a",
-                          )}
-                        </p>
-                      </div>
-                      <Badge variant="secondary">
-                        {result.totalScore}/{result.totalPoints}
-                      </Badge>
-                    </div>
-                    <div className="mt-2">
-                      <Badge variant="outline">{result.integrityStatus}</Badge>
-                    </div>
-                  </button>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <StudentResultsView
+          assignmentsLoading={assignmentsApi.isLoading}
+          examFeatureEnabled={examFeatureEnabled}
+          examsLoading={examApi.isLoading && !examApi.data}
+          assignmentResults={studentAssignmentResults}
+          examResults={studentExamResults}
+          onSelectExam={setSelectedExamResult}
+        />
       )}
 
       <Dialog
         open={selectedExamResult !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setSelectedExamResult(null)
-          }
+          if (!open) setSelectedExamResult(null)
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto">
           {selectedExamResult ? (
             <>
               <DialogHeader>
                 <DialogTitle>{selectedExamResult.title}</DialogTitle>
                 <DialogDescription>
-                  Review becomes available here after the teacher saves and
-                  approves the exam result.
+                  Released exam details, including per-question grading.
                 </DialogDescription>
               </DialogHeader>
               <ExamResults result={selectedExamResult} />
@@ -375,41 +212,697 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
   )
 }
 
-function SummaryCard({
+function TeacherResultsView({
+  assignmentsLoading,
+  examFeatureEnabled,
+  examsLoading,
+  assignmentSummaries,
+  examSummaries,
+}: {
+  assignmentsLoading: boolean
+  examFeatureEnabled: boolean
+  examsLoading: boolean
+  assignmentSummaries: ManagerAssignmentResultSummary[]
+  examSummaries: ManagerExamSummaryDto[]
+}) {
+  const gradedAssignmentsCount = assignmentSummaries.reduce(
+    (total, assignment) => total + assignment.gradedCount,
+    0,
+  )
+  const pendingAssignmentCount = assignmentSummaries.reduce(
+    (total, assignment) => total + assignment.pendingCount,
+    0,
+  )
+  const submittedAssignmentsCount = assignmentSummaries.reduce(
+    (total, assignment) => total + assignment.submittedCount,
+    0,
+  )
+  const releasedExamResultsCount = examSummaries.reduce(
+    (total, exam) => total + exam.attemptCounts.released,
+    0,
+  )
+  const gradedExamResultsCount = examSummaries.reduce(
+    (total, exam) => total + exam.attemptCounts.graded,
+    0,
+  )
+  const submittedExamResultsCount = examSummaries.reduce(
+    (total, exam) => total + exam.attemptCounts.submitted,
+    0,
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={CheckCircle2}
+          label="Assignment grades"
+          value={gradedAssignmentsCount}
+          detail={`${submittedAssignmentsCount} submitted`}
+        />
+        <MetricCard
+          icon={Timer}
+          label="Needs grading"
+          value={pendingAssignmentCount}
+          detail="Assignment submissions"
+          tone={pendingAssignmentCount > 0 ? "warning" : "default"}
+        />
+        <MetricCard
+          icon={ClipboardList}
+          label="Released exams"
+          value={releasedExamResultsCount}
+          detail={`${gradedExamResultsCount} graded attempts`}
+        />
+        <MetricCard
+          icon={ListChecks}
+          label="Exam submissions"
+          value={submittedExamResultsCount}
+          detail="Awaiting grading or release"
+        />
+      </div>
+
+      <Tabs defaultValue="assignments" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2 sm:w-fit">
+          <TabsTrigger value="assignments" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Assignments
+          </TabsTrigger>
+          <TabsTrigger value="exams" className="gap-2">
+            <ClipboardList className="h-4 w-4" />
+            Exams
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="assignments">
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                Assignment Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {assignmentsLoading ? (
+                <LoadingPanel label="Loading assignment results..." />
+              ) : assignmentSummaries.length === 0 ? (
+                <EmptyPanel
+                  icon={SearchX}
+                  title="No assignment results"
+                  description="Published assignments with graded submissions will appear here."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Assignment</TableHead>
+                      <TableHead>Due</TableHead>
+                      <TableHead className="text-right">Average</TableHead>
+                      <TableHead className="text-right">Graded</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {assignmentSummaries.map((assignment) => {
+                      const completion = percentage(
+                        assignment.gradedCount,
+                        assignment.submittedCount,
+                      )
+
+                      return (
+                        <TableRow key={assignment.id}>
+                          <TableCell className="min-w-64">
+                            <div className="space-y-1">
+                              <p className="font-medium text-foreground">
+                                {assignment.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {assignment.maxScore} points
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDateTime(assignment.dueAt)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {assignment.averageScore === null
+                              ? "No grades"
+                              : `${assignment.averageScore}%`}
+                          </TableCell>
+                          <TableCell className="min-w-40">
+                            <div className="space-y-1 text-right">
+                              <span className="font-medium">
+                                {assignment.gradedCount}/
+                                {assignment.submittedCount}
+                              </span>
+                              <Progress
+                                value={completion}
+                                className="ml-auto h-1.5 max-w-28"
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <StatusBadge
+                              value={assignment.pendingCount}
+                              label="pending"
+                              active={assignment.pendingCount > 0}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="exams">
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardList className="h-5 w-5 text-muted-foreground" />
+                Exam Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {examFeatureEnabled && examsLoading ? (
+                <LoadingPanel label="Loading exam results..." />
+              ) : !examFeatureEnabled ? (
+                <EmptyPanel
+                  icon={ClipboardList}
+                  title="Exam results are disabled"
+                  description="Enable exams for this class to review released results here."
+                />
+              ) : examSummaries.length === 0 ? (
+                <EmptyPanel
+                  icon={SearchX}
+                  title="No exam results"
+                  description="Exam attempts will appear after students submit and results are released."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Exam</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Submitted</TableHead>
+                      <TableHead className="text-right">Graded</TableHead>
+                      <TableHead className="text-right">Released</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {examSummaries.map((exam) => {
+                      const released = percentage(
+                        exam.attemptCounts.released,
+                        exam.attemptCounts.submitted +
+                          exam.attemptCounts.graded +
+                          exam.attemptCounts.released,
+                      )
+
+                      return (
+                        <TableRow key={exam.id}>
+                          <TableCell className="min-w-64">
+                            <div className="space-y-1">
+                              <p className="font-medium text-foreground">
+                                {exam.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {exam.totalPoints} points
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {exam.startAt ? formatDateTime(exam.startAt) : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {formatExamStatus(exam.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {exam.attemptCounts.submitted}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {exam.attemptCounts.graded}
+                          </TableCell>
+                          <TableCell className="min-w-40 text-right">
+                            <div className="space-y-1">
+                              <span className="font-medium">
+                                {exam.attemptCounts.released}
+                              </span>
+                              <Progress
+                                value={released}
+                                className="ml-auto h-1.5 max-w-28"
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+function StudentResultsView({
+  assignmentsLoading,
+  examFeatureEnabled,
+  examsLoading,
+  assignmentResults,
+  examResults,
+  onSelectExam,
+}: {
+  assignmentsLoading: boolean
+  examFeatureEnabled: boolean
+  examsLoading: boolean
+  assignmentResults: StudentAssignmentResult[]
+  examResults: ReleasedExamResultDto[]
+  onSelectExam: (result: ReleasedExamResultDto) => void
+}) {
+  const records = getStudentResultRecords(assignmentResults, examResults)
+  const average = getStudentAverage(records)
+  const latest = records[0] ?? null
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Trophy}
+          label="Average score"
+          value={average === null ? "-" : `${average}%`}
+          detail="Across released and graded work"
+        />
+        <MetricCard
+          icon={FileText}
+          label="Assignments"
+          value={assignmentResults.length}
+          detail="Graded"
+        />
+        <MetricCard
+          icon={ClipboardList}
+          label="Exams"
+          value={examResults.length}
+          detail="Released"
+        />
+        <MetricCard
+          icon={BookOpenCheck}
+          label="Latest result"
+          value={latest ? formatRecordScore(latest) : "-"}
+          detail={latest ? latest.title : "No results yet"}
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Tabs defaultValue="all" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-3 sm:w-fit">
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="assignments">Assignments</TabsTrigger>
+            <TabsTrigger value="exams">Exams</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="all">
+            <StudentTimelineCard
+              isLoading={
+                assignmentsLoading || (examFeatureEnabled && examsLoading)
+              }
+              records={records}
+              onSelectExam={onSelectExam}
+            />
+          </TabsContent>
+
+          <TabsContent value="assignments">
+            <StudentAssignmentCard
+              isLoading={assignmentsLoading}
+              results={assignmentResults}
+            />
+          </TabsContent>
+
+          <TabsContent value="exams">
+            <StudentExamCard
+              isLoading={examFeatureEnabled && examsLoading}
+              examFeatureEnabled={examFeatureEnabled}
+              results={examResults}
+              onSelectExam={onSelectExam}
+            />
+          </TabsContent>
+        </Tabs>
+
+        <Card className="h-fit">
+          <CardHeader className="border-b">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              Score Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            <ScoreBreakdownRow
+              label="Assignments"
+              count={assignmentResults.length}
+              average={getAssignmentAverage(assignmentResults)}
+            />
+            <ScoreBreakdownRow
+              label="Exams"
+              count={examResults.length}
+              average={getExamAverage(examResults)}
+            />
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Open an exam result to see question-by-question feedback.
+              Assignment feedback appears directly in the results list.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function StudentTimelineCard({
+  isLoading,
+  records,
+  onSelectExam,
+}: {
+  isLoading: boolean
+  records: ResultRecord[]
+  onSelectExam: (result: ReleasedExamResultDto) => void
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BarChart3 className="h-5 w-5 text-muted-foreground" />
+          Recent Results
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4">
+        {isLoading ? (
+          <LoadingPanel label="Loading results..." />
+        ) : records.length === 0 ? (
+          <EmptyPanel
+            icon={SearchX}
+            title="No results yet"
+            description="Graded assignments and released exams will appear here."
+          />
+        ) : (
+          records.map((record) => (
+            <StudentResultRow
+              key={`${record.kind}-${record.kind === "exam" ? record.attemptId : record.id}`}
+              record={record}
+              onSelectExam={onSelectExam}
+            />
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StudentAssignmentCard({
+  isLoading,
+  results,
+}: {
+  isLoading: boolean
+  results: StudentAssignmentResult[]
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FileText className="h-5 w-5 text-muted-foreground" />
+          Assignment Results
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4">
+        {isLoading ? (
+          <LoadingPanel label="Loading assignment results..." />
+        ) : results.length === 0 ? (
+          <EmptyPanel
+            icon={SearchX}
+            title="No graded assignments"
+            description="Your assignment grades and teacher feedback will appear here."
+          />
+        ) : (
+          results.map((result) => (
+            <StudentResultRow
+              key={result.id}
+              record={{ ...result, kind: "assignment", date: result.gradedAt }}
+            />
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StudentExamCard({
+  isLoading,
+  examFeatureEnabled,
+  results,
+  onSelectExam,
+}: {
+  isLoading: boolean
+  examFeatureEnabled: boolean
+  results: ReleasedExamResultDto[]
+  onSelectExam: (result: ReleasedExamResultDto) => void
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ClipboardList className="h-5 w-5 text-muted-foreground" />
+          Exam Results
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4">
+        {isLoading ? (
+          <LoadingPanel label="Loading exam results..." />
+        ) : !examFeatureEnabled ? (
+          <EmptyPanel
+            icon={ClipboardList}
+            title="Exam results are disabled"
+            description="This class is not currently using exam results."
+          />
+        ) : results.length === 0 ? (
+          <EmptyPanel
+            icon={SearchX}
+            title="No released exams"
+            description="Your teacher will release exam results after grading."
+          />
+        ) : (
+          results.map((result) => (
+            <StudentResultRow
+              key={result.attemptId}
+              record={{
+                ...result,
+                kind: "exam",
+                date:
+                  result.releasedAt ??
+                  result.submittedAt ??
+                  new Date(0).toISOString(),
+              }}
+              onSelectExam={onSelectExam}
+            />
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StudentResultRow({
+  record,
+  onSelectExam,
+}: {
+  record: ResultRecord
+  onSelectExam?: (result: ReleasedExamResultDto) => void
+}) {
+  const score = getRecordPercentage(record)
+  const icon =
+    record.kind === "exam" ? (
+      <ClipboardList className="h-4 w-4" />
+    ) : (
+      <FileText className="h-4 w-4" />
+    )
+  const content = (
+    <>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          {icon}
+        </div>
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium text-foreground">{record.title}</p>
+            <Badge variant="outline">
+              {record.kind === "exam" ? "Exam" : "Assignment"}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {record.kind === "exam" ? "Released" : "Graded"}{" "}
+            {formatDateTime(record.date)}
+          </p>
+          {record.kind === "assignment" && record.feedback ? (
+            <p className="max-w-3xl whitespace-pre-wrap text-sm text-muted-foreground">
+              {record.feedback}
+            </p>
+          ) : null}
+          {record.kind === "exam" ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Badge variant="secondary" className="gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {formatIntegrityStatus(record.integrityStatus)}
+              </Badge>
+              <Badge variant="secondary">
+                {formatAttemptStatus(record.status)}
+              </Badge>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex w-full shrink-0 items-center gap-3 sm:w-44">
+        <div className="min-w-0 flex-1 space-y-1 text-right">
+          <p className="text-lg font-semibold text-foreground">
+            {formatRecordScore(record)}
+          </p>
+          <Progress value={score} className="h-1.5" />
+        </div>
+        {record.kind === "exam" ? (
+          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        ) : null}
+      </div>
+    </>
+  )
+
+  if (record.kind === "exam" && onSelectExam) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelectExam(record)}
+        className="flex w-full flex-col gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center"
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center">
+      {content}
+    </div>
+  )
+}
+
+function MetricCard({
   icon: Icon,
   label,
   value,
+  detail,
+  tone = "default",
 }: {
   icon: typeof FileText
   label: string
-  value: number
+  value: number | string
+  detail: string
+  tone?: "default" | "warning"
 }) {
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-          <Icon className="h-4 w-4 text-muted-foreground" />
+        <div
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+            tone === "warning"
+              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          <Icon className="h-5 w-5" />
         </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
+        <div className="min-w-0">
+          <p className="text-2xl font-semibold text-foreground">{value}</p>
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="truncate text-xs text-muted-foreground">{detail}</p>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function LoadingRow({ label }: { label: string }) {
+function ScoreBreakdownRow({
+  label,
+  count,
+  average,
+}: {
+  label: string
+  count: number
+  average: number | null
+}) {
   return (
-    <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+    <div className="space-y-2 rounded-lg border p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium text-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground">
+            {count} {count === 1 ? "result" : "results"}
+          </p>
+        </div>
+        <p className="text-lg font-semibold text-foreground">
+          {average === null ? "-" : `${average}%`}
+        </p>
+      </div>
+      <Progress value={average ?? 0} className="h-1.5" />
+    </div>
+  )
+}
+
+function StatusBadge({
+  value,
+  label,
+  active,
+}: {
+  value: number
+  label: string
+  active: boolean
+}) {
+  return (
+    <Badge variant={active ? "destructive" : "secondary"}>
+      {value} {label}
+    </Badge>
+  )
+}
+
+function LoadingPanel({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
       <Spinner />
       {label}
     </div>
   )
 }
 
-function EmptyState({ label }: { label: string }) {
-  return <p className="text-sm text-muted-foreground">{label}</p>
+function EmptyPanel({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof SearchX
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+    </div>
+  )
 }
 
 function getStudentAssignmentResults(assignments: ClassAssignment[]) {
@@ -438,9 +931,20 @@ function getManagerAssignmentResults(assignments: ClassAssignment[]) {
   return assignments
     .map((assignment) => {
       const submittedCount = assignment.submissions.length
-      const gradedCount = assignment.submissions.filter(
-        (submission) => submission.gradedAt,
-      ).length
+      const gradedSubmissions = assignment.submissions.filter(
+        (submission) => submission.gradedAt && submission.score !== null,
+      )
+      const gradedCount = gradedSubmissions.length
+      const averageScore =
+        gradedSubmissions.length === 0
+          ? null
+          : Math.round(
+              gradedSubmissions.reduce(
+                (sum, submission) =>
+                  sum + percentage(submission.score ?? 0, assignment.maxScore),
+                0,
+              ) / gradedSubmissions.length,
+            )
 
       return {
         id: assignment.id,
@@ -450,6 +954,7 @@ function getManagerAssignmentResults(assignments: ClassAssignment[]) {
         gradedCount,
         submittedCount,
         pendingCount: Math.max(submittedCount - gradedCount, 0),
+        averageScore,
       } satisfies ManagerAssignmentResultSummary
     })
     .sort((left, right) => Date.parse(right.dueAt) - Date.parse(left.dueAt))
@@ -476,8 +981,112 @@ function getStudentExamResults(page: {
     })
 }
 
+function getStudentResultRecords(
+  assignmentResults: StudentAssignmentResult[],
+  examResults: ReleasedExamResultDto[],
+) {
+  return [
+    ...assignmentResults.map(
+      (result) =>
+        ({
+          ...result,
+          kind: "assignment",
+          date: result.gradedAt,
+        }) satisfies ResultRecord,
+    ),
+    ...examResults.map(
+      (result) =>
+        ({
+          ...result,
+          kind: "exam",
+          date:
+            result.releasedAt ??
+            result.submittedAt ??
+            new Date(0).toISOString(),
+        }) satisfies ResultRecord,
+    ),
+  ].sort((left, right) => Date.parse(right.date) - Date.parse(left.date))
+}
+
+function getStudentAverage(records: ResultRecord[]) {
+  if (records.length === 0) return null
+
+  return Math.round(
+    records.reduce((sum, record) => sum + getRecordPercentage(record), 0) /
+      records.length,
+  )
+}
+
+function getAssignmentAverage(results: StudentAssignmentResult[]) {
+  if (results.length === 0) return null
+
+  return Math.round(
+    results.reduce(
+      (sum, result) => sum + percentage(result.score, result.maxScore),
+      0,
+    ) / results.length,
+  )
+}
+
+function getExamAverage(results: ReleasedExamResultDto[]) {
+  if (results.length === 0) return null
+
+  return Math.round(
+    results.reduce((sum, result) => sum + getExamPercentage(result), 0) /
+      results.length,
+  )
+}
+
+function getRecordPercentage(record: ResultRecord) {
+  if (record.kind === "assignment") {
+    return percentage(record.score, record.maxScore)
+  }
+
+  return getExamPercentage(record)
+}
+
+function getExamPercentage(result: ReleasedExamResultDto) {
+  return percentage(result.totalScore ?? 0, result.totalPoints)
+}
+
+function formatRecordScore(record: ResultRecord) {
+  if (record.kind === "assignment") {
+    return `${percentage(record.score, record.maxScore)}%`
+  }
+
+  return `${getExamPercentage(record)}%`
+}
+
+function percentage(value: number, total: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
+    return 0
+  }
+
+  return Math.round((value / total) * 100)
+}
+
+function formatDateTime(value: string) {
+  return format(new Date(value), "MMM d, h:mm a")
+}
+
 function formatExamStatus(status: string) {
   if (status === "live") return "Live"
   if (status === "ended") return "Ended"
   return "Upcoming"
+}
+
+function formatAttemptStatus(status: ReleasedExamResultDto["status"]) {
+  if (status === "graded") return "Graded"
+  if (status === "voided") return "Voided"
+  if (status === "submitted") return "Submitted"
+  return "In progress"
+}
+
+function formatIntegrityStatus(
+  status: ReleasedExamResultDto["integrityStatus"],
+) {
+  if (status === "flagged") return "Flagged"
+  if (status === "voided") return "Voided"
+  if (status === "reported") return "Reported"
+  return "Clear"
 }

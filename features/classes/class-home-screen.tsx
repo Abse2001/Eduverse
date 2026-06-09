@@ -1,10 +1,9 @@
 "use client"
 
-import Link from "next/link"
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import { format } from "date-fns"
 import {
-  BookOpen,
   Calendar,
+  DoorOpen,
   LoaderCircle,
   PlusCircle,
   Radio,
@@ -12,8 +11,17 @@ import {
   Users,
   Video,
 } from "lucide-react"
+import Link from "next/link"
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -26,6 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import {
   Select,
   SelectContent,
@@ -34,18 +43,22 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  type ClassProfile,
-  type OrganizationClass,
-} from "@/lib/supabase/classes"
+  type ClassAssignment,
+  getAssignmentDerivedStatus,
+  useClassAssignments,
+} from "@/features/assignments/use-class-assignments"
+import { useClassExam } from "@/features/exam/use-class-exam"
+import { useClassMaterials } from "@/features/materials/use-class-materials"
 import { hasClassAccessForRole } from "@/lib/education/classes"
-import type { User } from "@/lib/mock-data"
-import { createClient } from "@/lib/supabase/client"
 import {
   getClassNavFeatures,
-  resolveClassFeatures,
   type ResolvedClassFeature,
+  resolveClassFeatures,
 } from "@/lib/features/feature-registry"
+import type { User } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
+import type { ClassProfile, OrganizationClass } from "@/lib/supabase/classes"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { CLASS_HEADER_GRADIENT_MAP } from "@/lib/view-config"
 
@@ -72,6 +85,19 @@ type ClassHomeNavFeature = ResolvedClassFeature & {
   routeSegment: string
 }
 
+type CourseProgressExam = {
+  status: "upcoming" | "live" | "ended"
+  startAt?: string | null
+  endAt?: string | null
+  title?: string
+}
+
+type UpcomingClassDeadline = {
+  label: string
+  title: string
+  at: string
+}
+
 function flattenClassHomeNavFeatures(
   features: ResolvedClassFeature[],
 ): ClassHomeNavFeature[] {
@@ -91,6 +117,120 @@ function getClassHomeFeatureDescription(feature: ResolvedClassFeature) {
     feature.definition?.description ||
     feature.customExtension?.description ||
     "Open feature"
+  )
+}
+
+function getCourseProgress({
+  assignments,
+  exams,
+  materialsCount,
+  canManage,
+}: {
+  assignments: ClassAssignment[]
+  exams: CourseProgressExam[]
+  materialsCount: number
+  canManage: boolean
+}) {
+  const visibleAssignments = assignments.filter(
+    (assignment) => canManage || assignment.status === "published",
+  )
+  const assignmentsCount = visibleAssignments.length
+  const completedCount = canManage
+    ? visibleAssignments.reduce(
+        (total, assignment) =>
+          total +
+          assignment.submissions.filter((submission) => submission.gradedAt)
+            .length,
+        0,
+      )
+    : visibleAssignments.filter((assignment) =>
+        ["submitted", "graded"].includes(
+          getAssignmentDerivedStatus(assignment),
+        ),
+      ).length
+  const assignmentsTotal = canManage
+    ? visibleAssignments.reduce(
+        (total, assignment) => total + assignment.submissions.length,
+        0,
+      )
+    : assignmentsCount
+  const examCount = exams.length
+  const completedExamCount = exams.filter(
+    (exam) => exam.status === "ended",
+  ).length
+  const weightedCompleted = completedCount + completedExamCount
+  const weightedTotal = assignmentsTotal + examCount
+  const percent =
+    weightedTotal > 0
+      ? Math.round((weightedCompleted / weightedTotal) * 100)
+      : 0
+  const description = canManage
+    ? "Progress combines graded assignment submissions and ended exams."
+    : "Progress combines completed assignments and ended exams."
+
+  return {
+    materialsCount,
+    assignmentsCount,
+    assignmentsTotal,
+    completedCount,
+    examCount,
+    completedExamCount,
+    percent,
+    description,
+  }
+}
+
+function getUpcomingClassDeadline({
+  assignments,
+  exams,
+  canManage,
+}: {
+  assignments: ClassAssignment[]
+  exams: CourseProgressExam[]
+  canManage: boolean
+}): UpcomingClassDeadline | null {
+  const now = Date.now()
+  const assignmentDeadlines = assignments.flatMap((assignment) => {
+    if (!canManage && assignment.status !== "published") return []
+    if (Date.parse(assignment.dueAt) <= now) return []
+
+    return [
+      {
+        label: "Assignment due",
+        title: assignment.title,
+        at: assignment.dueAt,
+      },
+    ]
+  })
+  const examDeadlines = exams.flatMap((exam) => {
+    const startAt =
+      exam.startAt && Date.parse(exam.startAt) > now
+        ? [
+            {
+              label: "Exam opens",
+              title: exam.title ?? "Exam",
+              at: exam.startAt,
+            },
+          ]
+        : []
+    const endAt =
+      exam.endAt && Date.parse(exam.endAt) > now
+        ? [
+            {
+              label: "Exam closes",
+              title: exam.title ?? "Exam",
+              at: exam.endAt,
+            },
+          ]
+        : []
+
+    return [...startAt, ...endAt]
+  })
+
+  return (
+    [...assignmentDeadlines, ...examDeadlines].sort(
+      (left, right) => Date.parse(left.at) - Date.parse(right.at),
+    )[0] ?? null
   )
 }
 
@@ -126,13 +266,39 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const canManageClass =
+  const canManageClass = Boolean(
     currentUser.role === "admin" ||
-    classItem?.memberships.some(
-      (membership) =>
-        membership.user_id === currentUser.id &&
-        (membership.role === "teacher" || membership.role === "ta"),
-    )
+      classItem?.memberships.some(
+        (membership) =>
+          membership.user_id === currentUser.id &&
+          (membership.role === "teacher" || membership.role === "ta"),
+      ),
+  )
+  const assignmentsApi = useClassAssignments({
+    classId,
+    currentUserId: currentUser.id,
+    canManage: canManageClass,
+  })
+  const examApi = useClassExam(classId)
+  const materialsApi = useClassMaterials({
+    classId,
+    uploaderUserId: currentUser.id,
+  })
+  const visibleExams =
+    examApi.data?.canManage === true
+      ? examApi.data.manager.exams
+      : (examApi.data?.student.visibleExams ?? [])
+  const courseProgress = getCourseProgress({
+    assignments: assignmentsApi.assignments,
+    exams: visibleExams,
+    materialsCount: materialsApi.materials.length,
+    canManage: canManageClass,
+  })
+  const upcomingDeadline = getUpcomingClassDeadline({
+    assignments: assignmentsApi.assignments,
+    exams: visibleExams,
+    canManage: canManageClass,
+  })
   const classNavFeatures = useMemo(() => {
     if (!classItem || !activeOrganization) return []
 
@@ -439,23 +605,41 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-6 mt-4 pt-4 border-t border-white/20">
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 opacity-70" />
-              <span className="text-sm">
-                {classItem.schedule_text ?? "No schedule"}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-white/20">
+            <Badge
+              variant="outline"
+              className="gap-1.5 border-white/40 bg-transparent text-white hover:bg-transparent"
+            >
               <Users className="w-3.5 h-3.5 opacity-70" />
-              <span className="text-sm">
-                {classItem.students.length} students
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5 opacity-70" />
-              <span className="text-sm">{classItem.room ?? "No room"}</span>
-            </div>
+              {classItem.students.length} students
+            </Badge>
+            {classItem.semester ? (
+              <Badge
+                variant="outline"
+                className="border-white/40 bg-transparent text-white hover:bg-transparent"
+              >
+                {classItem.semester}
+              </Badge>
+            ) : null}
+            {classItem.room ? (
+              <Badge
+                variant="outline"
+                className="gap-1.5 border-white/40 bg-transparent text-white hover:bg-transparent"
+              >
+                <DoorOpen className="w-3.5 h-3.5 opacity-70" />
+                {classItem.room}
+              </Badge>
+            ) : null}
+            {upcomingDeadline ? (
+              <Badge
+                variant="outline"
+                className="gap-1.5 border-white/40 bg-transparent text-white hover:bg-transparent"
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                {upcomingDeadline.label}: {upcomingDeadline.title} ·{" "}
+                {format(new Date(upcomingDeadline.at), "MMM d, h:mm a")}
+              </Badge>
+            ) : null}
           </div>
         </div>
 
@@ -493,26 +677,54 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {assignmentsApi.errorMessage || materialsApi.errorMessage ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {assignmentsApi.errorMessage ?? materialsApi.errorMessage}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="rounded-lg bg-muted/50 p-2">
-                    <p className="text-base font-bold text-foreground">0</p>
+                    <p className="text-base font-bold text-foreground">
+                      {materialsApi.isLoading
+                        ? "..."
+                        : courseProgress.materialsCount}
+                    </p>
                     <p className="text-[11px] text-muted-foreground">
                       Materials
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-2">
-                    <p className="text-base font-bold text-foreground">0</p>
+                    <p className="text-base font-bold text-foreground">
+                      {assignmentsApi.isLoading
+                        ? "..."
+                        : `${courseProgress.completedCount}/${courseProgress.assignmentsTotal}`}
+                    </p>
                     <p className="text-[11px] text-muted-foreground">
                       Assignments
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-2">
-                    <p className="text-base font-bold text-foreground">0</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Completed
+                    <p className="text-base font-bold text-foreground">
+                      {examApi.isLoading
+                        ? "..."
+                        : `${courseProgress.completedExamCount}/${courseProgress.examCount}`}
                     </p>
+                    <p className="text-[11px] text-muted-foreground">Exams</p>
                   </div>
                 </div>
+                <div className="flex items-center gap-3">
+                  <Progress value={courseProgress.percent} className="h-1.5" />
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                    {assignmentsApi.isLoading || examApi.isLoading
+                      ? "..."
+                      : `${courseProgress.percent}%`}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {courseProgress.description}
+                </p>
               </CardContent>
             </Card>
           </div>

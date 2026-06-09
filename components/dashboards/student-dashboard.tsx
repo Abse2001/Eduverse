@@ -1,7 +1,5 @@
 "use client"
 
-import Link from "next/link"
-import { useEffect, useState } from "react"
 import { format, isPast } from "date-fns"
 import {
   BarChart3,
@@ -16,6 +14,8 @@ import {
   Star,
   TrendingUp,
 } from "lucide-react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { StatCard } from "@/components/shared/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,11 +26,11 @@ import {
   getAssignmentDerivedStatus,
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
-import type { ClassExamApiDto } from "@/lib/exams/types"
 import { getClassesForUser } from "@/lib/education/classes"
+import type { ClassExamApiDto } from "@/lib/exams/types"
 import { STUDENT_PREVIOUS_ACADEMIC_PERIODS } from "@/lib/mock-data"
-import { toLegacyClass } from "@/lib/supabase/classes"
 import { useApp } from "@/lib/store"
+import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
@@ -268,7 +268,7 @@ export function StudentDashboard() {
                         ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {cls.code} &middot; {cls.schedule}
+                        {cls.code}
                       </p>
                       <div className="mt-2 flex items-center gap-2">
                         <Progress value={progress} className="h-1.5 flex-1" />

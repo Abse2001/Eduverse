@@ -105,7 +105,6 @@ function createClass(
     teacher_user_id: teacherUserId,
     color: "indigo",
     description: "",
-    schedule_text: null,
     room: null,
     semester: null,
     is_archived: false,
