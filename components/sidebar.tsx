@@ -1,29 +1,29 @@
 "use client"
 
+import {
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  GraduationCap,
+} from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import type { ReactNode } from "react"
-import {
-  BookOpen,
-  GraduationCap,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useExamLock } from "@/features/exam/exam-lock"
-import { useApp } from "@/lib/store"
-import { getClassesForUser } from "@/lib/education/classes"
-import {
-  getClassNavFeatures,
-  resolveClassFeatures,
-  type ResolvedClassFeature,
-} from "@/lib/features/feature-registry"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useExamLock } from "@/features/exam/exam-lock"
+import { getClassesForUser } from "@/lib/education/classes"
+import {
+  getClassNavFeatures,
+  type ResolvedClassFeature,
+  resolveClassFeatures,
+} from "@/lib/features/feature-registry"
+import { useApp } from "@/lib/store"
+import { cn } from "@/lib/utils"
 
 const NAV_ITEMS_STUDENT: Array<{
   label: string
@@ -57,7 +57,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
     featureDefinitions,
     organizationClasses,
   } = useApp()
-  const { canNavigateToPath, isLocked, lock } = useExamLock()
+  const { canNavigateToPath, isLocked } = useExamLock()
   const isTeacher = currentUser.role === "teacher"
   const isAdmin = currentUser.role === "admin"
   const isCollapsed = collapsed || isLocked
@@ -141,7 +141,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-0.5 px-2">
           {mainNavItems.map((item) => {
             const active =
-              pathname === item.href || pathname.startsWith(item.href + "/")
+              pathname === item.href || pathname.startsWith(`${item.href}/`)
             return (
               <NavItem
                 key={item.href}
@@ -196,13 +196,8 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       live={liveClassIds.has(cls.id)}
                       disabled={classDisabled}
                     />
-                    {isActiveClass && (
-                      <div
-                        className={cn(
-                          "ml-4 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1 overflow-hidden transition-opacity duration-150",
-                          isCollapsed && "opacity-0 pointer-events-none",
-                        )}
-                      >
+                    {isActiveClass && !isCollapsed && (
+                      <div className="ml-6 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1 overflow-hidden">
                         {classNavFeatures.map((feature) => (
                           <ClassFeatureNavItem
                             key={feature.key}
@@ -254,16 +249,16 @@ function ClassFeatureNavItem({
       <div>
         <div
           className={cn(
-            "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium",
+            "flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-xs font-medium whitespace-nowrap",
             isActive
               ? "text-sidebar-accent-foreground"
               : "text-muted-foreground",
           )}
         >
           <feature.icon className="w-3.5 h-3.5 shrink-0" />
-          {feature.label}
+          <span className="truncate">{feature.label}</span>
         </div>
-        <div className="ml-4 pl-2 border-l border-sidebar-border/70 space-y-0.5">
+        <div className="ml-3.5 pl-2.5 border-l border-sidebar-border/70 space-y-0.5">
           {feature.children.map((child) => (
             <ClassFeatureNavLink
               key={child.key}
@@ -305,7 +300,7 @@ function ClassFeatureNavLink({
     <NavItemContent
       href={`/classes/${classId}/${feature.routeSegment}`}
       className={cn(
-        "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
+        "flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-xs font-medium whitespace-nowrap transition-colors",
         disabled
           ? "cursor-not-allowed text-muted-foreground/40"
           : active
@@ -315,7 +310,7 @@ function ClassFeatureNavLink({
       disabled={disabled}
     >
       <feature.icon className="w-3.5 h-3.5 shrink-0" />
-      {feature.label}
+      <span className="truncate">{feature.label}</span>
     </NavItemContent>
   )
 }
@@ -381,7 +376,7 @@ function NavItem({
       href={href}
       disabled={disabled}
       className={cn(
-        "flex items-center gap-2.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full h-9",
+        "flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
         disabled
           ? "cursor-not-allowed text-sidebar-foreground/35"
           : active

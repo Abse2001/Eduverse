@@ -1,19 +1,19 @@
 "use client"
 
+import { ConnectionState } from "livekit-client"
+import { Phone, Radio, Square } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { ConnectionState } from "livekit-client"
-import { Phone, Radio, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Class } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
@@ -29,6 +29,7 @@ type LiveSessionContextValue = {
   joinSession: (cls: Class) => void
   leaveSession: () => void
   endSession: () => Promise<void>
+  endClassSession: (cls: Class) => Promise<void>
 }
 
 const LiveSessionContext = createContext<LiveSessionContextValue | null>(null)
@@ -323,6 +324,27 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     resetLocalWhiteboards,
   ])
 
+  const endClassSession = useCallback(
+    async (cls: Class) => {
+      const existingLiveSessionId =
+        classLiveSessions.find((session) => session.class_id === cls.id)
+          ?.live_session_id ?? null
+
+      if (activeClass?.id === cls.id) {
+        await endSession()
+        return
+      }
+
+      await syncClassLiveSession({
+        classId: cls.id,
+        liveSessionId: existingLiveSessionId,
+        method: "DELETE",
+      })
+      await refreshClassLiveSessions({ force: true }).catch(() => {})
+    },
+    [activeClass?.id, classLiveSessions, endSession, refreshClassLiveSessions],
+  )
+
   useEffect(() => {
     if (
       !activeClass ||
@@ -440,9 +462,11 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       joinSession,
       leaveSession,
       endSession,
+      endClassSession,
     }),
     [
       activeClass,
+      endClassSession,
       endSession,
       hasJoinedSession,
       joinSession,

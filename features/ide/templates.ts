@@ -16,7 +16,7 @@ export const SUPPORTED_LANGUAGES = [
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: "web",
-    label: "Web Starter",
+    label: "Web",
     description: "HTML, CSS, and JavaScript with live preview.",
     entryFile: "/index.html",
     files: {
@@ -109,7 +109,7 @@ action?.addEventListener("click", () => {
   },
   {
     id: "python",
-    label: "Python Practice",
+    label: "Python",
     description: "Python basics with browser-safe terminal execution.",
     entryFile: "/main.py",
     files: {
@@ -135,7 +135,7 @@ if __name__ == "__main__":
   },
   {
     id: "c",
-    label: "C Starter",
+    label: "C",
     description: "C basics with browser-safe terminal execution.",
     entryFile: "/main.c",
     files: {
@@ -159,7 +159,7 @@ int main(void) {
   },
   {
     id: "cpp",
-    label: "C++ Starter",
+    label: "C++",
     description: "C++ basics with browser-safe terminal execution.",
     entryFile: "/main.cpp",
     files: {
@@ -184,7 +184,7 @@ int main() {
   },
   {
     id: "sql",
-    label: "SQL Practice",
+    label: "SQL",
     description: "SQL basics with browser-safe terminal execution.",
     entryFile: "/query.sql",
     files: {

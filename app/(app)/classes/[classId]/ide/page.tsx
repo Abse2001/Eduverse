@@ -8,12 +8,14 @@ import {
   PanelBottom,
   Play,
   Plus,
+  RotateCcw,
   Save,
   SquareTerminal,
   X,
 } from "lucide-react"
 import dynamic from "next/dynamic"
 import { use, useEffect, useMemo, useRef, useState } from "react"
+import type { ImperativePanelHandle } from "react-resizable-panels"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,13 +42,10 @@ import {
   ClassRouteFallback,
   useClassFeatureRoute,
 } from "@/features/classes/use-class-route"
+import type { PendingCreateEntry } from "@/features/ide/file-tree"
 import { FileIcon, FileTree } from "@/features/ide/file-tree"
 import { buildPreviewDocument, getProblems } from "@/features/ide/preview"
-import {
-  INITIAL_TERMINAL,
-  PROJECT_TEMPLATES,
-  SUPPORTED_LANGUAGES,
-} from "@/features/ide/templates"
+import { INITIAL_TERMINAL, PROJECT_TEMPLATES } from "@/features/ide/templates"
 import { runVirtualCommand } from "@/features/ide/terminal"
 import type {
   ClipboardState,
@@ -57,13 +56,11 @@ import type {
 import {
   basename,
   buildFileTree,
-  defaultContentForPath,
   ensureParentDirectories,
   firstFilePath,
   isPathInside,
   joinPath,
   languageForPath,
-  nextAvailablePath,
   parentDir,
   pasteWorkspaceEntry,
   remapPathForRename,
@@ -78,7 +75,15 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
 })
 
-type PreviewMode = "preview" | "problems"
+type PreviewMode = "preview" | "console"
+type PreviewConsoleLine = {
+  id: number
+  level: "log" | "info" | "warn" | "error"
+  message: string
+}
+
+const TERMINAL_COLLAPSED_SIZE = 5
+const TERMINAL_DEFAULT_SIZE = 28
 
 export default function IdePage({
   params,
@@ -90,12 +95,6 @@ export default function IdePage({
     useClassFeatureRoute(classId, "extensions.ide")
 
   const [templateId, setTemplateId] = useState(PROJECT_TEMPLATES[0].id)
-  const activeTemplate = useMemo(
-    () =>
-      PROJECT_TEMPLATES.find((template) => template.id === templateId) ??
-      PROJECT_TEMPLATES[0],
-    [templateId],
-  )
   const [workspace, setWorkspace] = useState<Workspace>(
     () => PROJECT_TEMPLATES[0].files,
   )
@@ -108,17 +107,35 @@ export default function IdePage({
   const [terminalLines, setTerminalLines] =
     useState<TerminalLine[]>(INITIAL_TERMINAL)
   const [terminalOpen, setTerminalOpen] = useState(true)
+  const [terminalInputFocused, setTerminalInputFocused] = useState(false)
   const [previewMode, setPreviewMode] = useState<PreviewMode>("preview")
+  const [previewConsoleLines, setPreviewConsoleLines] = useState<
+    PreviewConsoleLine[]
+  >([])
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0)
+  const [pendingCreate, setPendingCreate] = useState<PendingCreateEntry | null>(
+    null,
+  )
   const [clipboardPath, setClipboardPath] = useState<ClipboardState | null>(
     null,
   )
   const [fontSize, setFontSize] = useState(14)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const previewConsoleIdRef = useRef(1)
   const terminalIdRef = useRef(INITIAL_TERMINAL.length + 1)
+  const terminalInputRef = useRef<HTMLInputElement | null>(null)
+  const terminalPanelRef = useRef<ImperativePanelHandle | null>(null)
+  const terminalScrollRef = useRef<HTMLDivElement | null>(null)
+  const terminalBottomRef = useRef<HTMLDivElement | null>(null)
   const isDarkMode = useResolvedDarkMode()
 
   const activeEntry = workspace[activePath]
   const activeContent = activeEntry?.content ?? ""
+  const hasMainHtml = workspace["/index.html"]?.kind === "file"
+  const isMarkdownActive =
+    activeEntry?.kind === "file" && activePath.endsWith(".md")
+  const showPreviewPanel = hasMainHtml || isMarkdownActive
+  const showPreviewTabs = hasMainHtml && !isMarkdownActive
   const fileTree = useMemo(() => buildFileTree(workspace), [workspace])
   const problems = useMemo(
     () => getProblems(workspace, activePath),
@@ -128,6 +145,82 @@ export default function IdePage({
     () => buildPreviewDocument(workspace, activePath, isDarkMode),
     [workspace, activePath, isDarkMode],
   )
+
+  useEffect(() => {
+    setPreviewConsoleLines([])
+  }, [previewDocument])
+
+  function refreshPreview() {
+    setPreviewConsoleLines([])
+    setPreviewRefreshKey((key) => key + 1)
+  }
+
+  useEffect(() => {
+    function handlePreviewConsoleMessage(event: MessageEvent) {
+      const data = event.data as {
+        source?: string
+        level?: PreviewConsoleLine["level"]
+        message?: string
+      }
+      if (data?.source !== "eduverse-preview-console") return
+      if (
+        data.level !== "log" &&
+        data.level !== "info" &&
+        data.level !== "warn" &&
+        data.level !== "error"
+      ) {
+        return
+      }
+      if (typeof data.message !== "string") return
+      const level = data.level
+      const message = data.message
+
+      setPreviewConsoleLines((lines) => [
+        ...lines,
+        {
+          id: previewConsoleIdRef.current++,
+          level,
+          message,
+        },
+      ])
+    }
+
+    window.addEventListener("message", handlePreviewConsoleMessage)
+    return () => {
+      window.removeEventListener("message", handlePreviewConsoleMessage)
+    }
+  }, [])
+
+  function scrollTerminalToBottom(behavior: ScrollBehavior = "auto") {
+    requestAnimationFrame(() => {
+      terminalBottomRef.current?.scrollIntoView({
+        block: "end",
+        behavior,
+      })
+    })
+  }
+
+  function toggleTerminalPanel() {
+    const panel = terminalPanelRef.current
+    if (!panel) {
+      setTerminalOpen((open) => !open)
+      return
+    }
+
+    if (panel.isCollapsed()) {
+      panel.expand(TERMINAL_DEFAULT_SIZE)
+      setTerminalOpen(true)
+      return
+    }
+
+    panel.collapse()
+    setTerminalOpen(false)
+  }
+
+  useEffect(() => {
+    if (!terminalOpen) return
+    scrollTerminalToBottom()
+  }, [terminalLines, terminalInput, terminalOpen])
 
   function appendTerminal(
     lines: Array<Omit<TerminalLine, "id">> | Omit<TerminalLine, "id">,
@@ -194,34 +287,56 @@ export default function IdePage({
   }
 
   function createFileFromButton() {
-    const path = nextAvailablePath(workspace, joinPath(cwd, "new-file.js"))
-    setWorkspace((currentWorkspace) => ({
-      ...ensureParentDirectories(currentWorkspace, path),
-      [path]: { kind: "file", content: defaultContentForPath(path) },
-    }))
-    activateFile(path)
-    appendTerminal({ kind: "success", text: `Created ${path}` })
+    setPendingCreate({ kind: "file", parentPath: cwd })
   }
 
   function createFolderFromButton() {
-    const path = nextAvailablePath(workspace, joinPath(cwd, "new-folder"))
+    setPendingCreate({ kind: "directory", parentPath: cwd })
+  }
+
+  function cancelPendingCreate() {
+    setPendingCreate(null)
+  }
+
+  function commitPendingCreate(name: string) {
+    const trimmedName = name.trim()
+    if (!trimmedName || !pendingCreate) {
+      setPendingCreate(null)
+      return true
+    }
+
+    const path = joinPath(pendingCreate.parentPath, trimmedName)
+    if (workspace[path]) {
+      window.alert(`${path} already exists`)
+      return false
+    }
+
+    if (pendingCreate.kind === "directory") {
+      setWorkspace((currentWorkspace) => ({
+        ...ensureParentDirectories(currentWorkspace, path),
+        [path]: { kind: "directory" },
+      }))
+      setPendingCreate(null)
+      return true
+    }
+
     setWorkspace((currentWorkspace) => ({
       ...ensureParentDirectories(currentWorkspace, path),
-      [path]: { kind: "directory" },
+      [path]: { kind: "file", content: "" },
     }))
-    appendTerminal({ kind: "success", text: `Created ${path}/` })
+    activateFile(path)
+    setPendingCreate(null)
+    return true
   }
 
   function copyWorkspacePath(path: string) {
     if (path === "/") return
     setClipboardPath({ mode: "copy", path })
-    appendTerminal({ kind: "success", text: `copied ${path}` })
   }
 
   function cutWorkspacePath(path: string) {
     if (path === "/") return
     setClipboardPath({ mode: "cut", path })
-    appendTerminal({ kind: "success", text: `cut ${path}` })
   }
 
   function pasteWorkspacePath(targetPath: string) {
@@ -237,7 +352,7 @@ export default function IdePage({
     })
 
     if (result.error) {
-      appendTerminal({ kind: "error", text: result.error })
+      window.alert(result.error)
       return
     }
 
@@ -248,10 +363,6 @@ export default function IdePage({
 
     if (result.openPath) activateFile(result.openPath)
     if (clipboardPath.mode === "cut") setClipboardPath(null)
-    appendTerminal({
-      kind: "success",
-      text: `${clipboardPath.mode === "cut" ? "moved" : "pasted"} ${result.path}`,
-    })
   }
 
   function renameWorkspacePath(path: string) {
@@ -266,7 +377,7 @@ export default function IdePage({
     const result = renameWorkspaceEntry(workspace, path, nextPath)
 
     if (result.error) {
-      appendTerminal({ kind: "error", text: result.error })
+      window.alert(result.error)
       return
     }
 
@@ -274,7 +385,6 @@ export default function IdePage({
       workspace: result.workspace,
       pathChange: { from: path, to: nextPath },
     })
-    appendTerminal({ kind: "success", text: `renamed ${path} -> ${nextPath}` })
   }
 
   function deleteWorkspacePath(path: string) {
@@ -285,12 +395,16 @@ export default function IdePage({
       workspace: removePath(workspace, path),
       removedPath: path,
     })
-    appendTerminal({ kind: "success", text: `removed ${path}` })
   }
 
   function runActiveFile() {
-    setTerminalOpen(true)
     const command = runCommandForPath(activePath)
+    if (command === "preview") {
+      setPreviewMode("preview")
+      return
+    }
+
+    setTerminalOpen(true)
     appendTerminal({ kind: "input", text: `$ ${command}` })
     executeCommand(command)
   }
@@ -394,7 +508,7 @@ export default function IdePage({
   return (
     <TooltipProvider delayDuration={0}>
       <div className="flex h-[calc(100vh-3.5rem)] min-h-[680px] flex-col overflow-hidden bg-background text-foreground">
-        <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-4 py-2">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-card px-4">
           <div className="flex min-w-0 items-center gap-2 pr-2">
             <ClassPageHeader
               title={cls.name}
@@ -418,10 +532,6 @@ export default function IdePage({
               ))}
             </SelectContent>
           </Select>
-
-          <div className="hidden min-w-0 max-w-80 text-xs text-muted-foreground lg:block">
-            {activeTemplate.description}
-          </div>
 
           <div className="ml-auto flex items-center gap-1">
             <ToolbarButton
@@ -467,7 +577,7 @@ export default function IdePage({
                   <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                       <FolderOpen className="h-3.5 w-3.5" />
-                      Files
+                      Explorer
                     </div>
                     <div className="flex items-center gap-1">
                       <IconButton
@@ -489,16 +599,16 @@ export default function IdePage({
                       nodes={fileTree}
                       activePath={activePath}
                       canPaste={Boolean(clipboardPath)}
+                      pendingCreate={pendingCreate}
                       onCopy={copyWorkspacePath}
                       onCut={cutWorkspacePath}
+                      onCreateCancel={cancelPendingCreate}
+                      onCreateCommit={commitPendingCreate}
                       onDelete={deleteWorkspacePath}
                       onOpen={openFile}
                       onPaste={pasteWorkspacePath}
                       onRename={renameWorkspacePath}
                     />
-                  </div>
-                  <div className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
-                    {SUPPORTED_LANGUAGES.join(" / ")}
                   </div>
                 </aside>
               </ResizablePanel>
@@ -584,74 +694,153 @@ export default function IdePage({
                 </section>
               </ResizablePanel>
 
-              <ResizableHandle className="bg-border max-lg:hidden" withHandle />
+              {showPreviewPanel ? (
+                <>
+                  <ResizableHandle
+                    className="bg-border max-lg:hidden"
+                    withHandle
+                  />
 
-              <ResizablePanel
-                className="max-lg:hidden"
-                defaultSize={30}
-                minSize={20}
-              >
-                <aside className="flex h-full min-h-0 flex-col bg-card">
-                  <div className="flex h-10 shrink-0 items-center border-b border-border">
-                    <PreviewTab
-                      active={previewMode === "preview"}
-                      label="Preview"
-                      icon={Globe}
-                      onClick={() => setPreviewMode("preview")}
-                    />
-                    <PreviewTab
-                      active={previewMode === "problems"}
-                      label="Problems"
-                      icon={CheckCircle2}
-                      onClick={() => setPreviewMode("problems")}
-                    />
-                  </div>
+                  <ResizablePanel
+                    className="max-lg:hidden"
+                    defaultSize={30}
+                    minSize={20}
+                  >
+                    <aside className="flex h-full min-h-0 flex-col bg-card">
+                      {showPreviewTabs ? (
+                        <div className="flex h-10 shrink-0 items-center border-b border-border">
+                          <PreviewTab
+                            active={previewMode === "preview"}
+                            label="Preview"
+                            icon={Globe}
+                            onClick={() => setPreviewMode("preview")}
+                          />
+                          <PreviewTab
+                            active={previewMode === "console"}
+                            label="Console"
+                            icon={SquareTerminal}
+                            onClick={() => setPreviewMode("console")}
+                          />
+                          <button
+                            type="button"
+                            className="flex h-full w-10 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            onClick={refreshPreview}
+                            aria-label="Refresh preview"
+                            title="Refresh preview"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : null}
 
-                  {previewMode === "preview" ? (
-                    <iframe
-                      title="Project preview"
-                      className="min-h-0 flex-1 bg-background"
-                      sandbox="allow-scripts allow-forms allow-modals"
-                      srcDoc={previewDocument}
-                    />
-                  ) : (
-                    <div className="min-h-0 flex-1 overflow-auto p-3">
-                      <ProblemsList problems={problems} />
-                    </div>
-                  )}
-                </aside>
-              </ResizablePanel>
+                      {showPreviewTabs ? (
+                        <>
+                          <iframe
+                            key={previewRefreshKey}
+                            title="Project preview"
+                            className={cn(
+                              "min-h-0 flex-1 bg-background",
+                              previewMode === "console" && "hidden",
+                            )}
+                            sandbox="allow-scripts allow-forms allow-modals"
+                            srcDoc={previewDocument}
+                          />
+                          {previewMode === "console" ? (
+                            <div className="min-h-0 flex-1 overflow-auto bg-muted/20">
+                              <ConsoleList
+                                lines={previewConsoleLines}
+                                problems={problems}
+                              />
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <iframe
+                          key={previewRefreshKey}
+                          title="Project preview"
+                          className="min-h-0 flex-1 bg-background"
+                          sandbox="allow-scripts allow-forms allow-modals"
+                          srcDoc={previewDocument}
+                        />
+                      )}
+                    </aside>
+                  </ResizablePanel>
+                </>
+              ) : null}
             </ResizablePanelGroup>
           </ResizablePanel>
 
           <ResizableHandle className="bg-border" withHandle />
 
-          <ResizablePanel defaultSize={28} minSize={10}>
+          <ResizablePanel
+            ref={terminalPanelRef}
+            collapsible
+            collapsedSize={TERMINAL_COLLAPSED_SIZE}
+            defaultSize={TERMINAL_DEFAULT_SIZE}
+            minSize={10}
+            onCollapse={() => setTerminalOpen(false)}
+            onExpand={() => setTerminalOpen(true)}
+          >
             <section className="flex h-full min-h-0 flex-col bg-card">
-              <button
-                type="button"
-                className="flex h-10 w-full shrink-0 items-center gap-2 border-b border-border px-3 text-left text-xs font-semibold text-foreground"
-                onClick={() => setTerminalOpen((open) => !open)}
-              >
+              <div className="flex h-10 w-full shrink-0 items-center gap-2 border-b border-border px-3 text-left text-xs font-semibold text-foreground">
                 <SquareTerminal className="h-4 w-4 text-muted-foreground" />
                 Terminal
-                <span className="font-normal text-muted-foreground">{cwd}</span>
                 {savedAt ? (
                   <span className="ml-auto flex items-center gap-1 font-normal text-muted-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                     Saved {savedAt.toLocaleTimeString()}
                   </span>
                 ) : (
-                  <span className="ml-auto font-normal text-muted-foreground">
-                    Virtual CLI
-                  </span>
+                  <span className="ml-auto" />
                 )}
-                <PanelBottom className="h-4 w-4" />
-              </button>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={toggleTerminalPanel}
+                  aria-label={
+                    terminalOpen ? "Collapse terminal" : "Expand terminal"
+                  }
+                >
+                  <PanelBottom className="h-4 w-4" />
+                </button>
+              </div>
 
               {terminalOpen ? (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="min-h-0 flex-1 overflow-auto bg-muted/20 px-3 py-2 font-mono text-xs leading-5">
+                  <div
+                    ref={terminalScrollRef}
+                    tabIndex={0}
+                    className="min-h-0 flex-1 overflow-auto bg-muted/20 px-3 py-2 font-mono text-xs leading-5 outline-none"
+                    onBlur={(event) => {
+                      if (
+                        event.relatedTarget instanceof Node &&
+                        event.currentTarget.contains(event.relatedTarget)
+                      ) {
+                        return
+                      }
+                      setTerminalInputFocused(false)
+                    }}
+                    onFocus={() => setTerminalInputFocused(true)}
+                    onKeyDown={(event) => {
+                      if (event.target === terminalInputRef.current) return
+                      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+                      if (event.key.length === 1) {
+                        event.preventDefault()
+                        terminalInputRef.current?.focus()
+                        setTerminalInput((input) => `${input}${event.key}`)
+                        scrollTerminalToBottom()
+                        return
+                      }
+
+                      if (event.key === "Backspace") {
+                        event.preventDefault()
+                        terminalInputRef.current?.focus()
+                        setTerminalInput((input) => input.slice(0, -1))
+                        scrollTerminalToBottom()
+                      }
+                    }}
+                  >
                     {terminalLines.map((line) => (
                       <pre
                         key={line.id}
@@ -667,26 +856,54 @@ export default function IdePage({
                         {line.text}
                       </pre>
                     ))}
+                    <form
+                      onSubmit={submitTerminal}
+                      className="flex min-h-5 items-start whitespace-pre-wrap"
+                    >
+                      <span className="shrink-0 text-muted-foreground">
+                        {cwd} ${" "}
+                      </span>
+                      <div className="relative min-h-5 min-w-0 flex-1">
+                        <div
+                          className="pointer-events-none absolute inset-0 overflow-hidden leading-5"
+                          aria-hidden="true"
+                        >
+                          <span className="text-foreground">
+                            {terminalInput}
+                          </span>
+                          <span
+                            className={cn(
+                              "ml-px inline-block h-[1.05em] w-[0.6em] translate-y-[0.17em] border border-muted-foreground/70",
+                              terminalInputFocused &&
+                                "border-transparent bg-emerald-500 dark:bg-emerald-400",
+                            )}
+                          />
+                        </div>
+                        <input
+                          ref={terminalInputRef}
+                          value={terminalInput}
+                          onChange={(event) => {
+                            setTerminalInput(event.target.value)
+                            scrollTerminalToBottom()
+                          }}
+                          onFocus={() => {
+                            setTerminalInputFocused(true)
+                            scrollTerminalToBottom()
+                          }}
+                          onBlur={() => setTerminalInputFocused(false)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault()
+                              submitTerminalCommand()
+                            }
+                          }}
+                          className="absolute inset-0 w-full bg-transparent text-transparent caret-transparent outline-none"
+                          spellCheck={false}
+                        />
+                      </div>
+                    </form>
+                    <div ref={terminalBottomRef} />
                   </div>
-                  <form
-                    onSubmit={submitTerminal}
-                    className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3 font-mono text-xs"
-                  >
-                    <span className="text-muted-foreground">{cwd} $</span>
-                    <input
-                      value={terminalInput}
-                      onChange={(event) => setTerminalInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault()
-                          submitTerminalCommand()
-                        }
-                      }}
-                      className="h-full min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-                      placeholder="Try: help, ls, mkdir src, touch app.js, mv app.js main.js, rm main.js"
-                      spellCheck={false}
-                    />
-                  </form>
                 </div>
               ) : null}
             </section>
@@ -805,24 +1022,41 @@ function PreviewTab({
   )
 }
 
-function ProblemsList({ problems }: { problems: string[] }) {
-  if (problems.length === 0) {
-    return (
-      <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300">
-        <CheckCircle2 className="h-4 w-4" />
-        No problems found in the current browser checks.
-      </div>
-    )
+function ConsoleList({
+  lines,
+  problems,
+}: {
+  lines: PreviewConsoleLine[]
+  problems: string[]
+}) {
+  if (problems.length === 0 && lines.length === 0) {
+    return <div className="min-h-full font-mono text-xs leading-5" />
   }
 
   return (
-    <div className="space-y-2">
+    <div className="min-h-full space-y-1 p-3 font-mono text-xs leading-5">
       {problems.map((problem) => (
         <div
           key={problem}
-          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+          className="whitespace-pre-wrap border-l-2 border-destructive pl-2 text-destructive"
         >
-          {problem}
+          <span className="text-muted-foreground">error</span> {problem}
+        </div>
+      ))}
+      {lines.map((line) => (
+        <div
+          key={line.id}
+          className={cn(
+            "whitespace-pre-wrap border-l-2 pl-2",
+            line.level === "error" && "border-destructive text-destructive",
+            line.level === "warn" &&
+              "border-amber-500 text-amber-700 dark:text-amber-300",
+            (line.level === "log" || line.level === "info") &&
+              "border-muted-foreground/50 text-foreground",
+          )}
+        >
+          <span className="text-muted-foreground">{line.level}</span>{" "}
+          {line.message}
         </div>
       ))}
     </div>

@@ -18,7 +18,11 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-foreground",
         "[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-foreground",
         "[&_li]:pl-1 [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
+        "[&_hr]:border-border",
         "[&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-3",
+        "[&_table]:w-full [&_table]:border-collapse [&_table]:text-left",
+        "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
+        "[&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:px-2 [&_th]:py-1 [&_th]:font-semibold",
         className,
       )}
     >
@@ -57,7 +61,63 @@ function parseMarkdownBlocks(markdown: string) {
       continue
     }
 
-    const heading = /^(#{1,4})\s+(.+)$/.exec(trimmed)
+    const setextHeading = lines[index + 1]?.trim()
+    if (/^=+$/.test(setextHeading ?? "") || /^-+$/.test(setextHeading ?? "")) {
+      const HeadingTag = setextHeading?.startsWith("=") ? "h2" : "h3"
+      blocks.push(
+        <HeadingTag key={blocks.length}>{parseInline(trimmed)}</HeadingTag>,
+      )
+      index += 2
+      continue
+    }
+
+    if (/^[-*_]{3,}$/.test(trimmed)) {
+      blocks.push(<hr key={blocks.length} />)
+      index += 1
+      continue
+    }
+
+    if (isTableStart(lines, index)) {
+      const rows: string[][] = []
+      while (index < lines.length && isTableRow(lines[index])) {
+        if (!isTableDivider(lines[index])) {
+          rows.push(parseTableRow(lines[index]))
+        }
+        index += 1
+      }
+
+      const [header, ...bodyRows] = rows
+      const headerCells = header ? withStableKeys(header) : []
+      const bodyRowsWithKeys = withStableKeys(bodyRows, (row) => row.join("|"))
+      blocks.push(
+        <table key={blocks.length}>
+          {header ? (
+            <thead>
+              <tr>
+                {headerCells.map(({ key, value }) => (
+                  <th key={key}>{parseInline(value)}</th>
+                ))}
+              </tr>
+            </thead>
+          ) : null}
+          <tbody>
+            {bodyRowsWithKeys.map(({ key, value: row }) => {
+              const rowCells = withStableKeys(row)
+              return (
+                <tr key={key}>
+                  {rowCells.map(({ key: cellKey, value: cell }) => (
+                    <td key={cellKey}>{parseInline(cell)}</td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>,
+      )
+      continue
+    }
+
+    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed)
     if (heading) {
       const level = heading[1].length
       const HeadingTag = level <= 2 ? "h2" : "h3"
@@ -78,10 +138,8 @@ function parseMarkdownBlocks(markdown: string) {
       }
       blocks.push(
         <ul key={blocks.length}>
-          {items.map((item, itemIndex) => (
-            <li key={`${itemIndex}-${item.slice(0, 16)}`}>
-              {parseInline(item)}
-            </li>
+          {withStableKeys(items).map(({ key, value }) => (
+            <li key={key}>{parseInline(value)}</li>
           ))}
         </ul>,
       )
@@ -98,10 +156,8 @@ function parseMarkdownBlocks(markdown: string) {
       }
       blocks.push(
         <ol key={blocks.length}>
-          {items.map((item, itemIndex) => (
-            <li key={`${itemIndex}-${item.slice(0, 16)}`}>
-              {parseInline(item)}
-            </li>
+          {withStableKeys(items).map(({ key, value }) => (
+            <li key={key}>{parseInline(value)}</li>
           ))}
         </ol>,
       )
@@ -144,21 +200,23 @@ function shouldContinueParagraph(line: string) {
   return (
     Boolean(trimmed) &&
     !trimmed.startsWith("```") &&
-    !/^(#{1,4})\s+/.test(trimmed) &&
+    !/^(#{1,6})\s+/.test(trimmed) &&
+    !/^[-*_]{3,}$/.test(trimmed) &&
     !/^[-*]\s+/.test(trimmed) &&
     !/^\d+[.)]\s+/.test(trimmed) &&
-    !trimmed.startsWith(">")
+    !trimmed.startsWith(">") &&
+    !isTableRow(line)
   )
 }
 
 function parseInline(text: string) {
   const nodes: ReactNode[] = []
   const pattern =
-    /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\))/g
+    /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)|(https?:\/\/[^\s)]+))/g
   let cursor = 0
-  let match: RegExpExecArray | null
+  let match = pattern.exec(text)
 
-  while ((match = pattern.exec(text))) {
+  while (match) {
     if (match.index > cursor) {
       nodes.push(text.slice(cursor, match.index))
     }
@@ -166,21 +224,35 @@ function parseInline(text: string) {
     if (match[2]) {
       nodes.push(<strong key={nodes.length}>{match[2]}</strong>)
     } else if (match[3]) {
-      nodes.push(<code key={nodes.length}>{match[3]}</code>)
-    } else if (match[4] && match[5]) {
+      nodes.push(<em key={nodes.length}>{match[3]}</em>)
+    } else if (match[4]) {
+      nodes.push(<code key={nodes.length}>{match[4]}</code>)
+    } else if (match[5] && match[6]) {
       nodes.push(
         <a
           key={nodes.length}
-          href={match[5]}
+          href={match[6]}
           target="_blank"
           rel="noreferrer noopener"
         >
-          {match[4]}
+          {match[5]}
+        </a>,
+      )
+    } else if (match[7]) {
+      nodes.push(
+        <a
+          key={nodes.length}
+          href={match[7]}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          {match[7]}
         </a>,
       )
     }
 
     cursor = pattern.lastIndex
+    match = pattern.exec(text)
   }
 
   if (cursor < text.length) {
@@ -188,4 +260,47 @@ function parseInline(text: string) {
   }
 
   return nodes
+}
+
+function isTableStart(lines: string[], index: number) {
+  return isTableRow(lines[index]) && isTableDivider(lines[index + 1] ?? "")
+}
+
+function isTableRow(line: string) {
+  const trimmed = line.trim()
+  return trimmed.includes("|") && trimmed.split("|").length >= 3
+}
+
+function isTableDivider(line: string) {
+  return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line.trim())
+}
+
+function parseTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim())
+}
+
+function withStableKeys<T>(items: T[], getText = (item: T) => String(item)) {
+  const seen = new Map<string, number>()
+  return items.map((value) => {
+    const text = getText(value)
+    const count = seen.get(text) ?? 0
+    seen.set(text, count + 1)
+    return {
+      key: keyFromText(`${text}:${count}`),
+      value,
+    }
+  })
+}
+
+function keyFromText(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0
+  }
+  return `${hash}`
 }

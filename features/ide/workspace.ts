@@ -311,7 +311,9 @@ export function defaultContentForPath(path: string) {
 }
 
 export function runCommandForPath(path: string) {
-  if (path.endsWith(".html") || path.endsWith(".css")) return "preview"
+  if (path.endsWith(".html") || path.endsWith(".css") || path.endsWith(".js")) {
+    return "preview"
+  }
   return `run ${path}`
 }
 

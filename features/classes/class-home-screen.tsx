@@ -238,6 +238,7 @@ function getUpcomingClassDeadline({
 export function ClassHomeScreen({ classId }: { classId: string }) {
   const {
     activeOrganization,
+    activeOrganizationRole,
     classLiveSessions,
     currentUser,
     featureDefinitions,
@@ -267,13 +268,22 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  const currentClassMemberships = classItem?.memberships.filter(
+    (membership) => membership.user_id === currentUser.id,
+  )
+  const isViewingAsStudent =
+    activeOrganizationRole === "student" ||
+    (!activeOrganizationRole && currentUser.role === "student")
+  const hasClassManagerMembership = currentClassMemberships?.some(
+    (membership) => membership.role === "teacher" || membership.role === "ta",
+  )
   const canManageClass = Boolean(
-    currentUser.role === "admin" ||
-      classItem?.memberships.some(
-        (membership) =>
-          membership.user_id === currentUser.id &&
-          (membership.role === "teacher" || membership.role === "ta"),
-      ),
+    !isViewingAsStudent &&
+      (activeOrganizationRole === "org_owner" ||
+        activeOrganizationRole === "org_admin" ||
+        activeOrganizationRole === "teacher" ||
+        classItem?.teacher_user_id === currentUser.id ||
+        hasClassManagerMembership),
   )
   const assignmentsApi = useClassAssignments({
     classId,
@@ -318,6 +328,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     (feature) => feature.key === "sessions",
   )
   const SessionIcon = sessionsFeature?.icon ?? Video
+  const sessionRouteSegment = sessionsFeature?.routeSegment ?? "session"
   const liveSession = classLiveSessions.find(
     (session) => session.class_id === classItem?.id,
   )
@@ -503,6 +514,12 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     )
   }
 
+  const sessionActionLabel = isLive
+    ? "Session in progress"
+    : canManageClass
+      ? "Start Session"
+      : "Join Session"
+
   return (
     <>
       <div className="p-6 space-y-5 max-w-6xl mx-auto">
@@ -558,12 +575,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   </p>
                 }
               />
-              {isLive ? (
-                <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1.5 text-sm font-semibold text-white">
-                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                  Live session in progress
-                </div>
-              ) : null}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               {canManageClass ? (
@@ -577,32 +588,19 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   Add member
                 </Button>
               ) : null}
-              {sessionsFeature?.routeSegment ? (
-                <Link
-                  href={`/classes/${classItem.id}/${sessionsFeature.routeSegment}`}
-                >
+              {canManageClass || isLive ? (
+                <Link href={`/classes/${classItem.id}/${sessionRouteSegment}`}>
                   <Button
                     variant="secondary"
                     size="sm"
-                    className={cn(
-                      "gap-2 shrink-0 border-0",
-                      isLive && !canManageClass
-                        ? "bg-white text-foreground hover:bg-white/90"
-                        : "bg-white/20 hover:bg-white/30 text-white",
-                    )}
+                    className="w-44 justify-center gap-2 shrink-0 border-0 bg-white/20 hover:bg-white/30 text-white"
                   >
-                    {canManageClass || !isLive ? (
-                      <SessionIcon className="w-4 h-4" />
+                    {isLive ? (
+                      <Radio className="w-4 h-4 text-emerald-300" />
                     ) : (
-                      <Radio className="w-4 h-4 text-emerald-600" />
+                      <SessionIcon className="w-4 h-4" />
                     )}
-                    {canManageClass
-                      ? isLive
-                        ? "Open Session"
-                        : "Start Session"
-                      : isLive
-                        ? "Join Live Session"
-                        : "Join Session"}
+                    {sessionActionLabel}
                   </Button>
                 </Link>
               ) : null}

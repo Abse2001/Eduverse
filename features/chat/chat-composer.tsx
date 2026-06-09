@@ -1,7 +1,7 @@
 "use client"
 
-import { useRef } from "react"
 import { Image, Megaphone, Paperclip, Send } from "lucide-react"
+import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -62,7 +62,7 @@ export function ChatComposer({
         }}
       />
 
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
         <div className="flex-1 flex items-end gap-2 rounded-xl border border-input bg-background px-3 py-2">
           <textarea
             rows={1}
@@ -124,15 +124,11 @@ export function ChatComposer({
           onClick={onSend}
           disabled={disabled || !input.trim()}
           size="icon"
-          className="shrink-0 w-9 h-9"
+          className="h-[46px] w-[46px] shrink-0"
         >
           <Send className="w-4 h-4" />
         </Button>
       </div>
-      <p className="text-[10px] text-muted-foreground mt-1.5">
-        Enter sends message &middot; Shift+Enter makes a new line &middot;
-        attachments are stored per class
-      </p>
     </div>
   )
 }

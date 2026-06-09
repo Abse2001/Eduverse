@@ -138,6 +138,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
   const { classLiveSessions, currentUser } = useApp()
   const {
     activeClass,
+    endClassSession,
     endSession,
     joinSession,
     leaveSession,
@@ -148,6 +149,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
   const [rightPanel, setRightPanel] = useState<"participants" | "chat" | null>(
     "participants",
   )
+  const [isEndingSession, setIsEndingSession] = useState(false)
 
   const isTeacher = currentUser.role === "teacher"
   const canStartSession = currentUser.role !== "student"
@@ -202,15 +204,6 @@ export function SessionScreen({ cls }: { cls: Class }) {
     },
     [],
   )
-  const liveBadgeLabel = liveSession.isConnecting
-    ? "Connecting"
-    : liveSession.connectionState === ConnectionState.Connected
-      ? "Live Session"
-      : teacherReconnectAvailable
-        ? "Disconnected"
-        : isTeacherPreviewSession
-          ? "Not Live"
-          : "Offline"
   const micBusy = isBusyMediaState(liveSession.media.microphone.state)
   const cameraBusy = isBusyMediaState(liveSession.media.camera.state)
   const screenBusy = isBusyMediaState(liveSession.media.screen.state)
@@ -229,6 +222,17 @@ export function SessionScreen({ cls }: { cls: Class }) {
     : liveSession.screenSharing
       ? "Stop sharing"
       : "Share screen"
+  const handleEndClassSession = useCallback(async () => {
+    setIsEndingSession(true)
+
+    try {
+      await endClassSession(cls)
+    } catch {
+      // Keep the session controls usable if the request fails.
+    } finally {
+      setIsEndingSession(false)
+    }
+  }, [cls, endClassSession])
 
   useEffect(() => {
     setVideoAspectRatio(undefined)
@@ -328,22 +332,8 @@ export function SessionScreen({ cls }: { cls: Class }) {
     <TooltipProvider delayDuration={0}>
       <div className="flex h-full flex-col bg-background overflow-hidden">
         <SessionAudioRenderer participants={liveSession.participants} />
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card shrink-0">
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <span
-                className={cn(
-                  "w-1.5 h-1.5 rounded-full",
-                  liveSession.connectionState === ConnectionState.Connected
-                    ? "bg-emerald-500 animate-pulse"
-                    : liveSession.isConnecting
-                      ? "bg-amber-500 animate-pulse"
-                      : "bg-muted-foreground",
-                )}
-              />
-              {liveBadgeLabel}
-            </span>
-            <Separator orientation="vertical" className="h-4" />
             <ClassPageHeader
               className="flex-1"
               title={cls.name}
@@ -379,14 +369,28 @@ export function SessionScreen({ cls }: { cls: Class }) {
             ) : null}
             <Separator orientation="vertical" className="h-6 mx-1" />
             {isTeacherPreviewSession ? (
-              <Button
-                size="sm"
-                className="gap-1.5 text-xs h-8"
-                onClick={() => joinSession(cls)}
-              >
-                <Video className="w-3.5 h-3.5" />
-                {teacherReconnectAvailable ? "Reconnect" : "Go Live"}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  className="gap-1.5 text-xs h-8"
+                  onClick={() => joinSession(cls)}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  {teacherReconnectAvailable ? "Reconnect" : "Go Live"}
+                </Button>
+                {teacherReconnectAvailable ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="gap-1.5 text-xs h-8"
+                    onClick={() => void handleEndClassSession()}
+                    disabled={isEndingSession}
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                    {isEndingSession ? "Ending" : "End Session"}
+                  </Button>
+                ) : null}
+              </>
             ) : (
               <Button
                 size="sm"
