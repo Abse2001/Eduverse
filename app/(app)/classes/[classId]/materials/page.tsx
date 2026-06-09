@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import Image from "next/image"
 import { type FormEvent, use, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { MarkdownContent } from "@/features/ai/markdown-content"
+import {
+  downloadCachedMedia,
+  loadCachedMedia,
+} from "@/features/chat/media-cache"
 import {
   ClassFeatureDisabledFallback,
   ClassRouteFallback,
@@ -41,11 +47,6 @@ import {
   type ClassMaterial,
   useClassMaterials,
 } from "@/features/materials/use-class-materials"
-import { MarkdownContent } from "@/features/ai/markdown-content"
-import {
-  downloadCachedMedia,
-  loadCachedMedia,
-} from "@/features/chat/media-cache"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -272,25 +273,24 @@ export default function MaterialsPage({
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{cls.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {cls.code} &middot; {materials.length} materials
-          </p>
-        </div>
-        {canUpload && (
-          <Button
-            size="sm"
-            className="gap-2"
-            onClick={() => setIsUploadOpen(true)}
-          >
-            <PlusCircle className="w-4 h-4" />
-            Upload Material
-          </Button>
-        )}
-      </div>
+    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      <ClassPageHeader
+        title={cls.name}
+        code={cls.code}
+        section="Materials"
+        actions={
+          canUpload ? (
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => setIsUploadOpen(true)}
+            >
+              <PlusCircle className="w-4 h-4" />
+              Upload Material
+            </Button>
+          ) : null
+        }
+      />
 
       {materialsError && (
         <Alert variant="destructive">

@@ -4,7 +4,7 @@ import {
   loadAiClassAccess,
   loadClassAiContext,
 } from "@/lib/ai/class-context"
-import { generateAiText, type AiChatMessage } from "@/lib/ai/openrouter"
+import { type AiChatMessage, generateAiText } from "@/lib/ai/openrouter"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -53,10 +53,10 @@ export async function POST(request: Request, context: RouteContext) {
         {
           role: "system",
           content: [
-            "You are Eduverse AI Tutor, a helpful learning assistant inside a class workspace.",
+            "You are Eduverse AI Agent, a helpful learning assistant inside a class workspace.",
             "Use the provided class context when it is relevant.",
             `The current user role is ${access.role}.`,
-            "For students, use hint-first tutoring: explain concepts, ask guiding questions, and show small examples without handing over direct final answers to active assignments or exams.",
+            "For students, guide learning with concepts, questions, and small examples without handing over direct final answers to active assignments or exams.",
             "For teachers/admins, help with planning, clarification, and classroom support.",
             "If the class context does not contain enough information, say what is missing and answer from general knowledge carefully.",
             "Do not request or expose personal, confidential, or sensitive information.",

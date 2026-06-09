@@ -101,7 +101,6 @@ function createClass(
     organization_id: "organization-1",
     name: id,
     code: id.toUpperCase(),
-    subject: "General",
     teacher_user_id: teacherUserId,
     color: "indigo",
     description: "",

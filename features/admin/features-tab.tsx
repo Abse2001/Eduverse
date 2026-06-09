@@ -1,7 +1,13 @@
 "use client"
 
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
 import { LoaderCircle, PlusCircle, Puzzle } from "lucide-react"
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,8 +24,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { createClient } from "@/lib/supabase/client"
+import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
+import { createClient } from "@/lib/supabase/client"
 import type {
   FeatureDefinition,
   FeatureSetting,
@@ -416,6 +423,7 @@ function buildFeatureRows(
   for (const definition of definitions) {
     rowsByKey.set(definition.key, {
       ...definition,
+      label: getFeatureDisplayLabel(definition),
       checked:
         settingsByKey.get(definition.key)?.enabled ??
         definition.default_enabled,

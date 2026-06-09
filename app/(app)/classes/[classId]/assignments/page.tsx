@@ -23,6 +23,7 @@ import {
   useMemo,
   useState,
 } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -55,11 +56,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  ClassFeatureDisabledFallback,
-  ClassRouteFallback,
-  useClassFeatureRoute,
-} from "@/features/classes/use-class-route"
 import { MarkdownContent } from "@/features/ai/markdown-content"
 import {
   type AssignmentDerivedStatus,
@@ -69,6 +65,11 @@ import {
   useClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import { formatFileSize } from "@/features/chat/file-utils"
+import {
+  ClassFeatureDisabledFallback,
+  ClassRouteFallback,
+  useClassFeatureRoute,
+} from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -622,35 +623,34 @@ export default function AssignmentsPage({
 
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{cls.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {cls.code} &middot; {visibleAssignments.length} assignments
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => setIsAiDraftOpen(true)}
-            >
-              <Sparkles className="h-4 w-4" />
-              AI Draft
-            </Button>
-            <Button
-              size="sm"
-              className="gap-2"
-              onClick={() => setIsCreateOpen(true)}
-            >
-              <PlusCircle className="w-4 h-4" />
-              New Assignment
-            </Button>
-          </div>
-        )}
-      </div>
+      <ClassPageHeader
+        title={cls.name}
+        code={cls.code}
+        section="Assignments"
+        actions={
+          canManage ? (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setIsAiDraftOpen(true)}
+              >
+                <Sparkles className="h-4 w-4" />
+                AI Draft
+              </Button>
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={() => setIsCreateOpen(true)}
+              >
+                <PlusCircle className="w-4 h-4" />
+                New Assignment
+              </Button>
+            </div>
+          ) : null
+        }
+      />
 
       {assignmentsError && (
         <Alert variant="destructive">

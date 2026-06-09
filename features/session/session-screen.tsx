@@ -1,16 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { ConnectionState } from "livekit-client"
 import {
   AlertTriangle,
-  ArrowUpRight,
-  ChevronRight,
   CheckCircle2,
+  ChevronRight,
   Info,
   MessageSquare,
-  Monitor,
   Mic,
   MicOff,
+  Monitor,
   MonitorUp,
   Phone,
   Redo2,
@@ -23,7 +22,8 @@ import {
   X,
   XCircle,
 } from "lucide-react"
-import { ConnectionState } from "livekit-client"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -32,16 +32,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import type { Class } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import type { Class } from "@/lib/mock-data"
 import { ControlButton } from "./control-button"
 import { usePersistentLiveSession } from "./live-session-provider"
 import type { LiveSessionNotice } from "./live-session-types"
 import { ParticipantsPanel } from "./participants-panel"
 import { SessionAudioRenderer } from "./session-audio-renderer"
-import { SESSION_COLORS, SESSION_TOOLS } from "./session-data"
 import { SessionChat } from "./session-chat"
+import { SESSION_COLORS, SESSION_TOOLS } from "./session-data"
 import { VideoTrackView } from "./track-media"
 import { useWhiteboard } from "./use-whiteboard"
 import { VideoTile } from "./video-tile"
@@ -344,12 +344,13 @@ export function SessionScreen({ cls }: { cls: Class }) {
               {liveBadgeLabel}
             </span>
             <Separator orientation="vertical" className="h-4" />
-            <span className="text-sm font-semibold text-foreground truncate">
-              {cls.name}
-            </span>
-            <span className="text-xs text-muted-foreground hidden md:block">
-              {cls.code}
-            </span>
+            <ClassPageHeader
+              className="flex-1"
+              title={cls.name}
+              code={cls.code}
+              section="Session"
+              size="compact"
+            />
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -662,7 +663,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
                 aria-label="Whiteboard canvas"
                 tabIndex={isTeacher ? 0 : -1}
                 className={cn(
-                  "relative z-10 w-full h-full touch-none object-contain",
+                  "relative z-10 w-full h-full touch-none object-contain bg-white dark:bg-black",
                   isTeacher &&
                     ["pen", "line", "rect", "circle"].includes(
                       whiteboard.activeTool,

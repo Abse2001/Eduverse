@@ -28,7 +28,6 @@ export type OrganizationClass = {
   organization_id: string
   name: string
   code: string
-  subject: string
   teacher_user_id: string | null
   color: string | null
   description: string
@@ -59,7 +58,7 @@ export async function loadOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, subject, teacher_user_id, color, description, room, semester, is_archived",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -75,7 +74,7 @@ export async function loadClass(classId: string, client?: SupabaseClient) {
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, subject, teacher_user_id, color, description, room, semester, is_archived",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived",
     )
     .eq("id", classId)
     .eq("is_archived", false)
@@ -93,7 +92,6 @@ export function toLegacyClass(classRow: OrganizationClass): Class {
     id: classRow.id,
     name: classRow.name,
     code: classRow.code,
-    subject: classRow.subject,
     teacherId: classRow.teacher_user_id ?? "",
     color: classRow.color ?? "indigo",
     description: classRow.description,

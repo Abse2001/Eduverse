@@ -1,7 +1,8 @@
 "use client"
 
-import { FormEvent, useMemo, useState } from "react"
-import { Bot, Loader2, Send, Sparkles } from "lucide-react"
+import { Bot, Loader2, Send } from "lucide-react"
+import { type FormEvent, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,7 +11,8 @@ import type { Class } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "./markdown-content"
 
-type TutorMessage = {
+type AgentMessage = {
+  id: string
   role: "user" | "assistant"
   content: string
 }
@@ -23,23 +25,19 @@ const SUGGESTED_PROMPTS = [
 
 export function ClassAiScreen({ cls }: { cls: Class }) {
   const [input, setInput] = useState("")
-  const [messages, setMessages] = useState<TutorMessage[]>([])
+  const [messages, setMessages] = useState<AgentMessage[]>([])
   const [isSending, setIsSending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const hasMessages = messages.length > 0
-  const contextLabel = useMemo(
-    () => `${cls.code} - ${cls.subject || "Class tutor"}`,
-    [cls.code, cls.subject],
-  )
 
   async function submitQuestion(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
     const question = input.trim()
     if (!question || isSending) return
 
-    const nextMessages: TutorMessage[] = [
+    const nextMessages: AgentMessage[] = [
       ...messages,
-      { role: "user", content: question },
+      { id: crypto.randomUUID(), role: "user", content: question },
     ]
     setMessages(nextMessages)
     setInput("")
@@ -48,7 +46,7 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
 
     try {
       const response = await fetch(
-        `/api/classes/${encodeURIComponent(cls.id)}/ai/tutor`,
+        `/api/classes/${encodeURIComponent(cls.id)}/ai/agent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -66,14 +64,17 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
       const answer = payload?.answer
 
       if (!response.ok || !answer) {
-        throw new Error(payload?.error ?? "Could not ask AI tutor.")
+        throw new Error(payload?.error ?? "Could not ask AI Agent.")
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: answer }])
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", content: answer },
+      ])
     } catch (error) {
       setMessages(messages)
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not ask AI tutor.",
+        error instanceof Error ? error.message : "Could not ask AI Agent.",
       )
     } finally {
       setIsSending(false)
@@ -81,17 +82,9 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-5xl flex-col p-6">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <h1 className="truncate text-xl font-bold text-foreground">
-              AI Tutor
-            </h1>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">{contextLabel}</p>
-        </div>
+    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl flex-col p-6">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <ClassPageHeader title={cls.name} code={cls.code} section="AI Agent" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-card">
@@ -105,8 +98,8 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
                 Ask about this class
               </h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                The tutor can use class materials, assignments, and recent class
-                messages as context.
+                The AI Agent can use class materials, assignments, and recent
+                class messages as context.
               </p>
               <div className="mt-5 grid gap-2 sm:grid-cols-3">
                 {SUGGESTED_PROMPTS.map((prompt) => (
@@ -124,9 +117,9 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
           </div>
         ) : (
           <div className="space-y-4 p-4">
-            {messages.map((message, index) => (
+            {messages.map((message) => (
               <div
-                key={`${message.role}-${index}`}
+                key={message.id}
                 className={cn(
                   "flex",
                   message.role === "user" ? "justify-end" : "justify-start",

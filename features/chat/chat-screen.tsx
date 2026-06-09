@@ -10,12 +10,11 @@ import {
   X,
 } from "lucide-react"
 import { useEffect, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useApp } from "@/lib/store"
-import { cn } from "@/lib/utils"
 import type { Class } from "@/lib/mock-data"
-import { CLASS_COLOR_MAP } from "@/lib/view-config"
+import { useApp } from "@/lib/store"
 import { ChatComposer } from "./chat-composer"
 import { type ChatMessage, MessageBubble } from "./message-bubble"
 import { useClassMessages } from "./use-class-messages"
@@ -30,7 +29,6 @@ export function ChatScreen({ cls }: { cls: Class }) {
     input,
     setInput,
     enrichedMessages,
-    mediaItems,
     announcements,
     bottomRef,
     sendMessage,
@@ -85,22 +83,14 @@ export function ChatScreen({ cls }: { cls: Class }) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
-        <div
-          className={cn(
-            "w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0",
-            CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
-          )}
-        >
-          {cls.code.slice(0, 2)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-foreground">{cls.name}</p>
-          <p className="text-xs text-muted-foreground">
-            {cls.code} &middot; {enrichedMessages.length} messages &middot;{" "}
-            {mediaItems.length} media
-          </p>
-        </div>
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card/80 backdrop-blur-sm shrink-0">
+        <ClassPageHeader
+          className="flex-1"
+          title={cls.name}
+          code={cls.code}
+          section="Chat"
+          size="compact"
+        />
         <Button
           variant={isSearchOpen ? "secondary" : "ghost"}
           size="icon"

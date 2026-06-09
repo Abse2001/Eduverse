@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react"
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type {
   LiveSessionWhiteboardMessage,
   LiveSessionWhiteboardMessagePayload,
@@ -175,6 +175,7 @@ function drawBoardBackground(
   ctx: CanvasRenderingContext2D,
   overlayActive: boolean,
   overlayAspectRatio = DEFAULT_PRESENTATION_ASPECT_RATIO,
+  isDarkMode = false,
 ) {
   const safeOverlayAspectRatio =
     Number.isFinite(overlayAspectRatio) && overlayAspectRatio > 0
@@ -193,9 +194,9 @@ function drawBoardBackground(
     return
   }
 
-  ctx.fillStyle = "#fafafa"
+  ctx.fillStyle = isDarkMode ? "#000000" : "#fafafa"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = "#e5e7eb"
+  ctx.strokeStyle = isDarkMode ? "#1f2937" : "#e5e7eb"
   ctx.lineWidth = 0.5
 
   for (let x = 0; x <= canvas.width; x += 40) {
@@ -734,6 +735,36 @@ function hitsDrawableOperation(
     : hitsShape(operation, point, canvas, radius, includeShapeInterior)
 }
 
+function useResolvedDarkMode() {
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  useEffect(() => {
+    function readDarkMode() {
+      setIsDarkMode(
+        document.documentElement.classList.contains("dark") ||
+          document.body.classList.contains("dark") ||
+          document.documentElement.dataset.theme === "dark",
+      )
+    }
+
+    readDarkMode()
+
+    const observer = new MutationObserver(readDarkMode)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    })
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    })
+
+    return () => observer.disconnect()
+  }, [])
+
+  return isDarkMode
+}
+
 export function useWhiteboard({
   isTeacher,
   currentUserId,
@@ -753,6 +784,7 @@ export function useWhiteboard({
   const [redoCount, setRedoCount] = useState(0)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [hasSelection, setHasSelection] = useState(false)
+  const isDarkMode = useResolvedDarkMode()
   const isDrawingRef = useRef(false)
   const lastPos = useRef<WhiteboardPoint | null>(null)
   const startPos = useRef<WhiteboardPoint | null>(null)
@@ -779,9 +811,9 @@ export function useWhiteboard({
   const boardVersion = useRef(0)
 
   const clearStateResponseTimers = useCallback(() => {
-    stateResponseTimers.current.forEach((timerId) => {
+    for (const timerId of stateResponseTimers.current) {
       window.clearTimeout(timerId)
-    })
+    }
     stateResponseTimers.current.clear()
   }, [])
 
@@ -808,8 +840,9 @@ export function useWhiteboard({
       context.ctx,
       overlayActive,
       overlayAspectRatio,
+      isDarkMode,
     )
-  }, [getContext, overlayActive, overlayAspectRatio])
+  }, [getContext, isDarkMode, overlayActive, overlayAspectRatio])
 
   const renderOperations = useCallback(
     (nextOperations: WhiteboardOperation[]) => {
@@ -824,6 +857,7 @@ export function useWhiteboard({
         context.ctx,
         overlayActive,
         overlayAspectRatio,
+        isDarkMode,
       )
 
       const visibleOperations = getVisibleDrawableOperations(nextOperations)
@@ -857,7 +891,7 @@ export function useWhiteboard({
 
       context.ctx.globalCompositeOperation = "source-over"
     },
-    [getContext, overlayActive, overlayAspectRatio],
+    [getContext, isDarkMode, overlayActive, overlayAspectRatio],
   )
 
   const handleActiveToolChange = useCallback(

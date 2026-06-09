@@ -297,7 +297,7 @@ export function TeacherDashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:min-w-[340px]">
                     <div>
                       <p className="text-[10px] uppercase text-muted-foreground">
                         Students
@@ -320,14 +320,6 @@ export function TeacherDashboard() {
                       </p>
                       <p className="text-sm font-bold text-foreground">
                         {classItem.gradedAssignments}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Subject
-                      </p>
-                      <p className="truncate text-sm font-bold text-foreground">
-                        {classItem.subject}
                       </p>
                     </div>
                   </div>

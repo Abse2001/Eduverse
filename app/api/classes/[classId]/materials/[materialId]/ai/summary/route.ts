@@ -76,7 +76,7 @@ export async function POST(request: Request, context: RouteContext) {
         {
           role: "user",
           content: [
-            `Class: ${access.classRow.name} (${access.classRow.subject})`,
+            `Class: ${access.classRow.name} (${access.classRow.code})`,
             `Material title: ${material.title}`,
             `Description: ${material.description || "No description"}`,
             `File: ${material.original_filename}`,

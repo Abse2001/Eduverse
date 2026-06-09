@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react"
 import {
   BookOpen,
   Brain,
@@ -10,11 +11,10 @@ import {
   Terminal,
   Video,
 } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
 import type {
+  ClassExtensionSetting,
   FeatureDefinition,
   FeatureSetting,
-  ClassExtensionSetting,
   OrganizationExtension,
 } from "@/lib/supabase/features"
 
@@ -84,17 +84,17 @@ export const FEATURE_REGISTRY = [
     parentKey: null,
     routeSegment: "materials",
     defaultEnabled: true,
-    sortOrder: 30,
+    sortOrder: 40,
     renderInClassNav: true,
   },
   {
     key: "ai",
-    label: "AI",
+    label: "AI Agent",
     icon: Brain,
     parentKey: null,
     routeSegment: "ai",
     defaultEnabled: true,
-    sortOrder: 35,
+    sortOrder: 45,
     renderInClassNav: true,
   },
   {
@@ -104,7 +104,7 @@ export const FEATURE_REGISTRY = [
     parentKey: null,
     routeSegment: "assignments",
     defaultEnabled: true,
-    sortOrder: 40,
+    sortOrder: 50,
     renderInClassNav: true,
   },
   {
@@ -114,7 +114,7 @@ export const FEATURE_REGISTRY = [
     parentKey: null,
     routeSegment: "session",
     defaultEnabled: true,
-    sortOrder: 50,
+    sortOrder: 30,
     renderInClassNav: true,
   },
   {
@@ -163,6 +163,13 @@ export const FEATURE_REGISTRY_BY_KEY = new Map(
   FEATURE_REGISTRY.map((feature) => [feature.key, feature]),
 )
 
+export function getFeatureDisplayLabel(feature: {
+  key: string
+  label: string
+}) {
+  return FEATURE_REGISTRY_BY_KEY.get(feature.key)?.label ?? feature.label
+}
+
 export function resolveClassFeatures({
   definitions,
   organizationSettings,
@@ -207,7 +214,7 @@ export function resolveClassFeatures({
     const enabled = orgEnabled && classEnabled
     const resolved: ResolvedClassFeature = {
       ...feature,
-      label: definition?.label ?? feature.label,
+      label: getFeatureDisplayLabel(definition ?? feature),
       routeSegment: normalizeFeatureRouteSegment(
         feature.key,
         definition?.route_segment ?? feature.routeSegment,

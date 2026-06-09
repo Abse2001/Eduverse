@@ -1,25 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { format } from "date-fns"
+import { ChevronLeft, ChevronRight, Loader2, Send } from "lucide-react"
 import Link from "next/link"
-import {
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Send,
-} from "lucide-react"
+import { useEffect, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import type { JsonValue, StudentExamPageDto } from "@/lib/exams/types"
 import { resolveStudentExamPageState } from "@/lib/education/selectors"
+import type { JsonValue, StudentExamPageDto } from "@/lib/exams/types"
 import { ExamHeader } from "./exam-header"
-import { useExamLock } from "./exam-lock"
 import { ExamLobby } from "./exam-lobby"
+import { useExamLock } from "./exam-lock"
 import { QuestionNavigator } from "./question-navigator"
 import { QuestionView } from "./question-view"
 import {
@@ -207,13 +202,8 @@ export function ExamScreen({
     page.visibleExams.length > 1
   ) {
     return (
-      <div className="p-6 space-y-4 max-w-4xl mx-auto">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Exams</h1>
-          <p className="text-sm text-muted-foreground">
-            {cls.name} &middot; {cls.code}
-          </p>
-        </div>
+      <div className="p-6 space-y-5 max-w-6xl mx-auto">
+        <ClassPageHeader title={cls.name} code={cls.code} section="Exams" />
 
         <div className="space-y-3">
           {page.visibleExams.map((exam) => {

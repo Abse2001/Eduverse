@@ -14,7 +14,8 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react"
-import { useState, type FormEvent } from "react"
+import { type FormEvent, useState } from "react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,8 @@ import {
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { canTeacherGradeQuestion } from "@/lib/exams/grading"
+import { formatIntegrityEvent } from "@/lib/exams/integrity"
 import type {
   GradeAttemptInput,
   ManagerExamDetailDto,
@@ -45,16 +48,14 @@ import type {
   UpsertExamInput,
   UpsertExamQuestionInput,
 } from "@/lib/exams/types"
-import { canTeacherGradeQuestion } from "@/lib/exams/grading"
-import { formatIntegrityEvent } from "@/lib/exams/integrity"
 import type { Class } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import {
   buildGradeInputsForAttempt,
-  getEndedExamApprovalStatus,
   getAttemptGradeIndicator,
   getAttemptMonitorStatus,
   getCurrentAttemptsByStudent,
+  getEndedExamApprovalStatus,
   getExamMonitorSummary,
   isAttemptSuspicious,
   resolveSelectedAttemptId,
@@ -573,30 +574,33 @@ export function ManagerExamScreen({
 
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{cls.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {cls.code} &middot; {exams.length} exams
-            {isRefreshing ? " · Refreshing..." : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-2"
-            onClick={() => openAiDraft("full_exam")}
-          >
-            <Sparkles className="h-4 w-4" />
-            AI Draft
-          </Button>
-          <Button size="sm" className="gap-2" onClick={openCreate}>
-            <PlusCircle className="w-4 h-4" />
-            New Exam
-          </Button>
-        </div>
-      </div>
+      <ClassPageHeader
+        title={cls.name}
+        code={cls.code}
+        section="Exams"
+        detail={
+          isRefreshing ? (
+            <p className="text-xs text-muted-foreground">Refreshing...</p>
+          ) : null
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => openAiDraft("full_exam")}
+            >
+              <Sparkles className="h-4 w-4" />
+              AI Draft
+            </Button>
+            <Button size="sm" className="gap-2" onClick={openCreate}>
+              <PlusCircle className="w-4 h-4" />
+              New Exam
+            </Button>
+          </div>
+        }
+      />
 
       {errorMessage && (
         <Alert variant="destructive">

@@ -1,14 +1,15 @@
 "use client"
 
+import { ExternalLink } from "lucide-react"
 import { use } from "react"
-import { ExternalLink, Puzzle } from "lucide-react"
+import { ClassPageHeader } from "@/components/shared/class-page-header"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ClassFeatureDisabledFallback,
   ClassRouteFallback,
   useClassRoute,
 } from "@/features/classes/use-class-route"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { resolveClassFeatures } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 
@@ -53,25 +54,27 @@ export default function CustomExtensionPage({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-4 border-b px-6 py-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Puzzle className="h-4 w-4 text-primary" />
-            <h1 className="truncate text-lg font-semibold text-foreground">
+        <ClassPageHeader
+          title={cls.name}
+          code={cls.code}
+          section="Extensions"
+          detail={
+            <p className="text-xs text-muted-foreground">
               {extension.name}
-            </h1>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {extension.description || cls.name}
-          </p>
-        </div>
-        {extension.launch_url ? (
-          <Button asChild size="sm" variant="outline" className="gap-2">
-            <a href={extension.launch_url} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4" />
-              Open
-            </a>
-          </Button>
-        ) : null}
+              {extension.description ? ` · ${extension.description}` : ""}
+            </p>
+          }
+          actions={
+            extension.launch_url ? (
+              <Button asChild size="sm" variant="outline" className="gap-2">
+                <a href={extension.launch_url} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  Open
+                </a>
+              </Button>
+            ) : null
+          }
+        />
       </div>
 
       {extension.launch_url ? (
