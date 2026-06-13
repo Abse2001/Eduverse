@@ -14,6 +14,7 @@ import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Class } from "@/lib/mock-data"
+import { toast } from "@/hooks/use-toast"
 import { useApp } from "@/lib/store"
 import { ChatComposer } from "./chat-composer"
 import { type ChatMessage, MessageBubble } from "./message-bubble"
@@ -62,6 +63,16 @@ export function ChatScreen({ cls }: { cls: Class }) {
     if (!activeSearchMessage) return
     focusMessage(activeSearchMessage.id)
   }, [activeSearchMessage?.id])
+
+  useEffect(() => {
+    if (!errorMessage) return
+
+    toast({
+      title: "Could not load messages",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  }, [errorMessage])
 
   function focusMessage(messageId: string) {
     document
@@ -176,11 +187,6 @@ export function ChatScreen({ cls }: { cls: Class }) {
       ) : null}
 
       <div className="flex-1 overflow-y-auto py-4 space-y-3">
-        {errorMessage ? (
-          <div className="mx-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {errorMessage}
-          </div>
-        ) : null}
         {isLoading ? (
           <p className="px-4 text-sm text-muted-foreground">
             Loading messages...

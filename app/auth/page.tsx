@@ -5,6 +5,7 @@ import type { User as SupabaseAuthUser } from "@supabase/supabase-js"
 import { GraduationCap, LoaderCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { toast } from "@/hooks/use-toast"
 
 type AuthMode = "sign-in" | "sign-up"
 
@@ -16,8 +17,6 @@ export default function AuthPage() {
   const [displayName, setDisplayName] = useState("")
   const [signUpEmail, setSignUpEmail] = useState("")
   const [signUpPassword, setSignUpPassword] = useState("")
-  const [feedback, setFeedback] = useState<string | null>(null)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isPending, startTransition] = useTransition()
 
@@ -59,8 +58,15 @@ export default function AuthPage() {
 
   function submitSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setErrorMessage(null)
-    setFeedback(null)
+
+    if (!signInEmail.trim() || !signInPassword) {
+      toast({
+        title: "Sign-in failed",
+        description: "Enter your email and password to continue.",
+        variant: "destructive",
+      })
+      return
+    }
 
     startTransition(async () => {
       const supabase = createClient()
@@ -70,7 +76,11 @@ export default function AuthPage() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        toast({
+          title: "Sign-in failed",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
 
@@ -81,8 +91,24 @@ export default function AuthPage() {
 
   function submitSignUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setErrorMessage(null)
-    setFeedback(null)
+
+    if (!displayName.trim() || !signUpEmail.trim() || !signUpPassword) {
+      toast({
+        title: "Account setup failed",
+        description: "Enter your name, email, and password to continue.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (signUpPassword.length < 6) {
+      toast({
+        title: "Account setup failed",
+        description: "Password must be at least 6 characters.",
+        variant: "destructive",
+      })
+      return
+    }
 
     startTransition(async () => {
       const supabase = createClient()
@@ -97,15 +123,20 @@ export default function AuthPage() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        toast({
+          title: "Account setup failed",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
 
-      setFeedback(
-        data.session
-          ? "Account created. Opening your organization hub..."
-          : "Account created. Check your email if confirmation is enabled.",
-      )
+      toast({
+        title: data.session ? "Account created" : "Check your inbox",
+        description: data.session
+          ? "Opening your organization hub."
+          : "Check your email if confirmation is enabled.",
+      })
 
       if (data.session) {
         router.replace(getNextPath())
@@ -210,20 +241,8 @@ export default function AuthPage() {
               </p>
             </div>
 
-            {errorMessage ? (
-              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {errorMessage}
-              </div>
-            ) : null}
-
-            {feedback ? (
-              <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {feedback}
-              </div>
-            ) : null}
-
             {mode === "sign-in" ? (
-              <form className="space-y-4" onSubmit={submitSignIn}>
+              <form className="space-y-4" noValidate onSubmit={submitSignIn}>
                 <AuthField
                   autoComplete="email"
                   label="Email"
@@ -245,7 +264,7 @@ export default function AuthPage() {
                 />
               </form>
             ) : (
-              <form className="space-y-4" onSubmit={submitSignUp}>
+              <form className="space-y-4" noValidate onSubmit={submitSignUp}>
                 <AuthField
                   autoComplete="name"
                   label="Display name"

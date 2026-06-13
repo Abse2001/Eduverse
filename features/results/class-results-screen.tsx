@@ -2,7 +2,6 @@
 
 import { format } from "date-fns"
 import {
-  AlertCircle,
   ArrowRight,
   BarChart3,
   BookOpenCheck,
@@ -16,9 +15,8 @@ import {
   Timer,
   Trophy,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -50,6 +48,7 @@ import {
 } from "@/features/classes/use-class-route"
 import { ExamResults } from "@/features/exam/exam-results"
 import { useClassExam } from "@/features/exam/use-class-exam"
+import { toast } from "@/hooks/use-toast"
 import type {
   ManagerExamSummaryDto,
   ReleasedExamResultDto,
@@ -152,16 +151,19 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
 
   const pageError = assignmentsApi.errorMessage ?? examApi.errorMessage
 
+  useEffect(() => {
+    if (!pageError) return
+
+    toast({
+      title: "Could not load results",
+      description: pageError,
+      variant: "destructive",
+    })
+  }, [pageError])
+
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
       <ClassPageHeader title={cls.name} code={cls.code} section="Results" />
-
-      {pageError ? (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{pageError}</AlertDescription>
-        </Alert>
-      ) : null}
 
       {canManage ? (
         <TeacherResultsView

@@ -40,6 +40,7 @@ import {
   useApp,
 } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 
 type OrgRole = OrganizationUserRole
 type RoleFilter = "all" | "org_admin" | "teacher" | "student"
@@ -127,6 +128,16 @@ export function UsersTab() {
   useEffect(() => {
     void refreshOrganizationUsers().catch(() => {})
   }, [activeOrganization?.id, refreshOrganizationUsers])
+
+  useEffect(() => {
+    if (!displayedErrorMessage) return
+
+    toast({
+      title: "Could not load users",
+      description: displayedErrorMessage,
+      variant: "destructive",
+    })
+  }, [displayedErrorMessage])
 
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -325,15 +336,6 @@ export function UsersTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {displayedErrorMessage ? (
-            <div className="p-4">
-              <Alert variant="destructive">
-                <AlertTitle>Could not load users</AlertTitle>
-                <AlertDescription>{displayedErrorMessage}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
           {successMessage ? (
             <div className="p-4">
               <Alert>

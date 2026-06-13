@@ -3,7 +3,6 @@
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Building2, LoaderCircle } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
+import { toast } from "@/hooks/use-toast"
 
 const FEATURE_PRESETS = [
   {
@@ -48,12 +48,10 @@ export function OrganizationCreatePage() {
   const [orgName, setOrgName] = useState("")
   const [orgSlug, setOrgSlug] = useState("")
   const [presetKey, setPresetKey] = useState("primary_school")
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   function submitCreateOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setErrorMessage(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -64,9 +62,18 @@ export function OrganizationCreatePage() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        toast({
+          title: "Could not create organization",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
+
+      toast({
+        title: "Organization created",
+        description: "You now have a new workspace.",
+      })
 
       await refreshCurrentUser()
       router.replace("/dashboard")
@@ -88,13 +95,6 @@ export function OrganizationCreatePage() {
           organization.
         </p>
       </div>
-
-      {errorMessage ? (
-        <Alert variant="destructive" className="mb-4">
-          <AlertTitle>Could not create organization</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      ) : null}
 
       <Card>
         <CardHeader>

@@ -8,7 +8,13 @@ import {
   UserPlus,
   Users,
 } from "lucide-react"
-import { type FormEvent, useMemo, useState, useTransition } from "react"
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +42,7 @@ import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
+import { toast } from "@/hooks/use-toast"
 import type {
   ClassExtensionSetting,
   FeatureDefinition,
@@ -103,6 +110,16 @@ export function ClassesTab() {
   const [isPending, startTransition] = useTransition()
   const isLoading = organizationClassesStatus === "loading"
   const displayedErrorMessage = errorMessage ?? organizationClassesError
+
+  useEffect(() => {
+    if (!displayedErrorMessage) return
+
+    toast({
+      title: "Class action failed",
+      description: displayedErrorMessage,
+      variant: "destructive",
+    })
+  }, [displayedErrorMessage])
   const classFeatureRows = useMemo(
     () =>
       buildClassFeatureRows(
@@ -370,15 +387,6 @@ export function ClassesTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {displayedErrorMessage ? (
-            <div className="p-4">
-              <Alert variant="destructive">
-                <AlertTitle>Class action failed</AlertTitle>
-                <AlertDescription>{displayedErrorMessage}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
           {successMessage ? (
             <div className="p-4">
               <Alert>

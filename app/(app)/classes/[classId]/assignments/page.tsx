@@ -20,11 +20,11 @@ import {
   type FormEvent,
   type SetStateAction,
   use,
+  useEffect,
   useMemo,
   useState,
 } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -72,6 +72,7 @@ import {
 } from "@/features/classes/use-class-route"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 
 type CreateForm = {
   title: string
@@ -256,6 +257,27 @@ export default function AssignmentsPage({
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
   const [aiSupportTarget, setAiSupportTarget] =
     useState<AiSupportTarget | null>(null)
+  const formOrAssignmentsError = formError ?? assignmentsError
+
+  useEffect(() => {
+    if (!formOrAssignmentsError) return
+
+    toast({
+      title: "Could not save assignment",
+      description: formOrAssignmentsError,
+      variant: "destructive",
+    })
+  }, [formOrAssignmentsError])
+
+  useEffect(() => {
+    if (!aiDraftError) return
+
+    toast({
+      title: "Could not generate assignment draft",
+      description: aiDraftError,
+      variant: "destructive",
+    })
+  }, [aiDraftError])
 
   const studentCount = classRow?.students.length ?? 0
   const visibleAssignments = useMemo(() => {
@@ -652,12 +674,6 @@ export default function AssignmentsPage({
         }
       />
 
-      {assignmentsError && (
-        <Alert variant="destructive">
-          <AlertDescription>{assignmentsError}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {(Object.keys(STATUS_CONFIG) as AssignmentDerivedStatus[]).map(
           (status) => (
@@ -726,11 +742,6 @@ export default function AssignmentsPage({
                 the normal assignment form before publishing.
               </DialogDescription>
             </DialogHeader>
-            {aiDraftError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{aiDraftError}</AlertDescription>
-              </Alert>
-            ) : null}
             <div className="space-y-2">
               <Label htmlFor="ai-assignment-prompt">Request</Label>
               <Textarea
@@ -785,12 +796,6 @@ export default function AssignmentsPage({
             <DialogHeader>
               <DialogTitle>Create assignment</DialogTitle>
             </DialogHeader>
-
-            {formError && (
-              <Alert variant="destructive">
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
@@ -1000,14 +1005,6 @@ export default function AssignmentsPage({
                 </DialogDescription>
               </DialogHeader>
 
-              {(formError || assignmentsError) && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    {formError ?? assignmentsError}
-                  </AlertDescription>
-                </Alert>
-              )}
-
               <AssignmentFormFields
                 form={editForm}
                 setForm={setEditForm}
@@ -1067,13 +1064,6 @@ export default function AssignmentsPage({
           <DialogContent className="max-w-2xl">
             <form onSubmit={submitStudentWork} className="space-y-4">
               <AssignmentDialogHeader assignment={selectedAssignment} />
-              {(formError || assignmentsError) && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    {formError ?? assignmentsError}
-                  </AlertDescription>
-                </Alert>
-              )}
               <AssignmentFiles
                 assignment={selectedAssignment}
                 onOpen={openAssignmentFile}
@@ -1229,11 +1219,6 @@ export default function AssignmentsPage({
               <div className="min-h-0 min-w-0 overflow-y-auto rounded-lg border p-4">
                 {selectedSubmission ? (
                   <form onSubmit={submitGrade} className="space-y-4">
-                    {formError && (
-                      <Alert variant="destructive">
-                        <AlertDescription>{formError}</AlertDescription>
-                      </Alert>
-                    )}
                     {selectedSubmission.textResponse && (
                       <div className="space-y-2">
                         <Label>Text response</Label>

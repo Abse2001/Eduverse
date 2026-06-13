@@ -1,12 +1,12 @@
 "use client"
 
 import { ArrowDown, Bot, Loader2, Send } from "lucide-react"
-import { type SyntheticEvent, useEffect, useRef, useState } from "react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import type { Class } from "@/lib/mock-data"
+import { toast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "./markdown-content"
 
@@ -75,6 +75,16 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
     requestAnimationFrame(updateCanScrollDown)
   }, [messages, isSending])
 
+  useEffect(() => {
+    if (!errorMessage) return
+
+    toast({
+      title: "Could not ask AI Agent",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  }, [errorMessage])
+
   async function askQuestion(rawQuestion: string) {
     const question = rawQuestion.trim()
     if (!question || isSending) return
@@ -125,7 +135,7 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
     }
   }
 
-  async function submitQuestion(event?: SyntheticEvent<HTMLFormElement>) {
+  async function submitQuestion(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
     await askQuestion(input)
   }
@@ -226,12 +236,6 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
           </Button>
         ) : null}
       </div>
-
-      {errorMessage ? (
-        <Alert variant="destructive" className="mt-4">
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      ) : null}
 
       <form onSubmit={submitQuestion} className="mt-4 flex items-end gap-3">
         <Textarea

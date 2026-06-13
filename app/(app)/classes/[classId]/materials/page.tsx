@@ -15,9 +15,8 @@ import {
   Video,
 } from "lucide-react"
 import Image from "next/image"
-import { type FormEvent, use, useState } from "react"
+import { type FormEvent, use, useEffect, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -49,6 +48,7 @@ import {
 } from "@/features/materials/use-class-materials"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 
 type FilterType = "all" | ClassMaterial["type"]
 
@@ -118,6 +118,29 @@ export default function MaterialsPage({
   const [materialSummary, setMaterialSummary] = useState("")
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [isSummarizing, setIsSummarizing] = useState(false)
+  const uploadOrMaterialsError = uploadError ?? materialsError
+
+  useEffect(() => {
+    if (!materialsError && !uploadError) return
+
+    toast({
+      title: uploadError
+        ? "Could not upload material"
+        : "Could not load materials",
+      description: uploadOrMaterialsError,
+      variant: "destructive",
+    })
+  }, [materialsError, uploadError, uploadOrMaterialsError])
+
+  useEffect(() => {
+    if (!summaryError) return
+
+    toast({
+      title: "Could not summarize material",
+      description: summaryError,
+      variant: "destructive",
+    })
+  }, [summaryError])
 
   if (!cls) {
     return (
@@ -292,12 +315,6 @@ export default function MaterialsPage({
         }
       />
 
-      {materialsError && (
-        <Alert variant="destructive">
-          <AlertDescription>{materialsError}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -377,14 +394,6 @@ export default function MaterialsPage({
                 Add an image, PDF, video, or slide deck to this class.
               </DialogDescription>
             </DialogHeader>
-
-            {(uploadError || materialsError) && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  {uploadError ?? materialsError}
-                </AlertDescription>
-              </Alert>
-            )}
 
             <div className="space-y-2">
               <Label htmlFor="material-file">File</Label>
@@ -469,11 +478,7 @@ export default function MaterialsPage({
           <p className="text-xs text-muted-foreground">
             Avoid using AI with personal or sensitive material.
           </p>
-          {summaryError ? (
-            <Alert variant="destructive">
-              <AlertDescription>{summaryError}</AlertDescription>
-            </Alert>
-          ) : null}
+
           {isSummarizing ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />

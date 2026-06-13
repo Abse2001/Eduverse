@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 import {
   ORGANIZATION_ROLE_BADGES,
   organizationRoleLabel,
@@ -31,7 +32,6 @@ export function OrganizationMenu() {
   const router = useRouter()
   const { activeOrganization, organizations, setDefaultOrganization } = useApp()
   const [isOpen, setIsOpen] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [switchingOrganizationId, setSwitchingOrganizationId] = useState<
     string | null
   >(null)
@@ -39,7 +39,6 @@ export function OrganizationMenu() {
   async function selectOrganization(organizationId: string) {
     if (organizationId === activeOrganization?.id) return
 
-    setErrorMessage(null)
     setSwitchingOrganizationId(organizationId)
 
     try {
@@ -48,7 +47,11 @@ export function OrganizationMenu() {
       router.refresh()
       setIsOpen(false)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Action failed")
+      toast({
+        title: "Could not switch organization",
+        description: error instanceof Error ? error.message : "Action failed",
+        variant: "destructive",
+      })
     } finally {
       setSwitchingOrganizationId(null)
     }
@@ -123,11 +126,6 @@ export function OrganizationMenu() {
           </div>
         )}
 
-        {errorMessage ? (
-          <div className="mx-2 my-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {errorMessage}
-          </div>
-        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="cursor-pointer"

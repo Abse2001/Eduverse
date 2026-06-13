@@ -62,6 +62,7 @@ import type { ClassProfile, OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { CLASS_HEADER_GRADIENT_MAP } from "@/lib/view-config"
+import { toast } from "@/hooks/use-toast"
 
 function initials(profile: ClassProfile | null) {
   const name = profile?.display_name || profile?.email || "User"
@@ -333,6 +334,40 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     (session) => session.class_id === classItem?.id,
   )
   const isLive = Boolean(liveSession)
+  const resourceErrorMessage =
+    assignmentsApi.errorMessage ?? materialsApi.errorMessage
+
+  useEffect(() => {
+    if (classItem || isLoading || organizationClassesStatus === "loading")
+      return
+
+    toast({
+      title: "Class not found",
+      description:
+        errorMessage ?? "This class does not exist or you cannot view it.",
+      variant: "destructive",
+    })
+  }, [classItem, errorMessage, isLoading, organizationClassesStatus])
+
+  useEffect(() => {
+    if (!classItem || !errorMessage) return
+
+    toast({
+      title: "Class action failed",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  }, [classItem, errorMessage])
+
+  useEffect(() => {
+    if (!resourceErrorMessage) return
+
+    toast({
+      title: "Could not load class resources",
+      description: resourceErrorMessage,
+      variant: "destructive",
+    })
+  }, [resourceErrorMessage])
 
   async function refreshClass(force = true) {
     setIsLoading(true)
@@ -504,12 +539,9 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   if (!classItem) {
     return (
       <div className="p-6">
-        <Alert variant={errorMessage ? "destructive" : "default"}>
-          <AlertTitle>Class not found</AlertTitle>
-          <AlertDescription>
-            {errorMessage ?? "This class does not exist or you cannot view it."}
-          </AlertDescription>
-        </Alert>
+        <p className="text-sm text-muted-foreground">
+          {errorMessage ?? "This class does not exist or you cannot view it."}
+        </p>
       </div>
     )
   }
@@ -523,13 +555,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   return (
     <>
       <div className="p-6 space-y-5 max-w-6xl mx-auto">
-        {errorMessage ? (
-          <Alert variant="destructive">
-            <AlertTitle>Class action failed</AlertTitle>
-            <AlertDescription>{errorMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-
         {successMessage ? (
           <Alert>
             <AlertTitle>Updated</AlertTitle>
@@ -678,13 +703,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {assignmentsApi.errorMessage || materialsApi.errorMessage ? (
-                  <Alert variant="destructive">
-                    <AlertDescription>
-                      {assignmentsApi.errorMessage ?? materialsApi.errorMessage}
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div className="rounded-lg bg-muted/50 p-2">
                     <p className="text-base font-bold text-foreground">

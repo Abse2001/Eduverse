@@ -14,7 +14,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -61,6 +61,7 @@ import {
   resolveSelectedAttemptId,
 } from "./manager-detail-state"
 import type { UseClassExamResult } from "./use-class-exam"
+import { toast } from "@/hooks/use-toast"
 
 type QuestionEditorState = {
   type: UpsertExamQuestionInput["type"]
@@ -215,6 +216,46 @@ export function ManagerExamScreen({
     selectedAttempt !== null &&
     selectedAttempt.status !== "in_progress" &&
     selectedAttempt.availableRetakeCount === 0
+
+  useEffect(() => {
+    if (!errorMessage) return
+
+    toast({
+      title: "Could not load exams",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  }, [errorMessage])
+
+  useEffect(() => {
+    if (!aiDraftError) return
+
+    toast({
+      title: "Could not generate exam draft",
+      description: aiDraftError,
+      variant: "destructive",
+    })
+  }, [aiDraftError])
+
+  useEffect(() => {
+    if (!formError) return
+
+    toast({
+      title: "Could not save exam",
+      description: formError,
+      variant: "destructive",
+    })
+  }, [formError])
+
+  useEffect(() => {
+    if (!detailError) return
+
+    toast({
+      title: "Could not load exam detail",
+      description: detailError,
+      variant: "destructive",
+    })
+  }, [detailError])
 
   async function openDetail(examId: string) {
     setDetailExamId(examId)
@@ -602,12 +643,6 @@ export function ManagerExamScreen({
         }
       />
 
-      {errorMessage && (
-        <Alert variant="destructive">
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      )}
-
       {successMessage && (
         <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100">
           <CheckCircle2 className="h-4 w-4 !text-emerald-600 dark:!text-emerald-300" />
@@ -736,11 +771,6 @@ export function ManagerExamScreen({
                   : "Describe the extra questions you want. They will be added to the current exam form."}
               </DialogDescription>
             </DialogHeader>
-            {aiDraftError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{aiDraftError}</AlertDescription>
-              </Alert>
-            ) : null}
             <div className="space-y-2">
               <Label htmlFor="ai-exam-prompt">Request</Label>
               <Textarea
@@ -800,12 +830,6 @@ export function ManagerExamScreen({
                 {editingExam ? "Edit exam" : "Create exam"}
               </DialogTitle>
             </DialogHeader>
-
-            {formError && (
-              <Alert variant="destructive">
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
@@ -1171,12 +1195,6 @@ export function ManagerExamScreen({
               </DialogDescription>
             )}
           </DialogHeader>
-
-          {detailError && (
-            <Alert variant="destructive">
-              <AlertDescription>{detailError}</AlertDescription>
-            </Alert>
-          )}
 
           {isDetailRefreshing && detail ? (
             <p className="text-xs text-muted-foreground">

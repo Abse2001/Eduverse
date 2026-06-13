@@ -8,7 +8,6 @@ import {
   useState,
   useTransition,
 } from "react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,6 +31,7 @@ import type {
   FeatureSetting,
   OrganizationExtension,
 } from "@/lib/supabase/features"
+import { toast } from "@/hooks/use-toast"
 
 export function FeaturesTab() {
   const {
@@ -52,6 +52,16 @@ export function FeaturesTab() {
   const [isPending, startTransition] = useTransition()
   const isLoading = featureDefinitionsStatus === "loading"
   const displayedErrorMessage = errorMessage ?? featureDefinitionsError
+
+  useEffect(() => {
+    if (!displayedErrorMessage) return
+
+    toast({
+      title: "Feature update failed",
+      description: displayedErrorMessage,
+      variant: "destructive",
+    })
+  }, [displayedErrorMessage])
 
   const featureRows = useMemo(
     () =>
@@ -173,15 +183,6 @@ export function FeaturesTab() {
           <CardTitle className="text-sm">Organization Features</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {displayedErrorMessage ? (
-            <div className="p-4">
-              <Alert variant="destructive">
-                <AlertTitle>Feature update failed</AlertTitle>
-                <AlertDescription>{displayedErrorMessage}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" />

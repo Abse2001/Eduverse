@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useApp } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 
 const NOTIFICATIONS_CACHE_PREFIX = "eduverse:notifications:v1"
 
@@ -159,6 +160,16 @@ export function NotificationsMenu() {
     }
   }, [authUser?.id, activeOrganization?.id, activeOrganization?.selectedRole])
 
+  useEffect(() => {
+    if (!errorMessage) return
+
+    toast({
+      title: "Could not load notifications",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  }, [errorMessage])
+
   async function markRead(notificationId: string) {
     const nextNotifications = notifications.map((notification) =>
       notification.id === notificationId
@@ -261,11 +272,6 @@ export function NotificationsMenu() {
               <NotificationState
                 icon={<LoaderCircle className="h-4 w-4 animate-spin" />}
                 title="Loading notifications"
-              />
-            ) : errorMessage ? (
-              <NotificationState
-                icon={<Inbox className="h-4 w-4" />}
-                title={errorMessage}
               />
             ) : notifications.length === 0 ? (
               <NotificationState

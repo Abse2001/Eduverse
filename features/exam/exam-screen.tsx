@@ -5,13 +5,13 @@ import { ChevronLeft, ChevronRight, Loader2, Send } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { resolveStudentExamPageState } from "@/lib/education/selectors"
 import type { JsonValue, StudentExamPageDto } from "@/lib/exams/types"
+import { toast } from "@/hooks/use-toast"
 import { ExamHeader } from "./exam-header"
 import { ExamLobby } from "./exam-lobby"
 import { useExamLock } from "./exam-lock"
@@ -122,6 +122,8 @@ export function ExamScreen({
       })
     },
   })
+  const examErrorMessage =
+    actionError ?? examModeError ?? saveError ?? errorMessage
 
   useEffect(() => {
     if (state !== "active") {
@@ -176,6 +178,16 @@ export function ExamScreen({
     })
   }, [activeExam, setExamLock])
 
+  useEffect(() => {
+    if (!examErrorMessage) return
+
+    toast({
+      title: "Could not load exam",
+      description: examErrorMessage,
+      variant: "destructive",
+    })
+  }, [examErrorMessage])
+
   if (isLoading && !page) {
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
@@ -188,9 +200,7 @@ export function ExamScreen({
   if (errorMessage && !page) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
-        <Alert variant="destructive">
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
+        <p className="text-sm text-destructive">{errorMessage}</p>
       </div>
     )
   }
@@ -312,14 +322,6 @@ export function ExamScreen({
             </Link>
           </div>
         ) : null}
-        {(errorMessage || actionError) && (
-          <div className="p-6 pb-0 max-w-lg mx-auto">
-            <Alert variant="destructive">
-              <AlertDescription>{actionError ?? errorMessage}</AlertDescription>
-            </Alert>
-          </div>
-        )}
-
         <ExamLobby
           title={activeExam.title}
           className={cls.name}
@@ -365,27 +367,15 @@ export function ExamScreen({
   if (!question) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
-        <Alert variant="destructive">
-          <AlertDescription>
-            This exam does not have any published questions yet.
-          </AlertDescription>
-        </Alert>
+        <p className="text-sm text-muted-foreground">
+          This exam does not have any published questions yet.
+        </p>
       </div>
     )
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      {(errorMessage || actionError || saveError || examModeError) && (
-        <div className="px-6 pt-6">
-          <Alert variant="destructive">
-            <AlertDescription>
-              {actionError ?? examModeError ?? saveError ?? errorMessage}
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-
       <ExamHeader
         title={activeExam.title}
         classCode={cls.code}

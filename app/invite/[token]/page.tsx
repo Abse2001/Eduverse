@@ -7,13 +7,15 @@ import { useEffect, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
+import { toast } from "@/hooks/use-toast"
 
 export default function InvitePage() {
   const params = useParams<{ token: string }>()
   const router = useRouter()
   const { isAuthLoading, isAuthenticated, refreshCurrentUser } = useApp()
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [inviteState, setInviteState] = useState<"idle" | "accepted" | "error">(
+    "idle",
+  )
   const [isPending, startTransition] = useTransition()
   const token = params.token
 
@@ -24,8 +26,7 @@ export default function InvitePage() {
   }, [isAuthLoading, isAuthenticated, router, token])
 
   function acceptInvite() {
-    setErrorMessage(null)
-    setSuccessMessage(null)
+    setInviteState("idle")
 
     startTransition(async () => {
       const supabase = createClient()
@@ -34,12 +35,21 @@ export default function InvitePage() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        setInviteState("error")
+        toast({
+          title: "Invite failed",
+          description: error.message,
+          variant: "destructive",
+        })
         return
       }
 
       await refreshCurrentUser()
-      setSuccessMessage("Invite accepted. You can now enter the organization.")
+      setInviteState("accepted")
+      toast({
+        title: "Invite accepted",
+        description: "You can now enter the organization.",
+      })
     })
   }
 
@@ -59,9 +69,9 @@ export default function InvitePage() {
       <section className="w-full max-w-lg rounded-[2rem] border border-white/15 bg-white/[0.08] p-2 shadow-2xl backdrop-blur-xl">
         <div className="rounded-[1.5rem] bg-white p-8 text-slate-950">
           <div className="mb-6 grid h-14 w-14 place-items-center rounded-2xl bg-sky-100 text-sky-600">
-            {successMessage ? (
+            {inviteState === "accepted" ? (
               <CheckCircle2 className="h-7 w-7" />
-            ) : errorMessage ? (
+            ) : inviteState === "error" ? (
               <XCircle className="h-7 w-7" />
             ) : (
               <CheckCircle2 className="h-7 w-7" />
@@ -75,20 +85,8 @@ export default function InvitePage() {
             to. Make sure you are signed in with that account.
           </p>
 
-          {errorMessage ? (
-            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          {successMessage ? (
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {successMessage}
-            </div>
-          ) : null}
-
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            {successMessage ? (
+            {inviteState === "accepted" ? (
               <Button asChild className="flex-1">
                 <Link href="/dashboard">Go to dashboard</Link>
               </Button>
