@@ -1,12 +1,12 @@
 "use client"
 
-import { ArrowDown, Bot, Loader2, Send } from "lucide-react"
+import { ArrowDown, Bot, Loader2, Send, Trash2 } from "lucide-react"
 import { type FormEvent, useEffect, useRef, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import type { Class } from "@/lib/mock-data"
 import { toast } from "@/hooks/use-toast"
+import type { Class } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "./markdown-content"
 
@@ -16,15 +16,75 @@ type AgentMessage = {
   content: string
 }
 
+const AGENT_CHAT_STORAGE_PREFIX = "eduverse:agent-chat:v1"
+
 const SUGGESTED_PROMPTS = [
   "Summarize what I should study this week.",
   "Make a short quiz from our recent materials.",
   "Explain the hardest current assignment step by step.",
 ]
 
+function getAgentChatStorageKey(classId: string) {
+  return `${AGENT_CHAT_STORAGE_PREFIX}:${classId}`
+}
+
+function loadStoredAgentMessages(classId: string): AgentMessage[] {
+  if (typeof window === "undefined") return []
+
+  try {
+    const raw = window.localStorage.getItem(getAgentChatStorageKey(classId))
+    if (!raw) return []
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.filter((item): item is AgentMessage => {
+      if (!item || typeof item !== "object") return false
+
+      return (
+        typeof item.id === "string" &&
+        (item.role === "user" || item.role === "assistant") &&
+        typeof item.content === "string"
+      )
+    })
+  } catch {
+    return []
+  }
+}
+
+function saveStoredAgentMessages(classId: string, messages: AgentMessage[]) {
+  if (typeof window === "undefined") return
+
+  try {
+    const storageKey = getAgentChatStorageKey(classId)
+
+    if (messages.length === 0) {
+      window.localStorage.removeItem(storageKey)
+      return
+    }
+
+    window.localStorage.setItem(storageKey, JSON.stringify(messages))
+  } catch {
+    console.error("Failed to save AI Agent chat to localStorage")
+  }
+}
+
+function clearStoredAgentMessages(classId: string) {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.removeItem(getAgentChatStorageKey(classId))
+  } catch {
+    console.error("Failed to clear AI Agent chat from localStorage")
+  }
+}
+
 export function ClassAiScreen({ cls }: { cls: Class }) {
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<AgentMessage[]>([])
+  const [loadedStorageClassId, setLoadedStorageClassId] = useState<
+    string | null
+  >(null)
   const [isSending, setIsSending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [canScrollDown, setCanScrollDown] = useState(false)
@@ -50,6 +110,23 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
       behavior: "smooth",
     })
   }
+
+  function clearChat() {
+    setMessages([])
+    clearStoredAgentMessages(cls.id)
+    setCanScrollDown(false)
+  }
+
+  useEffect(() => {
+    setMessages(loadStoredAgentMessages(cls.id))
+    setLoadedStorageClassId(cls.id)
+  }, [cls.id])
+
+  useEffect(() => {
+    if (loadedStorageClassId !== cls.id) return
+
+    saveStoredAgentMessages(cls.id, messages)
+  }, [cls.id, loadedStorageClassId, messages])
 
   useEffect(() => {
     const inputElement = inputRef.current
@@ -144,6 +221,18 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
     <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-6xl flex-col p-6">
       <div className="mb-5 flex items-center justify-between gap-4">
         <ClassPageHeader title={cls.name} code={cls.code} section="AI Agent" />
+        {hasMessages ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={clearChat}
+            disabled={isSending}
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear
+          </Button>
+        ) : null}
       </div>
 
       <div className="relative min-h-0 flex-1">
