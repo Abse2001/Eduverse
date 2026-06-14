@@ -16,7 +16,14 @@ type AgentMessage = {
   content: string
 }
 
+type PendingAgentRequest = {
+  requestId: string
+}
+
 const AGENT_CHAT_STORAGE_PREFIX = "eduverse:agent-chat:v1"
+const pendingAgentRequests = new Map<string, PendingAgentRequest>()
+const pendingAgentErrors = new Map<string, string>()
+const agentChatListeners = new Map<string, Set<() => void>>()
 
 const SUGGESTED_PROMPTS = [
   "Summarize what I should study this week.",
@@ -26,6 +33,38 @@ const SUGGESTED_PROMPTS = [
 
 function getAgentChatStorageKey(classId: string) {
   return `${AGENT_CHAT_STORAGE_PREFIX}:${classId}`
+}
+
+function notifyAgentChatListeners(classId: string) {
+  const listeners = agentChatListeners.get(classId)
+  if (!listeners) return
+
+  for (const listener of listeners) {
+    listener()
+  }
+}
+
+function subscribeToAgentChat(classId: string, listener: () => void) {
+  const listeners = agentChatListeners.get(classId) ?? new Set<() => void>()
+  listeners.add(listener)
+  agentChatListeners.set(classId, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      agentChatListeners.delete(classId)
+    }
+  }
+}
+
+function hasPendingAgentRequest(classId: string) {
+  return pendingAgentRequests.has(classId)
+}
+
+function consumePendingAgentError(classId: string) {
+  const errorMessage = pendingAgentErrors.get(classId) ?? null
+  pendingAgentErrors.delete(classId)
+  return errorMessage
 }
 
 function loadStoredAgentMessages(classId: string): AgentMessage[] {
@@ -79,12 +118,79 @@ function clearStoredAgentMessages(classId: string) {
   }
 }
 
+function cancelPendingAgentRequest(classId: string) {
+  pendingAgentRequests.delete(classId)
+  pendingAgentErrors.delete(classId)
+}
+
+function startAgentRequest(
+  classId: string,
+  question: string,
+  priorMessages: AgentMessage[],
+) {
+  if (hasPendingAgentRequest(classId)) return
+
+  const requestId = crypto.randomUUID()
+  const nextMessages: AgentMessage[] = [
+    ...priorMessages,
+    { id: crypto.randomUUID(), role: "user", content: question },
+  ]
+
+  saveStoredAgentMessages(classId, nextMessages)
+  pendingAgentRequests.set(classId, { requestId })
+  notifyAgentChatListeners(classId)
+
+  void fetch(`/api/classes/${encodeURIComponent(classId)}/ai/agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      messages: priorMessages,
+    }),
+  })
+    .then(async (response) => {
+      const payload = (await response.json().catch(() => null)) as {
+        answer?: string
+        error?: string
+      } | null
+
+      const answer = payload?.answer
+
+      if (!response.ok || !answer) {
+        throw new Error(payload?.error ?? "Could not ask AI Agent.")
+      }
+
+      const activeRequest = pendingAgentRequests.get(classId)
+      if (activeRequest?.requestId !== requestId) return
+
+      saveStoredAgentMessages(classId, [
+        ...loadStoredAgentMessages(classId),
+        { id: crypto.randomUUID(), role: "assistant", content: answer },
+      ])
+    })
+    .catch((error) => {
+      const activeRequest = pendingAgentRequests.get(classId)
+      if (activeRequest?.requestId !== requestId) return
+
+      saveStoredAgentMessages(classId, priorMessages)
+      pendingAgentErrors.set(
+        classId,
+        error instanceof Error ? error.message : "Could not ask AI Agent.",
+      )
+    })
+    .finally(() => {
+      const activeRequest = pendingAgentRequests.get(classId)
+      if (activeRequest?.requestId === requestId) {
+        pendingAgentRequests.delete(classId)
+      }
+
+      notifyAgentChatListeners(classId)
+    })
+}
+
 export function ClassAiScreen({ cls }: { cls: Class }) {
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<AgentMessage[]>([])
-  const [loadedStorageClassId, setLoadedStorageClassId] = useState<
-    string | null
-  >(null)
   const [isSending, setIsSending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [canScrollDown, setCanScrollDown] = useState(false)
@@ -112,21 +218,41 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
   }
 
   function clearChat() {
+    cancelPendingAgentRequest(cls.id)
     setMessages([])
+    setIsSending(false)
     clearStoredAgentMessages(cls.id)
     setCanScrollDown(false)
+    notifyAgentChatListeners(cls.id)
   }
 
   useEffect(() => {
-    setMessages(loadStoredAgentMessages(cls.id))
-    setLoadedStorageClassId(cls.id)
+    function syncAgentChatState() {
+      setMessages(loadStoredAgentMessages(cls.id))
+      setIsSending(hasPendingAgentRequest(cls.id))
+
+      const pendingError = consumePendingAgentError(cls.id)
+      if (pendingError) {
+        setErrorMessage(pendingError)
+      }
+    }
+
+    syncAgentChatState()
+    const unsubscribe = subscribeToAgentChat(cls.id, syncAgentChatState)
+
+    function syncStoredAgentChat(event: StorageEvent) {
+      if (event.key === getAgentChatStorageKey(cls.id)) {
+        syncAgentChatState()
+      }
+    }
+
+    window.addEventListener("storage", syncStoredAgentChat)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener("storage", syncStoredAgentChat)
+    }
   }, [cls.id])
-
-  useEffect(() => {
-    if (loadedStorageClassId !== cls.id) return
-
-    saveStoredAgentMessages(cls.id, messages)
-  }, [cls.id, loadedStorageClassId, messages])
 
   useEffect(() => {
     const inputElement = inputRef.current
@@ -166,50 +292,9 @@ export function ClassAiScreen({ cls }: { cls: Class }) {
     const question = rawQuestion.trim()
     if (!question || isSending) return
 
-    const nextMessages: AgentMessage[] = [
-      ...messages,
-      { id: crypto.randomUUID(), role: "user", content: question },
-    ]
-    setMessages(nextMessages)
     setInput("")
-    setIsSending(true)
     setErrorMessage(null)
-
-    try {
-      const response = await fetch(
-        `/api/classes/${encodeURIComponent(cls.id)}/ai/agent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            question,
-            messages,
-          }),
-        },
-      )
-      const payload = (await response.json().catch(() => null)) as {
-        answer?: string
-        error?: string
-      } | null
-
-      const answer = payload?.answer
-
-      if (!response.ok || !answer) {
-        throw new Error(payload?.error ?? "Could not ask AI Agent.")
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: "assistant", content: answer },
-      ])
-    } catch (error) {
-      setMessages(messages)
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not ask AI Agent.",
-      )
-    } finally {
-      setIsSending(false)
-    }
+    startAgentRequest(cls.id, question, messages)
   }
 
   async function submitQuestion(event?: FormEvent<HTMLFormElement>) {
