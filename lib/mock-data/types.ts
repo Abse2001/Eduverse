@@ -13,15 +13,6 @@ export interface User {
   gpa?: number
 }
 
-export interface PendingAccessRequest {
-  id: string
-  name: string
-  email: string
-  role: "student" | "teacher"
-  type: "invite" | "request"
-  requestedAt: string
-}
-
 export interface AcademicPeriodHistory {
   id: string
   label: string

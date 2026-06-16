@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import {
   type OrganizationInviteRow,
@@ -40,10 +41,9 @@ import {
   useApp,
 } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import { toast } from "@/hooks/use-toast"
 
 type OrgRole = OrganizationUserRole
-type RoleFilter = "all" | "org_admin" | "teacher" | "student"
+type RoleFilter = "all" | "invitations" | "org_owner" | "teacher" | "student"
 
 const ROLE_ORDER: OrgRole[] = ["org_owner", "org_admin", "teacher", "student"]
 
@@ -58,6 +58,7 @@ const ROLE_BADGE_COLOR_MAP: Record<OrgRole, string> = {
 
 function roleLabel(role: OrgRole | RoleFilter) {
   if (role === "all") return "all"
+  if (role === "invitations") return "invitations"
   if (role === "org_owner") return "owner"
   if (role === "org_admin") return "admin"
   return role
@@ -104,59 +105,95 @@ export function UsersTab() {
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] =
     useState<Exclude<OrgRole, "org_owner">>("teacher")
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
   const [isInviting, startInvite] = useTransition()
+  const { toast } = useToast()
   const isLoading = organizationUsersStatus === "loading"
-  const displayedErrorMessage = errorMessage ?? organizationUsersError
+
+  function showError(title: string, description: string) {
+    toast({ title, description, variant: "destructive" })
+  }
+
+  function showInfo(title: string, description?: string) {
+    toast({ title, description })
+  }
 
   async function loadUsers() {
     if (!activeOrganization) return
 
-    setErrorMessage(null)
     try {
       await refreshOrganizationUsers({ force: true })
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not load users",
-      )
+      const message =
+        error instanceof Error ? error.message : "Could not load users"
+      showError("Could not load users", message)
     }
+  }
+
+  useEffect(() => {
+    if (!organizationUsersError) return
+
+    showError("Could not load users", organizationUsersError)
+  }, [organizationUsersError])
+
+  function showInviteError(error: unknown) {
+    showError(
+      "Invite action failed",
+      error instanceof Error ? error.message : "Could not send invite",
+    )
+  }
+
+  async function sendOrganizationInvite(
+    email: string,
+    role: Exclude<OrgRole, "org_owner">,
+  ) {
+    if (!activeOrganization) throw new Error("No organization selected")
+
+    const response = await fetch(
+      `/api/organizations/${encodeURIComponent(activeOrganization.id)}/invites`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role }),
+      },
+    )
+    const payload = (await response.json().catch(() => ({}))) as {
+      result?: "membership" | "invite"
+      inviteId?: string
+      inviteUrl?: string
+      emailStatus?: "sent" | "not_configured" | "not_required" | "failed"
+      emailError?: string | null
+      error?: string
+    }
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Could not send invite")
+    }
+
+    return payload
   }
 
   useEffect(() => {
     void refreshOrganizationUsers().catch(() => {})
   }, [activeOrganization?.id, refreshOrganizationUsers])
 
-  useEffect(() => {
-    if (!displayedErrorMessage) return
-
-    toast({
-      title: "Could not load users",
-      description: displayedErrorMessage,
-      variant: "destructive",
-    })
-  }, [displayedErrorMessage])
-
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!activeOrganization) return
 
-    setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
 
     startInvite(async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase.rpc("invite_organization_member", {
-        target_org_id: activeOrganization.id,
-        invited_email: inviteEmail,
-        invited_role: inviteRole,
-      })
+      const submittedEmail = inviteEmail
 
-      if (error) {
-        setErrorMessage(error.message)
+      let data: Awaited<ReturnType<typeof sendOrganizationInvite>>
+      try {
+        data = await sendOrganizationInvite(submittedEmail, inviteRole)
+      } catch (error) {
+        showInviteError(error)
         return
       }
 
@@ -165,31 +202,16 @@ export function UsersTab() {
       setIsDialogOpen(false)
       await loadUsers()
 
-      if (data?.result === "membership") {
-        setSuccessMessage(`Role granted to ${inviteEmail}.`)
+      if (data.result === "membership") {
+        showInfo("Role already active", `${submittedEmail} already has access.`)
         return
       }
 
-      const { data: inviteData } = await createClient()
-        .from("organization_invites")
-        .select("token")
-        .eq("id", data?.invite_id)
-        .single()
-
-      const token = inviteData?.token
-      const inviteLink = token ? getInviteLink(token) : null
-
-      setLastInviteLink(inviteLink)
-      setSuccessMessage(
-        inviteLink
-          ? "Role invite created. Send the invite link to the user."
-          : "Role invite created for this organization.",
-      )
+      showInviteResult(data)
     })
   }
 
   function revokeInvite(invite: OrganizationInviteRow) {
-    setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
     setBusyInviteId(invite.id)
@@ -201,13 +223,13 @@ export function UsersTab() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        showError("Could not revoke invite", error.message)
         setBusyInviteId(null)
         return
       }
 
       await loadUsers()
-      setSuccessMessage(`Invite for ${invite.email} revoked.`)
+      showInfo("Invite revoked", `Invite for ${invite.email} was revoked.`)
       setBusyInviteId(null)
     })
   }
@@ -215,50 +237,63 @@ export function UsersTab() {
   function inviteAgain(invite: OrganizationInviteRow) {
     if (!activeOrganization) return
 
-    setErrorMessage(null)
     setSuccessMessage(null)
     setLastInviteLink(null)
     setBusyInviteId(invite.id)
 
     startInvite(async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase.rpc("invite_organization_member", {
-        target_org_id: activeOrganization.id,
-        invited_email: invite.email,
-        invited_role: invite.role,
-      })
-
-      if (error) {
-        setErrorMessage(error.message)
+      let data: Awaited<ReturnType<typeof sendOrganizationInvite>>
+      try {
+        data = await sendOrganizationInvite(invite.email, invite.role)
+      } catch (error) {
+        showInviteError(error)
         setBusyInviteId(null)
         return
       }
 
       await loadUsers()
 
-      if (data?.result === "membership") {
-        setSuccessMessage(`Role granted to ${invite.email}.`)
+      if (data.result === "membership") {
+        showInfo("Role already active", `${invite.email} already has access.`)
         setBusyInviteId(null)
         return
       }
 
-      const { data: inviteData } = await createClient()
-        .from("organization_invites")
-        .select("token")
-        .eq("id", data?.invite_id)
-        .single()
-
-      const token = inviteData?.token
-      const inviteLink = token ? getInviteLink(token) : null
-
-      setLastInviteLink(inviteLink)
-      setSuccessMessage(
-        inviteLink
-          ? `Invite for ${invite.email} created again. Send the new link.`
-          : `Invite for ${invite.email} created again.`,
-      )
+      showInviteResult(data)
       setBusyInviteId(null)
     })
+  }
+
+  function showInviteResult(
+    data: Awaited<ReturnType<typeof sendOrganizationInvite>>,
+  ) {
+    setLastInviteLink(data.inviteUrl ?? null)
+
+    if (data.emailStatus === "sent") {
+      setSuccessMessage(null)
+      showInfo("Confirmation email sent")
+      return
+    }
+
+    if (data.emailStatus === "not_configured") {
+      setSuccessMessage("Invite created. Copy the confirmation link below.")
+      showError(
+        "Gmail is not configured",
+        "Set Gmail OAuth env vars to send invite emails automatically.",
+      )
+      return
+    }
+
+    if (data.emailStatus === "failed") {
+      setSuccessMessage("Invite created. Copy the confirmation link below.")
+      showError(
+        "Gmail failed to send",
+        data.emailError ?? "The invite email could not be sent.",
+      )
+      return
+    }
+
+    setSuccessMessage("Invite created. Copy the confirmation link below.")
   }
 
   function copyInviteLink(invite: OrganizationInviteRow) {
@@ -268,7 +303,7 @@ export function UsersTab() {
 
     void navigator.clipboard.writeText(inviteLink)
     setLastInviteLink(inviteLink)
-    setSuccessMessage("Invite link copied.")
+    showInfo("Invite link copied")
   }
 
   const visibleMembers = members.filter((member: OrganizationMemberRow) => {
@@ -278,7 +313,8 @@ export function UsersTab() {
       name.toLowerCase().includes(search.toLowerCase()) ||
       email.toLowerCase().includes(search.toLowerCase())
     const roles = getActiveMemberRoles(member)
-    const matchesFilter = filter === "all" || roles.includes(filter)
+    const matchesFilter =
+      filter !== "invitations" && (filter === "all" || roles.includes(filter))
 
     return matchesSearch && matchesFilter
   })
@@ -287,7 +323,10 @@ export function UsersTab() {
     const matchesSearch = invite.email
       .toLowerCase()
       .includes(search.toLowerCase())
-    const matchesFilter = filter === "all" || invite.role === filter
+    const matchesFilter =
+      filter === "all" ||
+      filter === "invitations" ||
+      (filter !== "org_owner" && invite.role === filter)
 
     return matchesSearch && matchesFilter
   })
@@ -307,22 +346,28 @@ export function UsersTab() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              {(["all", "org_admin", "teacher", "student"] as const).map(
-                (role) => (
-                  <button
-                    key={role}
-                    onClick={() => setFilter(role)}
-                    className={cn(
-                      "px-2.5 py-1 rounded-full text-xs font-medium capitalize transition-colors",
-                      filter === role
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
-                    )}
-                  >
-                    {roleLabel(role)}
-                  </button>
-                ),
-              )}
+              {(
+                [
+                  "all",
+                  "invitations",
+                  "org_owner",
+                  "teacher",
+                  "student",
+                ] as const
+              ).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setFilter(role)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-xs font-medium capitalize transition-colors",
+                    filter === role
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  {roleLabel(role)}
+                </button>
+              ))}
               <Button
                 size="sm"
                 variant="outline"
@@ -339,7 +384,7 @@ export function UsersTab() {
           {successMessage ? (
             <div className="p-4">
               <Alert>
-                <AlertTitle>Updated</AlertTitle>
+                <AlertTitle>Manual invite link</AlertTitle>
                 <AlertDescription>
                   <div className="space-y-2">
                     <p>{successMessage}</p>
@@ -434,9 +479,7 @@ export function UsersTab() {
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">
-                        {invite.status === "suspended"
-                          ? "Revoked invite"
-                          : "Pending invite"}
+                        Pending invite
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {invite.email}
@@ -495,22 +538,6 @@ export function UsersTab() {
                       </Button>
                     </div>
                   ) : null}
-                  {invite.status === "suspended" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1 text-xs"
-                      disabled={busyInviteId === invite.id && isInviting}
-                      onClick={() => inviteAgain(invite)}
-                    >
-                      {busyInviteId === invite.id && isInviting ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      )}
-                      Invite again
-                    </Button>
-                  ) : null}
                 </div>
               ))}
 
@@ -529,8 +556,8 @@ export function UsersTab() {
           <DialogHeader>
             <DialogTitle>Grant organization role</DialogTitle>
             <DialogDescription>
-              If the email already belongs to a user, this grants another role.
-              Otherwise an invite is recorded for this organization.
+              Send a confirmation invite for an admin, teacher, or student role.
+              Users must accept before they can be assigned to classes.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitInvite}>

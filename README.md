@@ -69,6 +69,12 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
 
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REFRESH_TOKEN=
+GMAIL_FROM_EMAIL=
+GMAIL_FROM_NAME=Eduverse
+
 AWS_REGION=
 AWS_S3_BUCKET=
 AWS_ACCESS_KEY_ID=
@@ -79,7 +85,7 @@ LIVEKIT_API_SECRET=
 NEXT_PUBLIC_LIVEKIT_URL=wss://your-project.livekit.cloud
 ```
 
-Keep `SUPABASE_SECRET_KEY`, AWS credentials, and LiveKit API secrets server-only. Do not expose them to the mobile app or any public client runtime.
+Keep `SUPABASE_SECRET_KEY`, Gmail OAuth credentials, AWS credentials, and LiveKit API secrets server-only. Do not expose them to the mobile app or any public client runtime.
 
 ## Getting Started
 
@@ -123,6 +129,8 @@ bun run format:check     # Check formatting with Biome
 Authentication uses Supabase email/password auth. User profile and organization context are loaded through `/api/me`, and the app shell redirects unauthenticated users to `/auth`.
 
 Organizations support memberships, invitations, selected roles, default organization selection, and role-specific workspaces.
+
+Organization invite confirmations are sent through the Gmail API when `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, and `GMAIL_FROM_EMAIL` are configured. If Gmail is not configured, the app still creates the invite and shows the confirmation link for manual sharing.
 
 ### Classes
 

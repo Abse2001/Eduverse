@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { CheckCircle2, LoaderCircle, XCircle } from "lucide-react"
+import { CheckCircle2, LoaderCircle, LogOut, XCircle } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
@@ -12,7 +12,14 @@ import { toast } from "@/hooks/use-toast"
 export default function InvitePage() {
   const params = useParams<{ token: string }>()
   const router = useRouter()
-  const { isAuthLoading, isAuthenticated, refreshCurrentUser } = useApp()
+  const {
+    authUser,
+    currentUser,
+    isAuthLoading,
+    isAuthenticated,
+    refreshCurrentUser,
+    signOut,
+  } = useApp()
   const [inviteState, setInviteState] = useState<"idle" | "accepted" | "error">(
     "idle",
   )
@@ -21,7 +28,7 @@ export default function InvitePage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace(`/auth?next=/invite/${encodeURIComponent(token)}`)
+      router.replace(getInviteAuthPath(token))
     }
   }, [isAuthLoading, isAuthenticated, router, token])
 
@@ -38,7 +45,7 @@ export default function InvitePage() {
         setInviteState("error")
         toast({
           title: "Invite failed",
-          description: error.message,
+          description: formatInviteError(error.message, currentEmail),
           variant: "destructive",
         })
         return
@@ -52,6 +59,18 @@ export default function InvitePage() {
       })
     })
   }
+
+  function switchAccount() {
+    setInviteState("idle")
+
+    startTransition(async () => {
+      await signOut()
+      router.replace(getInviteAuthPath(token))
+      router.refresh()
+    })
+  }
+
+  const currentEmail = authUser?.email ?? currentUser.email
 
   if (isAuthLoading || !isAuthenticated) {
     return (
@@ -84,6 +103,14 @@ export default function InvitePage() {
             This invite can only be accepted by the email address it was sent
             to. Make sure you are signed in with that account.
           </p>
+          {currentEmail ? (
+            <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+              Signed in as{" "}
+              <span className="font-semibold text-slate-950">
+                {currentEmail}
+              </span>
+            </p>
+          ) : null}
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             {inviteState === "accepted" ? (
@@ -110,8 +137,40 @@ export default function InvitePage() {
               <Link href="/dashboard">Cancel</Link>
             </Button>
           </div>
+          {inviteState !== "accepted" ? (
+            <Button
+              className="mt-3 w-full gap-2"
+              disabled={isPending}
+              onClick={switchAccount}
+              variant="ghost"
+            >
+              <LogOut className="h-4 w-4" />
+              Use another account
+            </Button>
+          ) : null}
         </div>
       </section>
     </main>
   )
+}
+
+function formatInviteError(message: string, currentEmail: string | undefined) {
+  if (message !== "This invite is for a different email address") {
+    return message
+  }
+
+  return currentEmail
+    ? `This invite was sent to a different email address. You are signed in as ${currentEmail}. Use another account to sign in with the invited email.`
+    : "This invite was sent to a different email address. Use another account to sign in with the invited email."
+}
+
+function getInviteAuthPath(token: string) {
+  const next = `/invite/${encodeURIComponent(token)}`
+  const params = new URLSearchParams({
+    next,
+    mode: "sign-up",
+    reason: "invite",
+  })
+
+  return `/auth?${params.toString()}`
 }

@@ -1,6 +1,12 @@
 "use client"
 
-import { ChevronDown, CircleHelp, LogOut, UserRound } from "lucide-react"
+import {
+  ChevronDown,
+  CircleHelp,
+  LayoutDashboard,
+  LogOut,
+  UserRound,
+} from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -43,6 +49,12 @@ export function AccountMenu() {
           </p>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href="/dashboard">
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild className="cursor-pointer">
           <Link href="/profile">
             <UserRound className="mr-2 h-4 w-4" />

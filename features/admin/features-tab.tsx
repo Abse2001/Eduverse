@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
@@ -31,7 +32,6 @@ import type {
   FeatureSetting,
   OrganizationExtension,
 } from "@/lib/supabase/features"
-import { toast } from "@/hooks/use-toast"
 
 export function FeaturesTab() {
   const {
@@ -43,25 +43,14 @@ export function FeaturesTab() {
     updateOrganizationFeatureSetting,
     upsertOrganizationExtension,
   } = useApp()
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [busyFeatureKey, setBusyFeatureKey] = useState<string | null>(null)
   const [isExtensionDialogOpen, setIsExtensionDialogOpen] = useState(false)
   const [extensionName, setExtensionName] = useState("")
   const [extensionDescription, setExtensionDescription] = useState("")
   const [extensionUrl, setExtensionUrl] = useState("")
   const [isPending, startTransition] = useTransition()
+  const { toast } = useToast()
   const isLoading = featureDefinitionsStatus === "loading"
-  const displayedErrorMessage = errorMessage ?? featureDefinitionsError
-
-  useEffect(() => {
-    if (!displayedErrorMessage) return
-
-    toast({
-      title: "Feature update failed",
-      description: displayedErrorMessage,
-      variant: "destructive",
-    })
-  }, [displayedErrorMessage])
 
   const featureRows = useMemo(
     () =>
@@ -76,10 +65,23 @@ export function FeaturesTab() {
     void refreshFeatureDefinitions().catch(() => {})
   }, [refreshFeatureDefinitions])
 
+  useEffect(() => {
+    if (!featureDefinitionsError) return
+
+    showFeatureError(featureDefinitionsError)
+  }, [featureDefinitionsError])
+
+  function showFeatureError(description: string) {
+    toast({
+      title: "Feature update failed",
+      description,
+      variant: "destructive",
+    })
+  }
+
   function toggleFeature(featureKey: string, enabled: boolean) {
     if (!activeOrganization) return
 
-    setErrorMessage(null)
     setBusyFeatureKey(featureKey)
 
     startTransition(async () => {
@@ -96,7 +98,7 @@ export function FeaturesTab() {
         )
 
       if (error) {
-        setErrorMessage(error.message)
+        showFeatureError(error.message)
         setBusyFeatureKey(null)
         return
       }
@@ -113,8 +115,6 @@ export function FeaturesTab() {
   function createExtension(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!activeOrganization) return
-
-    setErrorMessage(null)
 
     startTransition(async () => {
       const { data, error } = await createClient()
@@ -133,7 +133,7 @@ export function FeaturesTab() {
         .single()
 
       if (error) {
-        setErrorMessage(error.message)
+        showFeatureError(error.message)
         return
       }
 
@@ -149,7 +149,6 @@ export function FeaturesTab() {
   }
 
   function toggleExtension(extensionId: string, enabled: boolean) {
-    setErrorMessage(null)
     setBusyFeatureKey(extensionId)
 
     startTransition(async () => {
@@ -163,7 +162,7 @@ export function FeaturesTab() {
         .single()
 
       if (error) {
-        setErrorMessage(error.message)
+        showFeatureError(error.message)
         setBusyFeatureKey(null)
         return
       }

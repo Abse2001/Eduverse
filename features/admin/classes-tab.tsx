@@ -38,11 +38,11 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
-import { toast } from "@/hooks/use-toast"
 import type {
   ClassExtensionSetting,
   FeatureDefinition,
@@ -75,12 +75,6 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   semester: "Spring 2026",
 }
 
-function inviteLinkFromToken(token: string) {
-  if (typeof window === "undefined") return null
-
-  return `${window.location.origin}/invite/${token}`
-}
-
 export function ClassesTab() {
   const {
     activeOrganization,
@@ -104,22 +98,10 @@ export function ClassesTab() {
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [isClassDialogOpen, setIsClassDialogOpen] = useState(false)
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const { toast } = useToast()
   const isLoading = organizationClassesStatus === "loading"
-  const displayedErrorMessage = errorMessage ?? organizationClassesError
-
-  useEffect(() => {
-    if (!displayedErrorMessage) return
-
-    toast({
-      title: "Class action failed",
-      description: displayedErrorMessage,
-      variant: "destructive",
-    })
-  }, [displayedErrorMessage])
   const classFeatureRows = useMemo(
     () =>
       buildClassFeatureRows(
@@ -142,15 +124,27 @@ export function ClassesTab() {
     [activeOrganization?.extensions, classExtensionValues],
   )
 
+  useEffect(() => {
+    if (!organizationClassesError) return
+
+    showClassError(organizationClassesError)
+  }, [organizationClassesError])
+
+  function showClassError(description: string) {
+    toast({
+      title: "Class action failed",
+      description,
+      variant: "destructive",
+    })
+  }
+
   async function loadClasses() {
     if (!activeOrganization) return
-
-    setErrorMessage(null)
 
     try {
       await refreshOrganizationClasses({ force: true })
     } catch (error) {
-      setErrorMessage(
+      showClassError(
         error instanceof Error ? error.message : "Could not load classes",
       )
     }
@@ -169,9 +163,7 @@ export function ClassesTab() {
     setClassExtensionValues(
       getInitialClassExtensionValues(activeOrganization?.extensions ?? [], []),
     )
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
     setIsClassDialogOpen(true)
   }
 
@@ -199,9 +191,7 @@ export function ClassesTab() {
         classItem.extensionSettings,
       ),
     )
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
     setIsClassDialogOpen(true)
   }
 
@@ -209,9 +199,7 @@ export function ClassesTab() {
     setInviteClass(classItem)
     setInviteEmail("")
     setInviteRole("student")
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
     setIsInviteDialogOpen(true)
   }
 
@@ -219,9 +207,7 @@ export function ClassesTab() {
     event.preventDefault()
     if (!activeOrganization) return
 
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -251,7 +237,7 @@ export function ClassesTab() {
       const { data, error } = await supabase.rpc(rpcName, payload)
 
       if (error) {
-        setErrorMessage(error.message)
+        showClassError(error.message)
         return
       }
 
@@ -268,7 +254,7 @@ export function ClassesTab() {
         )
 
         if (featureError) {
-          setErrorMessage(featureError)
+          showClassError(featureError)
           return
         }
 
@@ -279,7 +265,7 @@ export function ClassesTab() {
         )
 
         if (extensionError) {
-          setErrorMessage(extensionError)
+          showClassError(extensionError)
           return
         }
       }
@@ -300,9 +286,7 @@ export function ClassesTab() {
 
     if (!confirmed) return
 
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
 
     startTransition(async () => {
       const { error } = await createClient().rpc("delete_class", {
@@ -310,7 +294,7 @@ export function ClassesTab() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        showClassError(error.message)
         return
       }
 
@@ -323,9 +307,7 @@ export function ClassesTab() {
     event.preventDefault()
     if (!inviteClass) return
 
-    setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -336,7 +318,7 @@ export function ClassesTab() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        showClassError(error.message)
         return
       }
 
@@ -344,28 +326,7 @@ export function ClassesTab() {
       setInviteClass(null)
       setInviteEmail("")
       await loadClasses()
-
-      if (data?.result === "membership") {
-        setSuccessMessage(`${inviteEmail} added to ${inviteClass.name}.`)
-        return
-      }
-
-      const { data: inviteData } = await supabase
-        .from("organization_invites")
-        .select("token")
-        .eq("id", data?.invite_id)
-        .single()
-
-      const link = inviteData?.token
-        ? inviteLinkFromToken(inviteData.token)
-        : null
-
-      setLastInviteLink(link)
-      setSuccessMessage(
-        link
-          ? `Invite created for ${inviteClass.name}. Send this link.`
-          : `Invite created for ${inviteClass.name}.`,
-      )
+      setSuccessMessage(`${inviteEmail} added to ${inviteClass.name}.`)
     })
   }
 
@@ -391,25 +352,7 @@ export function ClassesTab() {
             <div className="p-4">
               <Alert>
                 <AlertTitle>Updated</AlertTitle>
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p>{successMessage}</p>
-                    {lastInviteLink ? (
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Input readOnly value={lastInviteLink} />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            void navigator.clipboard.writeText(lastInviteLink)
-                          }
-                        >
-                          Copy link
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                </AlertDescription>
+                <AlertDescription>{successMessage}</AlertDescription>
               </Alert>
             </div>
           ) : null}
@@ -466,7 +409,7 @@ export function ClassesTab() {
                       onClick={() => openInviteDialog(classItem)}
                     >
                       <UserPlus className="h-3.5 w-3.5" />
-                      Add member
+                      Assign member
                     </Button>
                     <Button
                       variant="outline"
@@ -705,15 +648,17 @@ export function ClassesTab() {
       <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add class member</DialogTitle>
+            <DialogTitle>Assign class member</DialogTitle>
             <DialogDescription>
-              Add an existing user immediately, or generate an invite link if
-              the email has not signed up yet.
+              Assign a teacher or student who already belongs to this
+              organization. New users must be invited from Users first.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitInvite}>
             <div className="space-y-2">
-              <Label htmlFor="class-invite-email">Email</Label>
+              <Label htmlFor="class-invite-email">
+                Organization member email
+              </Label>
               <Input
                 id="class-invite-email"
                 type="email"
@@ -751,10 +696,10 @@ export function ClassesTab() {
                 {isPending ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Adding...
+                    Assigning...
                   </>
                 ) : (
-                  "Add member"
+                  "Assign member"
                 )}
               </Button>
             </DialogFooter>

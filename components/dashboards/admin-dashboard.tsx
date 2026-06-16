@@ -11,13 +11,11 @@ import {
   Users,
 } from "lucide-react"
 import { useApp } from "@/lib/store"
-import { PENDING_ACCESS_REQUESTS } from "@/lib/mock-data"
 import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassHistoryTab } from "@/features/admin/class-history-tab"
 import { ClassesTab } from "@/features/admin/classes-tab"
 import { FeaturesTab } from "@/features/admin/features-tab"
-import { PendingRequestsTab } from "@/features/admin/pending-requests-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -62,20 +60,9 @@ export function AdminDashboard() {
       ].filter((userId): userId is string => Boolean(userId)),
     ),
   )
-  const pendingMockInvites = PENDING_ACCESS_REQUESTS.filter(
-    (request) => request.type === "invite",
-  ).length
-  const pendingMockRequests = PENDING_ACCESS_REQUESTS.filter(
-    (request) => request.type === "request",
-  ).length
   const pendingLiveInvites = organizationInvites.filter(
     (invite) => invite.status === "invited",
   ).length
-  const pendingAccessCount =
-    pendingLiveInvites || PENDING_ACCESS_REQUESTS.length
-  const pendingAccessSublabel = pendingLiveInvites
-    ? "Open invites"
-    : `${pendingMockInvites} invites, ${pendingMockRequests} requests`
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -100,8 +87,8 @@ export function AdminDashboard() {
         studentCount={studentIds.size}
         teacherCount={teacherIds.size}
         classCount={organizationClasses.length}
-        pendingAccessCount={pendingAccessCount}
-        pendingAccessSublabel={pendingAccessSublabel}
+        pendingAccessCount={pendingLiveInvites}
+        pendingAccessSublabel="Awaiting acceptance"
         pendingAccessIcon={MailPlus}
       />
 
@@ -118,10 +105,6 @@ export function AdminDashboard() {
           <TabsTrigger value="users" className="text-xs gap-1.5">
             <Users className="w-3.5 h-3.5" />
             Users
-          </TabsTrigger>
-          <TabsTrigger value="requests" className="text-xs gap-1.5">
-            <MailPlus className="w-3.5 h-3.5" />
-            Requests
           </TabsTrigger>
           <TabsTrigger value="features" className="text-xs gap-1.5">
             <Puzzle className="w-3.5 h-3.5" />
@@ -143,10 +126,6 @@ export function AdminDashboard() {
 
         <TabsContent value="users" className="mt-4">
           <UsersTab />
-        </TabsContent>
-
-        <TabsContent value="requests" className="mt-4">
-          <PendingRequestsTab />
         </TabsContent>
 
         <TabsContent value="features" className="mt-4">

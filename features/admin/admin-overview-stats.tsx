@@ -45,7 +45,7 @@ export function AdminOverviewStats({
         sublabel="This semester"
       />
       <StatCard
-        label="Pending Requests"
+        label="Pending Invites"
         value={String(pendingAccessCount)}
         icon={pendingAccessIcon}
         color="amber"

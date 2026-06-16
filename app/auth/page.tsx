@@ -1,24 +1,48 @@
 "use client"
 
-import { FormEvent, useEffect, useState, useTransition } from "react"
+import {
+  FormEvent,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js"
 import { GraduationCap, LoaderCircle } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
-import { toast } from "@/hooks/use-toast"
 
 type AuthMode = "sign-in" | "sign-up"
 
 export default function AuthPage() {
+  return (
+    <Suspense fallback={<AuthLoading message="Loading auth..." />}>
+      <AuthPageContent />
+    </Suspense>
+  )
+}
+
+function AuthPageContent() {
   const router = useRouter()
-  const [mode, setMode] = useState<AuthMode>("sign-in")
+  const searchParams = useSearchParams()
+  const initialMode =
+    searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in"
+  const [mode, setMode] = useState<AuthMode>(initialMode)
   const [signInEmail, setSignInEmail] = useState("")
   const [signInPassword, setSignInPassword] = useState("")
   const [displayName, setDisplayName] = useState("")
   const [signUpEmail, setSignUpEmail] = useState("")
   const [signUpPassword, setSignUpPassword] = useState("")
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(
+    null,
+  )
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isPending, startTransition] = useTransition()
+  const hasShownInviteToast = useRef(false)
+  const { toast } = useToast()
 
   function getNextPath() {
     if (typeof window === "undefined") return "/dashboard"
@@ -29,6 +53,12 @@ export default function AuthPage() {
     if (next === "/organizations") return "/dashboard"
 
     return next
+  }
+
+  function getEmailRedirectTo() {
+    if (typeof window === "undefined") return undefined
+
+    return `${window.location.origin}${getNextPath()}`
   }
 
   useEffect(() => {
@@ -56,8 +86,30 @@ export default function AuthPage() {
     }
   }, [router])
 
+  useEffect(() => {
+    if (searchParams.get("mode") === "sign-up") {
+      setMode("sign-up")
+    }
+
+    if (
+      searchParams.get("reason") !== "invite" ||
+      hasShownInviteToast.current
+    ) {
+      return
+    }
+
+    hasShownInviteToast.current = true
+
+    toast({
+      title: "Sign up or sign in to accept the invite",
+      description: "After auth, you will return to the invitation.",
+    })
+  }, [searchParams, toast])
+
   function submitSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setFeedback(null)
+    setConfirmationEmail(null)
 
     if (!signInEmail.trim() || !signInPassword) {
       toast({
@@ -91,6 +143,8 @@ export default function AuthPage() {
 
   function submitSignUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setFeedback(null)
+    setConfirmationEmail(null)
 
     if (!displayName.trim() || !signUpEmail.trim() || !signUpPassword) {
       toast({
@@ -112,10 +166,12 @@ export default function AuthPage() {
 
     startTransition(async () => {
       const supabase = createClient()
+      const submittedEmail = signUpEmail.trim()
       const { data, error } = await supabase.auth.signUp({
-        email: signUpEmail,
+        email: submittedEmail,
         password: signUpPassword,
         options: {
+          emailRedirectTo: getEmailRedirectTo(),
           data: {
             display_name: displayName,
           },
@@ -135,25 +191,51 @@ export default function AuthPage() {
         title: data.session ? "Account created" : "Check your inbox",
         description: data.session
           ? "Opening your organization hub."
-          : "Check your email if confirmation is enabled.",
+          : `Confirmation email sent to ${submittedEmail}.`,
       })
 
       if (data.session) {
+        setFeedback("Account created. Opening your organization hub...")
         router.replace(getNextPath())
         router.refresh()
+        return
       }
+
+      setConfirmationEmail(submittedEmail)
+      setFeedback(`Confirmation email sent to ${submittedEmail}.`)
+    })
+  }
+
+  function resendConfirmationEmail() {
+    if (!confirmationEmail) return
+
+    setFeedback(null)
+
+    startTransition(async () => {
+      const supabase = createClient()
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: confirmationEmail,
+        options: {
+          emailRedirectTo: getEmailRedirectTo(),
+        },
+      })
+
+      if (error) {
+        toast({
+          title: "Confirmation email failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
+      setFeedback(`Confirmation email resent to ${confirmationEmail}.`)
     })
   }
 
   if (isCheckingSession) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-slate-950 text-white">
-        <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm shadow-2xl backdrop-blur">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-          Checking your session...
-        </div>
-      </main>
-    )
+    return <AuthLoading message="Checking your session..." />
   }
 
   return (
@@ -241,6 +323,22 @@ export default function AuthPage() {
               </p>
             </div>
 
+            {feedback ? (
+              <div className="mb-4 space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <p>{feedback}</p>
+                {confirmationEmail ? (
+                  <button
+                    className="text-sm font-bold text-emerald-800 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isPending}
+                    onClick={resendConfirmationEmail}
+                    type="button"
+                  >
+                    Resend confirmation email
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             {mode === "sign-in" ? (
               <form className="space-y-4" noValidate onSubmit={submitSignIn}>
                 <AuthField
@@ -296,6 +394,17 @@ export default function AuthPage() {
             )}
           </div>
         </section>
+      </div>
+    </main>
+  )
+}
+
+function AuthLoading({ message }: { message: string }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-slate-950 text-white">
+      <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm shadow-2xl backdrop-blur">
+        <LoaderCircle className="h-4 w-4 animate-spin" />
+        {message}
       </div>
     </main>
   )

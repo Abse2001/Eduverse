@@ -288,7 +288,7 @@ export async function loadOrganizationUsers(
     .from("organization_invites")
     .select("id, email, role, status, token")
     .eq("organization_id", organizationId)
-    .in("status", ["invited", "suspended"])
+    .eq("status", "invited")
     .order("created_at", { ascending: false })
 
   if (inviteError) throw inviteError
