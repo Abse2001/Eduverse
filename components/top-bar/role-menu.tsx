@@ -28,7 +28,6 @@ import {
 import { toast } from "@/hooks/use-toast"
 
 const ROLE_ICONS: Record<OrganizationUserRole, typeof UserRound> = {
-  org_owner: ShieldCheck,
   org_admin: ShieldCheck,
   teacher: GraduationCap,
   student: UserRound,

@@ -19,7 +19,7 @@ type NotificationTarget =
   | {
       type: "person"
       userId: string
-      role: "org_owner" | "org_admin" | "teacher" | "student"
+      role: "org_admin" | "teacher" | "student"
       classId?: string | null
     }
 

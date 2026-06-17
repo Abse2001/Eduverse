@@ -7,7 +7,7 @@ type NotificationRow = {
   id: string
   organization_id: string
   class_id: string | null
-  recipient_role: "org_owner" | "org_admin" | "teacher" | "student"
+  recipient_role: "org_admin" | "teacher" | "student"
   actor_user_id: string | null
   type:
     | "chat_announcement"

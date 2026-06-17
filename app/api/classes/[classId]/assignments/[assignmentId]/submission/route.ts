@@ -371,17 +371,13 @@ async function loadSelectedOrganizationRole(
 
     if (selectedRole?.role) {
       return {
-        role: selectedRole.role as
-          | "org_owner"
-          | "org_admin"
-          | "teacher"
-          | "student",
+        role: selectedRole.role as "org_admin" | "teacher" | "student",
       }
     }
   }
 
   return {
-    role: membership.role as "org_owner" | "org_admin" | "teacher" | "student",
+    role: membership.role as "org_admin" | "teacher" | "student",
   }
 }
 

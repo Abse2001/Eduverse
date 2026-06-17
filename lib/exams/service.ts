@@ -38,7 +38,7 @@ import type {
 } from "@/lib/exams/types"
 import { createServerClient } from "@/lib/supabase/server"
 
-type AppRole = "org_owner" | "org_admin" | "teacher" | "student"
+type AppRole = "org_admin" | "teacher" | "student"
 
 type ClassContext = {
   id: string
@@ -4106,7 +4106,7 @@ function toStringArray(value: JsonValue[] | null) {
 function isManagerRole(
   role: AppRole | null,
 ): role is Exclude<AppRole, "student"> {
-  return role === "org_owner" || role === "org_admin" || role === "teacher"
+  return role === "org_admin" || role === "teacher"
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

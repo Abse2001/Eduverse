@@ -24,7 +24,6 @@ import { cn } from "@/lib/utils"
 import { ROLE_BADGE_COLOR_MAP } from "@/lib/view-config"
 
 const ORGANIZATION_ROLE_PRIORITY: OrganizationUserRole[] = [
-  "org_owner",
   "org_admin",
   "teacher",
   "student",

@@ -280,8 +280,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   )
   const canManageClass = Boolean(
     !isViewingAsStudent &&
-      (activeOrganizationRole === "org_owner" ||
-        activeOrganizationRole === "org_admin" ||
+      (activeOrganizationRole === "org_admin" ||
         activeOrganizationRole === "teacher" ||
         classItem?.teacher_user_id === currentUser.id ||
         hasClassManagerMembership),

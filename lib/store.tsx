@@ -55,7 +55,7 @@ export type OrganizationMemberRow = {
 export type OrganizationInviteRow = {
   id: string
   email: string
-  role: Exclude<OrganizationUserRole, "org_owner">
+  role: OrganizationUserRole
   status: "active" | "invited" | "suspended"
   token: string
 }
@@ -65,7 +65,7 @@ export type OrganizationJoinLinkRow = {
   organization_id: string
   purpose: string
   token: string
-  default_role: Exclude<OrganizationUserRole, "org_owner" | "org_admin">
+  default_role: Exclude<OrganizationUserRole, "org_admin">
   enabled: boolean
   approval_required: boolean
   max_uses: number | null
@@ -77,7 +77,7 @@ export type OrganizationJoinRequestRow = {
   id: string
   organization_id: string
   user_id: string
-  requested_role: Exclude<OrganizationUserRole, "org_owner" | "org_admin">
+  requested_role: Exclude<OrganizationUserRole, "org_admin">
   status: "pending" | "approved" | "rejected"
   created_at: string
   profile?: {

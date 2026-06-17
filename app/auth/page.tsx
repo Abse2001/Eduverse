@@ -269,8 +269,8 @@ function AuthPageContent() {
             </h1>
             <p className="max-w-xl text-lg leading-8 text-slate-300">
               Sign in first, then choose which organization to enter. Your role
-              changes per organization, so owners, admins, teachers, and
-              students each get the right workspace.
+              changes per organization, so admins, teachers, and students each
+              get the right workspace.
             </p>
           </div>
 
