@@ -19,6 +19,8 @@ export type ClassMaterial = {
   originalFilename: string
   mimeType: string
   sizeBytes: number
+  hasAiSummary: boolean
+  aiSummaryGeneratedAt: string | null
   createdAt: string
   updatedAt: string
   thumbnailUrl?: string
@@ -183,6 +185,15 @@ export function useClassMaterials({
   }
 
   async function deleteMaterial(materialId: string) {
+    let removedMaterial: ClassMaterial | null = null
+
+    setErrorMessage(null)
+    setMaterials((prev) => {
+      removedMaterial =
+        prev.find((material) => material.id === materialId) ?? null
+      return prev.filter((material) => material.id !== materialId)
+    })
+
     const response = await fetch(
       `/api/classes/${encodeURIComponent(
         classId,
@@ -194,12 +205,20 @@ export function useClassMaterials({
     } | null
 
     if (!response.ok) {
-      throw new Error(payload?.error ?? "Could not delete material.")
-    }
+      const message = payload?.error ?? "Could not delete material."
 
-    setMaterials((prev) =>
-      prev.filter((material) => material.id !== materialId),
-    )
+      if (removedMaterial) {
+        setMaterials((prev) => {
+          const next = [removedMaterial as ClassMaterial, ...prev]
+          return next.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )
+        })
+      }
+
+      throw new Error(message)
+    }
   }
 
   return {

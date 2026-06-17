@@ -3,6 +3,7 @@ import { loadAiClassAccess } from "@/lib/ai/class-context"
 import { generateAiText } from "@/lib/ai/openrouter"
 import { createMaterialDownloadUrl } from "@/lib/api/s3-materials"
 import { requireRouteUser } from "@/lib/api/supabase-route"
+import { createServerClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
@@ -20,8 +21,16 @@ type MaterialRow = {
   original_filename: string
   mime_type: string
   size_bytes: number
+  ai_summary: string | null
+  ai_summary_used_file_text: boolean
+  ai_summary_generated_at: string | null
   deleted_at: string | null
 }
+
+const MATERIAL_SELECT =
+  "id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary, ai_summary_used_file_text, ai_summary_generated_at, deleted_at"
+const MATERIAL_SELECT_LEGACY =
+  "id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, deleted_at"
 
 export async function POST(request: Request, context: RouteContext) {
   const { classId, materialId } = await context.params
@@ -40,15 +49,24 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    const { data, error } = await supabase
+    let result = await supabase
       .from("class_materials")
-      .select(
-        "id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, deleted_at",
-      )
+      .select(MATERIAL_SELECT)
       .eq("id", materialId)
       .eq("class_id", classId)
       .maybeSingle()
 
+    const canPersistSummary = !isMissingSummaryColumnError(result.error)
+    if (!canPersistSummary) {
+      result = await supabase
+        .from("class_materials")
+        .select(MATERIAL_SELECT_LEGACY)
+        .eq("id", materialId)
+        .eq("class_id", classId)
+        .maybeSingle()
+    }
+
+    const { data, error } = result
     if (error) throw error
     const material = data as MaterialRow | null
 
@@ -57,6 +75,15 @@ export async function POST(request: Request, context: RouteContext) {
         { error: "Material not found." },
         { status: 404 },
       )
+    }
+
+    if (canPersistSummary && material.ai_summary) {
+      return NextResponse.json({
+        summary: material.ai_summary,
+        usedFileText: material.ai_summary_used_file_text ?? false,
+        cached: true,
+        generatedAt: material.ai_summary_generated_at ?? null,
+      })
     }
 
     const extractedText = await loadTextMaterialContent(material)
@@ -90,10 +117,33 @@ export async function POST(request: Request, context: RouteContext) {
         },
       ],
     })
+    const generatedAt = new Date().toISOString()
+
+    if (canPersistSummary) {
+      const admin = createServerClient()
+      const { error: summaryUpdateError } = await admin
+        .from("class_materials")
+        .update({
+          ai_summary: summary,
+          ai_summary_used_file_text: Boolean(extractedText),
+          ai_summary_generated_at: generatedAt,
+        })
+        .eq("id", material.id)
+        .eq("class_id", classId)
+
+      if (
+        summaryUpdateError &&
+        !isMissingSummaryColumnError(summaryUpdateError)
+      ) {
+        throw summaryUpdateError
+      }
+    }
 
     return NextResponse.json({
       summary,
       usedFileText: Boolean(extractedText),
+      cached: false,
+      generatedAt: canPersistSummary ? generatedAt : null,
     })
   } catch (error) {
     return NextResponse.json(
@@ -142,14 +192,48 @@ async function loadTextMaterialContent(material: MaterialRow) {
 }
 
 async function extractPdfText(arrayBuffer: ArrayBuffer) {
-  const { PDFParse } = await import("pdf-parse")
-  const parser = new PDFParse({ data: new Uint8Array(arrayBuffer) })
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
+  const [{ join }, { pathToFileURL }] = await Promise.all([
+    import("node:path"),
+    import("node:url"),
+  ])
+  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+    join(
+      process.cwd(),
+      "node_modules",
+      "pdfjs-dist",
+      "legacy",
+      "build",
+      "pdf.worker.mjs",
+    ),
+  ).href
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(arrayBuffer),
+  })
 
   try {
-    const result = await parser.getText()
-    return result.text.replace(/\s+\n/g, "\n").trim().slice(0, 24000)
+    const document = await loadingTask.promise
+    const pageTexts: string[] = []
+
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+      const page = await document.getPage(pageNumber)
+      const content = await page.getTextContent()
+      const text = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+
+      if (text) pageTexts.push(text)
+      page.cleanup()
+
+      if (pageTexts.join("\n\n").length >= 24000) break
+    }
+
+    await document.destroy()
+    return pageTexts.join("\n\n").trim().slice(0, 24000)
   } finally {
-    await parser.destroy()
+    await loadingTask.destroy()
   }
 }
 
@@ -163,5 +247,12 @@ function isReadableMaterialMimeType(mimeType: string) {
       "application/xml",
       "application/x-yaml",
     ].includes(mimeType)
+  )
+}
+
+function isMissingSummaryColumnError(error: { message?: string } | null) {
+  return (
+    Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("schema cache"))
   )
 }
