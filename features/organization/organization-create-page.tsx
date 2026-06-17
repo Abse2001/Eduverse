@@ -91,7 +91,7 @@ export function OrganizationCreatePage() {
           Create organization
         </h1>
         <p className="text-sm text-muted-foreground">
-          Signed in as {currentUser.name}. You will become the owner of this
+          Signed in as {currentUser.name}. You will become the admin of this
           organization.
         </p>
       </div>

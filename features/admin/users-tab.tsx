@@ -43,14 +43,12 @@ import {
 import { cn } from "@/lib/utils"
 
 type OrgRole = OrganizationUserRole
-type RoleFilter = "all" | "invitations" | "org_owner" | "teacher" | "student"
+type RoleFilter = "all" | "invitations" | "org_admin" | "teacher" | "student"
 
-const ROLE_ORDER: OrgRole[] = ["org_owner", "org_admin", "teacher", "student"]
+const ROLE_ORDER: OrgRole[] = ["org_admin", "teacher", "student"]
 
 const ROLE_BADGE_COLOR_MAP: Record<OrgRole, string> = {
-  org_owner: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-  org_admin:
-    "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  org_admin: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
   teacher:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   student: "bg-brand-subtle text-brand",
@@ -59,7 +57,6 @@ const ROLE_BADGE_COLOR_MAP: Record<OrgRole, string> = {
 function roleLabel(role: OrgRole | RoleFilter) {
   if (role === "all") return "all"
   if (role === "invitations") return "invitations"
-  if (role === "org_owner") return "owner"
   if (role === "org_admin") return "admin"
   return role
 }
@@ -103,8 +100,7 @@ export function UsersTab() {
   const [filter, setFilter] = useState<RoleFilter>("all")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] =
-    useState<Exclude<OrgRole, "org_owner">>("teacher")
+  const [inviteRole, setInviteRole] = useState<OrgRole>("teacher")
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
@@ -145,10 +141,7 @@ export function UsersTab() {
     )
   }
 
-  async function sendOrganizationInvite(
-    email: string,
-    role: Exclude<OrgRole, "org_owner">,
-  ) {
+  async function sendOrganizationInvite(email: string, role: OrgRole) {
     if (!activeOrganization) throw new Error("No organization selected")
 
     const response = await fetch(
@@ -324,9 +317,7 @@ export function UsersTab() {
       .toLowerCase()
       .includes(search.toLowerCase())
     const matchesFilter =
-      filter === "all" ||
-      filter === "invitations" ||
-      (filter !== "org_owner" && invite.role === filter)
+      filter === "all" || filter === "invitations" || invite.role === filter
 
     return matchesSearch && matchesFilter
   })
@@ -350,7 +341,7 @@ export function UsersTab() {
                 [
                   "all",
                   "invitations",
-                  "org_owner",
+                  "org_admin",
                   "teacher",
                   "student",
                 ] as const
@@ -576,9 +567,7 @@ export function UsersTab() {
               <Label>Role to grant</Label>
               <Select
                 value={inviteRole}
-                onValueChange={(value) =>
-                  setInviteRole(value as Exclude<OrgRole, "org_owner">)
-                }
+                onValueChange={(value) => setInviteRole(value as OrgRole)}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select role" />

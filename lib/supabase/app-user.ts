@@ -4,11 +4,7 @@ import type {
   OrganizationExtension,
 } from "@/lib/supabase/features"
 
-export type OrganizationUserRole =
-  | "org_owner"
-  | "org_admin"
-  | "teacher"
-  | "student"
+export type OrganizationUserRole = "org_admin" | "teacher" | "student"
 
 export type OrganizationMembershipRoleRecord = {
   id: string
@@ -52,7 +48,6 @@ export type AppOrganization = {
 }
 
 const ROLE_PRIORITY: OrganizationUserRole[] = [
-  "org_owner",
   "org_admin",
   "teacher",
   "student",
@@ -134,7 +129,6 @@ export function toAppUser(
   activeOrganization: AppOrganization | null,
 ): User {
   const role: User["role"] =
-    activeOrganization?.selectedRole === "org_owner" ||
     activeOrganization?.selectedRole === "org_admin"
       ? "admin"
       : activeOrganization?.selectedRole === "teacher"

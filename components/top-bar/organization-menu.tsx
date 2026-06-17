@@ -26,7 +26,7 @@ import {
   organizationRoleLabel,
 } from "./organization-menu-helpers"
 
-const ROLE_PRIORITY = ["org_owner", "org_admin", "teacher", "student"]
+const ROLE_PRIORITY = ["org_admin", "teacher", "student"]
 
 export function OrganizationMenu() {
   const router = useRouter()

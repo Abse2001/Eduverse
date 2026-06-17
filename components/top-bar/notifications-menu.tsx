@@ -24,7 +24,7 @@ type AppNotification = {
   id: string
   organizationId: string
   classId: string | null
-  recipientRole: "org_owner" | "org_admin" | "teacher" | "student"
+  recipientRole: "org_admin" | "teacher" | "student"
   actorUserId: string | null
   type:
     | "chat_announcement"
