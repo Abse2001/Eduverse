@@ -41,7 +41,7 @@ function AuthPageContent() {
   )
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isPending, startTransition] = useTransition()
-  const hasShownInviteToast = useRef(false)
+  const hasShownAccessToast = useRef(false)
   const { toast } = useToast()
 
   function getNextPath() {
@@ -91,18 +91,26 @@ function AuthPageContent() {
       setMode("sign-up")
     }
 
+    const reason = searchParams.get("reason")
+
     if (
-      searchParams.get("reason") !== "invite" ||
-      hasShownInviteToast.current
+      (reason !== "invite" && reason !== "join") ||
+      hasShownAccessToast.current
     ) {
       return
     }
 
-    hasShownInviteToast.current = true
+    hasShownAccessToast.current = true
 
     toast({
-      title: "Sign up or sign in to accept the invite",
-      description: "After auth, you will return to the invitation.",
+      title:
+        reason === "join"
+          ? "Sign up or sign in to join"
+          : "Sign up or sign in to accept the invite",
+      description:
+        reason === "join"
+          ? "After auth, you will return to the organization join page."
+          : "After auth, you will return to the invitation.",
     })
   }, [searchParams, toast])
 

@@ -19,6 +19,8 @@ import {
 import type {
   ClassLiveSessionRow,
   OrganizationInviteRow,
+  OrganizationJoinLinkRow,
+  OrganizationJoinRequestRow,
   OrganizationMemberRow,
 } from "@/lib/store"
 
@@ -293,9 +295,66 @@ export async function loadOrganizationUsers(
 
   if (inviteError) throw inviteError
 
+  const { data: joinLinkData, error: joinLinkError } = await supabase
+    .from("organization_join_links")
+    .select(
+      "id, organization_id, purpose, token, default_role, enabled, approval_required, max_uses, use_count, expires_at",
+    )
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+
+  if (joinLinkError) throw joinLinkError
+
+  const { data: joinRequestData, error: joinRequestError } = await supabase
+    .from("organization_join_requests")
+    .select("id, organization_id, user_id, requested_role, status, created_at")
+    .eq("organization_id", organizationId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+
+  if (joinRequestError) throw joinRequestError
+
+  const typedJoinRequests = (joinRequestData ?? []) as Array<{
+    id: string
+    organization_id: string
+    user_id: string
+    requested_role: OrganizationUserRole
+    status: "pending" | "approved" | "rejected"
+    created_at: string
+  }>
+  const joinRequestUserIds = typedJoinRequests.map((request) => request.user_id)
+
+  const { data: joinRequestProfileData, error: joinRequestProfileError } =
+    joinRequestUserIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, display_name, email")
+          .in("id", joinRequestUserIds)
+      : { data: [], error: null }
+
+  if (joinRequestProfileError) throw joinRequestProfileError
+
+  const joinRequestProfileMap = new Map(
+    (
+      (joinRequestProfileData ?? []) as Array<{
+        id: string
+        display_name: string
+        email: string
+      }>
+    ).map((profile) => [
+      profile.id,
+      { display_name: profile.display_name, email: profile.email },
+    ]),
+  )
+
   return {
     members: members as OrganizationMemberRow[],
     invites: (inviteData ?? []) as OrganizationInviteRow[],
+    joinLinks: (joinLinkData ?? []) as OrganizationJoinLinkRow[],
+    joinRequests: typedJoinRequests.map((request) => ({
+      ...request,
+      profile: joinRequestProfileMap.get(request.user_id),
+    })) as OrganizationJoinRequestRow[],
   }
 }
 

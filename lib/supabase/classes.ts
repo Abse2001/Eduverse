@@ -34,6 +34,8 @@ export type OrganizationClass = {
   room: string | null
   semester: string | null
   is_archived: boolean
+  organization_visible: boolean
+  hidden_by_current_user: boolean
   memberships: ClassMembership[]
   teacher: ClassProfile | null
   students: ClassProfile[]
@@ -53,12 +55,13 @@ type ClassRow = Omit<
 export async function loadOrganizationClasses(
   organizationId: string,
   client?: SupabaseClient,
+  viewerUserId?: string | null,
 ) {
   const supabase = client ?? createClient()
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -66,15 +69,19 @@ export async function loadOrganizationClasses(
 
   if (classError) throw classError
 
-  return hydrateClasses((classData ?? []) as ClassRow[], supabase)
+  return hydrateClasses((classData ?? []) as ClassRow[], supabase, viewerUserId)
 }
 
-export async function loadClass(classId: string, client?: SupabaseClient) {
+export async function loadClass(
+  classId: string,
+  client?: SupabaseClient,
+  viewerUserId?: string | null,
+) {
   const supabase = client ?? createClient()
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
     )
     .eq("id", classId)
     .eq("is_archived", false)
@@ -82,7 +89,11 @@ export async function loadClass(classId: string, client?: SupabaseClient) {
 
   if (classError) throw classError
 
-  const [classRow] = await hydrateClasses([classData as ClassRow], supabase)
+  const [classRow] = await hydrateClasses(
+    [classData as ClassRow],
+    supabase,
+    viewerUserId,
+  )
 
   return classRow
 }
@@ -101,7 +112,11 @@ export function toLegacyClass(classRow: OrganizationClass): Class {
   }
 }
 
-async function hydrateClasses(classRows: ClassRow[], client?: SupabaseClient) {
+async function hydrateClasses(
+  classRows: ClassRow[],
+  client?: SupabaseClient,
+  viewerUserId?: string | null,
+) {
   if (classRows.length === 0) return []
 
   const supabase = client ?? createClient()
@@ -149,6 +164,11 @@ async function hydrateClasses(classRows: ClassRow[], client?: SupabaseClient) {
     classIds,
     supabase,
   )
+  const hiddenClassIds = await loadHiddenClassIds(
+    classIds,
+    supabase,
+    viewerUserId,
+  )
 
   for (const membership of memberships) {
     const existing = membershipsByClass.get(membership.class_id) ?? []
@@ -179,6 +199,28 @@ async function hydrateClasses(classRows: ClassRow[], client?: SupabaseClient) {
       students,
       featureSettings: featureSettingsByClass.get(classRow.id) ?? [],
       extensionSettings: extensionSettingsByClass.get(classRow.id) ?? [],
+      hidden_by_current_user: hiddenClassIds.has(classRow.id),
     }
   })
+}
+
+async function loadHiddenClassIds(
+  classIds: string[],
+  supabase: SupabaseClient,
+  viewerUserId?: string | null,
+) {
+  if (!viewerUserId || classIds.length === 0) return new Set<string>()
+
+  const { data, error } = await supabase
+    .from("class_visibility_preferences")
+    .select("class_id")
+    .eq("user_id", viewerUserId)
+    .eq("hidden", true)
+    .in("class_id", classIds)
+
+  if (error) throw error
+
+  return new Set(
+    ((data ?? []) as Array<{ class_id: string }>).map((row) => row.class_id),
+  )
 }

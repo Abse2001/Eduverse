@@ -5,6 +5,26 @@ export function getClassesForUser(
   classes: OrganizationClass[],
   user: User,
 ): OrganizationClass[] {
+  return getAccessibleClassesForUser(classes, user).filter(
+    (classItem) =>
+      !classItem.hidden_by_current_user || !classItem.organization_visible,
+  )
+}
+
+export function getHiddenClassesForUser(
+  classes: OrganizationClass[],
+  user: User,
+): OrganizationClass[] {
+  return getAccessibleClassesForUser(classes, user).filter(
+    (classItem) =>
+      classItem.hidden_by_current_user && classItem.organization_visible,
+  )
+}
+
+export function getAccessibleClassesForUser(
+  classes: OrganizationClass[],
+  user: User,
+): OrganizationClass[] {
   if (user.role === "admin") return classes
 
   return classes.filter((classItem) => hasClassAccessForRole(classItem, user))
@@ -15,6 +35,8 @@ export function hasClassAccessForRole(
   user: User,
 ) {
   if (user.role === "admin") return true
+
+  if (user.role === "student" && classItem.organization_visible) return true
 
   if (user.role === "teacher" && isClassTeacher(classItem, user.id)) {
     return true

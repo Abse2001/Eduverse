@@ -5,6 +5,7 @@ import {
   Activity,
   Archive,
   BookOpen,
+  Globe2,
   MailPlus,
   Puzzle,
   ShieldCheck,
@@ -16,6 +17,7 @@ import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassHistoryTab } from "@/features/admin/class-history-tab"
 import { ClassesTab } from "@/features/admin/classes-tab"
 import { FeaturesTab } from "@/features/admin/features-tab"
+import { PublicLinkTab } from "@/features/admin/public-link-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -24,6 +26,7 @@ export function AdminDashboard() {
     currentUser,
     organizationClasses,
     organizationInvites,
+    organizationJoinRequests,
     refreshOrganizationUsers,
   } = useApp()
 
@@ -63,6 +66,7 @@ export function AdminDashboard() {
   const pendingLiveInvites = organizationInvites.filter(
     (invite) => invite.status === "invited",
   ).length
+  const pendingPublicRequests = organizationJoinRequests.length
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -87,7 +91,7 @@ export function AdminDashboard() {
         studentCount={studentIds.size}
         teacherCount={teacherIds.size}
         classCount={organizationClasses.length}
-        pendingAccessCount={pendingLiveInvites}
+        pendingAccessCount={pendingLiveInvites + pendingPublicRequests}
         pendingAccessSublabel="Awaiting acceptance"
         pendingAccessIcon={MailPlus}
       />
@@ -114,6 +118,10 @@ export function AdminDashboard() {
             <Activity className="w-3.5 h-3.5" />
             Activity
           </TabsTrigger>
+          <TabsTrigger value="public-link" className="text-xs gap-1.5">
+            <Globe2 className="w-3.5 h-3.5" />
+            Public Link
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="classes" className="mt-4">
@@ -134,6 +142,10 @@ export function AdminDashboard() {
 
         <TabsContent value="activity" className="mt-4">
           <ActivityTab />
+        </TabsContent>
+
+        <TabsContent value="public-link" className="mt-4">
+          <PublicLinkTab />
         </TabsContent>
       </Tabs>
     </div>

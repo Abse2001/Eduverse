@@ -17,6 +17,10 @@ export async function GET(request: Request, context: RouteContext) {
     )
   }
 
-  const classes = await loadOrganizationClasses(organizationId, supabase)
+  const classes = await loadOrganizationClasses(
+    organizationId,
+    supabase,
+    user.id,
+  )
   return NextResponse.json({ classes })
 }
