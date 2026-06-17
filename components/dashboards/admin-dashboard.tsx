@@ -76,7 +76,7 @@ export function AdminDashboard() {
             Welcome back, {currentUser.name.split(" ")[0]}
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {currentUser.institution} &middot; Spring 2026
+            {currentUser.institution} &middot; Current term
           </p>
         </div>
         <div className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-800 dark:bg-amber-900/20">
@@ -104,7 +104,7 @@ export function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="history" className="text-xs gap-1.5">
             <Archive className="w-3.5 h-3.5" />
-            History
+            Past Terms
           </TabsTrigger>
           <TabsTrigger value="users" className="text-xs gap-1.5">
             <Users className="w-3.5 h-3.5" />

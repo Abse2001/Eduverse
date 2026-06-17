@@ -1,10 +1,10 @@
 "use client"
 
 import {
+  Archive,
   Edit3,
   LoaderCircle,
   PlusCircle,
-  Trash2,
   UserPlus,
   Users,
 } from "lucide-react"
@@ -73,7 +73,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   color: "indigo",
   description: "",
   room: "Online",
-  semester: "Spring 2026",
+  semester: "Current term",
   organizationVisible: false,
 }
 
@@ -292,9 +292,9 @@ export function ClassesTab() {
     })
   }
 
-  function deleteClass(classItem: OrganizationClass) {
+  function archiveClass(classItem: OrganizationClass) {
     const confirmed = window.confirm(
-      `Delete ${classItem.name}? This removes the class and its memberships.`,
+      `Archive ${classItem.name}? It will move to Past Terms and disappear from active class lists.`,
     )
 
     if (!confirmed) return
@@ -302,7 +302,7 @@ export function ClassesTab() {
     setSuccessMessage(null)
 
     startTransition(async () => {
-      const { error } = await createClient().rpc("delete_class", {
+      const { error } = await createClient().rpc("archive_class", {
         target_class_id: classItem.id,
       })
 
@@ -312,7 +312,7 @@ export function ClassesTab() {
       }
 
       await loadClasses()
-      setSuccessMessage("Class deleted.")
+      setSuccessMessage("Class archived.")
     })
   }
 
@@ -442,10 +442,10 @@ export function ClassesTab() {
                       variant="ghost"
                       size="sm"
                       className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
-                      onClick={() => deleteClass(classItem)}
+                      onClick={() => archiveClass(classItem)}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete
+                      <Archive className="h-3.5 w-3.5" />
+                      Archive
                     </Button>
                   </div>
                 </div>
@@ -562,7 +562,7 @@ export function ClassesTab() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="class-semester">Semester</Label>
+                <Label htmlFor="class-semester">Term</Label>
                 <Input
                   id="class-semester"
                   value={classForm.semester}

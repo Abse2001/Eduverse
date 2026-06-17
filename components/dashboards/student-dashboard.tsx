@@ -2,7 +2,7 @@
 
 import { format, isPast } from "date-fns"
 import {
-  BarChart3,
+  Archive,
   BookOpen,
   Calendar,
   CheckCircle2,
@@ -13,7 +13,6 @@ import {
   GraduationCap,
   MessageSquare,
   Radio,
-  Star,
   TrendingUp,
 } from "lucide-react"
 import Link from "next/link"
@@ -29,12 +28,20 @@ import {
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import {
+  groupArchivedClassesByTerm,
+  useArchivedClasses,
+} from "@/features/classes/use-archived-classes"
+import {
+  formatScore,
+  getAverageScore,
+  getStudentGradedScores,
+} from "@/features/classes/grade-metrics"
+import {
   getClassesForUser,
   getHiddenClassesForUser,
 } from "@/lib/education/classes"
 import type { ClassExamApiDto } from "@/lib/exams/types"
 import { useToast } from "@/hooks/use-toast"
-import { STUDENT_PREVIOUS_ACADEMIC_PERIODS } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
@@ -58,21 +65,33 @@ export function StudentDashboard() {
     organizationClasses,
     refreshOrganizationClasses,
   } = useApp()
+  const { archivedClasses, archivedClassesStatus, archivedClassesError } =
+    useArchivedClasses()
   const { toast } = useToast()
   const classRows = getClassesForUser(organizationClasses, currentUser)
+  const archivedClassRows = getClassesForUser(archivedClasses, currentUser)
+  const archivedTerms = groupArchivedClassesByTerm(archivedClassRows)
   const hiddenClassRows = getHiddenClassesForUser(
     organizationClasses,
     currentUser,
   )
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")
+  const archivedClassIds = archivedClassRows.map((classItem) => classItem.id)
+  const archivedClassIdKey = archivedClassIds.join("|")
   const [assignmentsByClass, setAssignmentsByClass] = useState<
+    Record<string, ClassAssignment[]>
+  >({})
+  const [archivedAssignmentsByClass, setArchivedAssignmentsByClass] = useState<
     Record<string, ClassAssignment[]>
   >({})
   const [examsByClass, setExamsByClass] = useState<
     Record<string, ClassExamApiDto["student"] | null>
   >({})
   const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
+  const [archivedAssignmentsError, setArchivedAssignmentsError] = useState<
+    string | null
+  >(null)
   const [examsError, setExamsError] = useState<string | null>(null)
   const myClasses = classRows.map(toLegacyClass)
   const allAssignments = classIds.flatMap(
@@ -81,21 +100,18 @@ export function StudentDashboard() {
   const pendingAssignments = allAssignments.filter((assignment) =>
     ["pending", "overdue"].includes(getAssignmentDerivedStatus(assignment)),
   )
-  const gradedSubmissions = allAssignments.flatMap((assignment) =>
-    assignment.mySubmission?.gradedAt && assignment.mySubmission.score !== null
-      ? [{ assignment, score: assignment.mySubmission.score }]
-      : [],
+  const allArchivedAssignments = archivedClassIds.flatMap(
+    (classId) => archivedAssignmentsByClass[classId] ?? [],
   )
-  const avgScore =
-    gradedSubmissions.length > 0
-      ? Math.round(
-          gradedSubmissions.reduce(
-            (sum, submission) =>
-              sum + (submission.score / submission.assignment.maxScore) * 100,
-            0,
-          ) / gradedSubmissions.length,
-        )
-      : 0
+  const gradedSubmissions = getStudentGradedScores(allAssignments)
+  const archivedGradedSubmissions = getStudentGradedScores(
+    allArchivedAssignments,
+  )
+  const currentTermScore = getAverageScore(gradedSubmissions)
+  const allTermsScore = getAverageScore([
+    ...gradedSubmissions,
+    ...archivedGradedSubmissions,
+  ])
   const upcomingAssignments = allAssignments
     .filter(
       (assignment) => getAssignmentDerivedStatus(assignment) === "pending",
@@ -129,6 +145,16 @@ export function StudentDashboard() {
   const liveClassIds = new Set(
     classLiveSessions.map((session) => session.class_id),
   )
+  const getTermScore = (
+    classes: ReturnType<typeof groupArchivedClassesByTerm>[number]["classes"],
+  ) =>
+    getAverageScore(
+      getStudentGradedScores(
+        classes.flatMap(
+          (classItem) => archivedAssignmentsByClass[classItem.id] ?? [],
+        ),
+      ),
+    )
 
   async function setClassHidden(classId: string, hidden: boolean) {
     try {
@@ -224,6 +250,48 @@ export function StudentDashboard() {
     }
   }, [classIdKey, currentUserId])
 
+  useEffect(() => {
+    let cancelled = false
+
+    if (archivedClassIds.length === 0) {
+      setArchivedAssignmentsByClass({})
+      setArchivedAssignmentsError(null)
+      return
+    }
+
+    Promise.all(
+      archivedClassIds.map(async (classId) => {
+        const assignments = await loadClassAssignments({
+          classId,
+          currentUserId,
+          canManage: false,
+        })
+
+        return [classId, assignments] as const
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return
+
+        setArchivedAssignmentsByClass(Object.fromEntries(entries))
+        setArchivedAssignmentsError(null)
+      })
+      .catch((error) => {
+        if (cancelled) return
+
+        setArchivedAssignmentsByClass({})
+        setArchivedAssignmentsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load past term scores.",
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [archivedClassIdKey, currentUserId])
+
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -232,7 +300,7 @@ export function StudentDashboard() {
             Good morning, {currentUser.name.split(" ")[0]}
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {currentUser.institution} &middot; Spring 2026
+            {currentUser.institution} &middot; Current term
           </p>
         </div>
         <div className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 dark:border-indigo-800 dark:bg-indigo-900/20">
@@ -257,8 +325,8 @@ export function StudentDashboard() {
           color="amber"
         />
         <StatCard
-          label="Average Score"
-          value={`${avgScore}%`}
+          label="This Term Score"
+          value={formatScore(currentTermScore)}
           icon={TrendingUp}
           color="emerald"
         />
@@ -269,14 +337,14 @@ export function StudentDashboard() {
           color="emerald"
         />
         <StatCard
-          label="Current GPA"
-          value={String(currentUser.gpa ?? "—")}
-          icon={Star}
+          label="All Terms Score"
+          value={formatScore(allTermsScore)}
+          icon={FileText}
           color="violet"
         />
         <StatCard
-          label="Periods"
-          value={String(STUDENT_PREVIOUS_ACADEMIC_PERIODS.length)}
+          label="Past Terms"
+          value={String(archivedTerms.length)}
           icon={Calendar}
           color="indigo"
         />
@@ -499,77 +567,160 @@ export function StudentDashboard() {
       </div>
 
       <div className="space-y-3">
-        <h2 className="font-semibold text-foreground">
-          Previous Academic Periods
-        </h2>
+        <h2 className="font-semibold text-foreground">Past Terms</h2>
+        {archivedClassesError ? (
+          <p className="text-xs text-destructive">{archivedClassesError}</p>
+        ) : null}
+        {archivedAssignmentsError ? (
+          <p className="text-xs text-destructive">{archivedAssignmentsError}</p>
+        ) : null}
         <div className="grid gap-3">
-          {STUDENT_PREVIOUS_ACADEMIC_PERIODS.map((period) => (
-            <Card key={period.id}>
+          {archivedTerms.map((term) => (
+            <Card key={term.label}>
               <CardContent className="p-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                        <BarChart3 className="w-4 h-4" />
+                        <Archive className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold text-sm text-foreground truncate">
-                          {period.label}
+                          {term.label}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {period.timeframe}
+                          Archived term
                         </p>
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:min-w-[420px]">
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Classes
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {period.classes}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Avg Score
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {period.avgScore}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Graded
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {period.gradedAssignments}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        GPA
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {period.gpa ?? "—"}
-                      </p>
-                    </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
+                    <Metric label="Classes">{term.classes.length}</Metric>
+                    <Metric label="Score">
+                      {formatScore(getTermScore(term.classes))}
+                    </Metric>
+                    <Metric label="Teachers">
+                      {countTeachers(term.classes)}
+                    </Metric>
+                    <Metric label="Students">
+                      {countStudents(term.classes)}
+                    </Metric>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center gap-3">
-                  <Progress value={period.progress} className="h-1.5" />
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {period.progress}%
-                  </span>
+                <div className="mt-4 grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
+                  {term.classes.map((classItem) => (
+                    <ArchivedStudentClassRow
+                      key={classItem.id}
+                      classItem={classItem}
+                      assignments={
+                        archivedAssignmentsByClass[classItem.id] ?? []
+                      }
+                    />
+                  ))}
                 </div>
               </CardContent>
             </Card>
           ))}
+
+          {archivedClassesStatus === "loading" ? (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                Loading past terms...
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {archivedClassesStatus === "ready" && archivedTerms.length === 0 ? (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                No archived classes yet.
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>
   )
+}
+
+function Metric({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-bold text-foreground">{children}</p>
+    </div>
+  )
+}
+
+function ArchivedStudentClassRow({
+  classItem,
+  assignments,
+}: {
+  classItem: ReturnType<
+    typeof groupArchivedClassesByTerm
+  >[number]["classes"][number]
+  assignments: ClassAssignment[]
+}) {
+  const scores = getStudentGradedScores(assignments)
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3 rounded-md bg-muted/40 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-2">
+        <div
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-white",
+            CLASS_COLOR_MAP[classItem.color ?? "indigo"] ?? "bg-primary",
+          )}
+        >
+          {classItem.code.slice(0, 2)}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-foreground">
+            {classItem.name}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {classItem.code} &middot;{" "}
+            {classItem.teacher?.display_name ?? "No teacher"}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 pl-9 sm:w-44 sm:shrink-0 sm:pl-0">
+        <Metric label="Score">{formatScore(getAverageScore(scores))}</Metric>
+        <Metric label="Graded">{scores.length}</Metric>
+      </div>
+    </div>
+  )
+}
+
+function countStudents(
+  classes: ReturnType<typeof groupArchivedClassesByTerm>[number]["classes"],
+) {
+  return new Set(
+    classes.flatMap((classItem) =>
+      classItem.students.map((student) => student.id),
+    ),
+  ).size
+}
+
+function countTeachers(
+  classes: ReturnType<typeof groupArchivedClassesByTerm>[number]["classes"],
+) {
+  return new Set(
+    classes.flatMap((classItem) =>
+      [
+        classItem.teacher_user_id,
+        ...classItem.memberships
+          .filter((membership) => membership.role === "teacher")
+          .map((membership) => membership.user_id),
+      ].filter((userId): userId is string => Boolean(userId)),
+    ),
+  ).size
 }
 
 function getStudentAssignmentProgress(assignments: ClassAssignment[]) {

@@ -163,7 +163,7 @@ export function formatClassContext(input: {
     `Class: ${classRow.name} (${classRow.code})`,
     `Description: ${classRow.description || "No description"}`,
     `Room: ${classRow.room || "No room"}`,
-    `Semester: ${classRow.semester || "No semester"}`,
+    `Term: ${classRow.semester || "No term"}`,
     "",
     "Materials:",
     materials || "- None",

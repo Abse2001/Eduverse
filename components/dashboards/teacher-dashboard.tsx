@@ -1,7 +1,7 @@
 "use client"
 
 import {
-  BarChart3,
+  Archive,
   BookOpen,
   FileText,
   MessageSquare,
@@ -18,13 +18,17 @@ import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import {
   type ClassAssignment,
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
+import {
+  formatScore,
+  getAverageScore,
+  getClassGradedScores,
+} from "@/features/classes/grade-metrics"
+import { useArchivedClasses } from "@/features/classes/use-archived-classes"
 import { getClassesForUser } from "@/lib/education/classes"
-import { TEACHER_PREVIOUS_CLASSES } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
@@ -32,13 +36,24 @@ import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
 export function TeacherDashboard() {
   const { authUser, currentUser, organizationClasses } = useApp()
+  const { archivedClasses, archivedClassesStatus, archivedClassesError } =
+    useArchivedClasses()
   const classRows = getClassesForUser(organizationClasses, currentUser)
+  const archivedClassRows = getClassesForUser(archivedClasses, currentUser)
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")
+  const archivedClassIds = archivedClassRows.map((classItem) => classItem.id)
+  const archivedClassIdKey = archivedClassIds.join("|")
   const [assignmentsByClass, setAssignmentsByClass] = useState<
     Record<string, ClassAssignment[]>
   >({})
+  const [archivedAssignmentsByClass, setArchivedAssignmentsByClass] = useState<
+    Record<string, ClassAssignment[]>
+  >({})
   const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
+  const [archivedAssignmentsError, setArchivedAssignmentsError] = useState<
+    string | null
+  >(null)
   const classRowById = new Map(
     classRows.map((classItem) => [classItem.id, classItem]),
   )
@@ -104,6 +119,49 @@ export function TeacherDashboard() {
     }
   }, [authUser?.id, classIdKey, currentUser.id])
 
+  useEffect(() => {
+    let cancelled = false
+    const currentUserId = authUser?.id ?? currentUser.id ?? null
+
+    if (archivedClassIds.length === 0) {
+      setArchivedAssignmentsByClass({})
+      setArchivedAssignmentsError(null)
+      return
+    }
+
+    Promise.all(
+      archivedClassIds.map(async (classId) => {
+        const assignments = await loadClassAssignments({
+          classId,
+          currentUserId,
+          canManage: true,
+        })
+
+        return [classId, assignments] as const
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return
+
+        setArchivedAssignmentsByClass(Object.fromEntries(entries))
+        setArchivedAssignmentsError(null)
+      })
+      .catch((error) => {
+        if (cancelled) return
+
+        setArchivedAssignmentsByClass({})
+        setArchivedAssignmentsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load past term gradebook.",
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [archivedClassIdKey, authUser?.id, currentUser.id])
+
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -112,7 +170,7 @@ export function TeacherDashboard() {
             Welcome back, {currentUser.name.split(" ")[0]}
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {currentUser.institution} &middot; Spring 2026
+            {currentUser.institution} &middot; Current term
           </p>
         </div>
         <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
@@ -283,65 +341,90 @@ export function TeacherDashboard() {
       </div>
 
       <div className="space-y-3">
-        <h2 className="font-semibold text-foreground">Previous Classes</h2>
+        <h2 className="font-semibold text-foreground">Past Terms</h2>
+        {archivedClassesError ? (
+          <p className="text-xs text-destructive">{archivedClassesError}</p>
+        ) : null}
+        {archivedAssignmentsError ? (
+          <p className="text-xs text-destructive">{archivedAssignmentsError}</p>
+        ) : null}
         <div className="grid gap-3">
-          {TEACHER_PREVIOUS_CLASSES.map((classItem) => (
-            <Card key={classItem.id}>
-              <CardContent className="p-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                        <BarChart3 className="h-4 w-4" />
+          {archivedClassRows.map((classItem) => {
+            const assignments = archivedAssignmentsByClass[classItem.id] ?? []
+            const scores = getClassGradedScores(assignments)
+
+            return (
+              <Card key={classItem.id}>
+                <CardContent className="p-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                          <Archive className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {classItem.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {classItem.code} &middot;{" "}
+                            {classItem.semester ?? "Unassigned Term"}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          {classItem.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {classItem.code} &middot; {classItem.semester}
-                        </p>
-                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 md:min-w-[520px]">
+                      <Metric label="Score">
+                        {formatScore(getAverageScore(scores))}
+                      </Metric>
+                      <Metric label="Graded">{scores.length}</Metric>
+                      <Metric label="Students">
+                        {classItem.students.length}
+                      </Metric>
+                      <Metric label="Assignments">{assignments.length}</Metric>
+                      <Metric label="Room">
+                        {classItem.room ?? "No room"}
+                      </Metric>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:min-w-[340px]">
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Students
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {classItem.students}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Avg Score
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {classItem.avgScore}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-muted-foreground">
-                        Graded
-                      </p>
-                      <p className="text-sm font-bold text-foreground">
-                        {classItem.gradedAssignments}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 flex items-center gap-3">
-                  <Progress value={classItem.completion} className="h-1.5" />
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {classItem.completion}%
-                  </span>
-                </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+
+          {archivedClassesStatus === "loading" ? (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                Loading past terms...
               </CardContent>
             </Card>
-          ))}
+          ) : null}
+
+          {archivedClassesStatus === "ready" &&
+          archivedClassRows.length === 0 ? (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                No archived classes yet.
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
+    </div>
+  )
+}
+
+function Metric({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-bold text-foreground">{children}</p>
     </div>
   )
 }

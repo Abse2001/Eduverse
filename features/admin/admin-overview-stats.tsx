@@ -42,7 +42,7 @@ export function AdminOverviewStats({
         value={String(classCount)}
         icon={BookOpen}
         color="violet"
-        sublabel="This semester"
+        sublabel="Current term"
       />
       <StatCard
         label="Pending Invites"

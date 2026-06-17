@@ -72,6 +72,27 @@ export async function loadOrganizationClasses(
   return hydrateClasses((classData ?? []) as ClassRow[], supabase, viewerUserId)
 }
 
+export async function loadArchivedOrganizationClasses(
+  organizationId: string,
+  client?: SupabaseClient,
+  viewerUserId?: string | null,
+) {
+  const supabase = client ?? createClient()
+  const { data: classData, error: classError } = await supabase
+    .from("classes")
+    .select(
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
+    )
+    .eq("organization_id", organizationId)
+    .eq("is_archived", true)
+    .order("semester", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  if (classError) throw classError
+
+  return hydrateClasses((classData ?? []) as ClassRow[], supabase, viewerUserId)
+}
+
 export async function loadClass(
   classId: string,
   client?: SupabaseClient,

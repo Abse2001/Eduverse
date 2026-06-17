@@ -73,7 +73,6 @@ export async function GET(request: Request, context: RouteContext) {
     .from("classes")
     .select("id, organization_id")
     .eq("id", classId)
-    .eq("is_archived", false)
     .maybeSingle()
 
   if (classError) {
