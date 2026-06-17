@@ -193,21 +193,11 @@ async function loadTextMaterialContent(material: MaterialRow) {
 
 async function extractPdfText(arrayBuffer: ArrayBuffer) {
   installPdfJsNodeGlobals()
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  const [{ join }, { pathToFileURL }] = await Promise.all([
-    import("node:path"),
-    import("node:url"),
+  const [pdfjs, pdfWorker] = await Promise.all([
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+    import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
   ])
-  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-    join(
-      process.cwd(),
-      "node_modules",
-      "pdfjs-dist",
-      "legacy",
-      "build",
-      "pdf.worker.mjs",
-    ),
-  ).href
+  installPdfJsWorker(pdfWorker)
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(arrayBuffer),
   })
@@ -242,6 +232,14 @@ function installPdfJsNodeGlobals() {
   const globalScope = globalThis as Record<string, unknown>
 
   globalScope.DOMMatrix ??= MinimalDOMMatrix
+}
+
+function installPdfJsWorker(workerModule: { WorkerMessageHandler: unknown }) {
+  const globalScope = globalThis as Record<string, unknown>
+
+  globalScope.pdfjsWorker ??= {
+    WorkerMessageHandler: workerModule.WorkerMessageHandler,
+  }
 }
 
 class MinimalDOMMatrix {
