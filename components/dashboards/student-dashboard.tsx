@@ -7,6 +7,8 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Eye,
+  EyeOff,
   FileText,
   GraduationCap,
   MessageSquare,
@@ -26,8 +28,12 @@ import {
   getAssignmentDerivedStatus,
   loadClassAssignments,
 } from "@/features/assignments/use-class-assignments"
-import { getClassesForUser } from "@/lib/education/classes"
+import {
+  getClassesForUser,
+  getHiddenClassesForUser,
+} from "@/lib/education/classes"
 import type { ClassExamApiDto } from "@/lib/exams/types"
+import { useToast } from "@/hooks/use-toast"
 import { STUDENT_PREVIOUS_ACADEMIC_PERIODS } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
@@ -45,9 +51,19 @@ type DashboardDeadline = {
 }
 
 export function StudentDashboard() {
-  const { authUser, classLiveSessions, currentUser, organizationClasses } =
-    useApp()
+  const {
+    authUser,
+    classLiveSessions,
+    currentUser,
+    organizationClasses,
+    refreshOrganizationClasses,
+  } = useApp()
+  const { toast } = useToast()
   const classRows = getClassesForUser(organizationClasses, currentUser)
+  const hiddenClassRows = getHiddenClassesForUser(
+    organizationClasses,
+    currentUser,
+  )
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")
   const [assignmentsByClass, setAssignmentsByClass] = useState<
@@ -107,9 +123,47 @@ export function StudentDashboard() {
   const overallProgress = getStudentAssignmentProgress(allAssignments)
   const currentUserId = authUser?.id ?? currentUser.id ?? null
   const classById = new Map(myClasses.map((cls) => [cls.id, cls]))
+  const classRowById = new Map(
+    classRows.map((classItem) => [classItem.id, classItem]),
+  )
   const liveClassIds = new Set(
     classLiveSessions.map((session) => session.class_id),
   )
+
+  async function setClassHidden(classId: string, hidden: boolean) {
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classId)}/visibility`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hidden }),
+        },
+      )
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not update class visibility.")
+      }
+
+      await refreshOrganizationClasses({ force: true })
+      toast({
+        title: hidden ? "Class hidden" : "Class shown",
+        description: hidden
+          ? "You can restore it from Hidden classes."
+          : "The class is back on your dashboard.",
+      })
+    } catch (error) {
+      toast({
+        title: "Could not update class visibility",
+        description:
+          error instanceof Error ? error.message : "Try again later.",
+        variant: "destructive",
+      })
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -191,7 +245,7 @@ export function StudentDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
-          label="Enrolled Classes"
+          label="Visible Classes"
           value={String(myClasses.length)}
           icon={BookOpen}
           color="indigo"
@@ -239,6 +293,7 @@ export function StudentDashboard() {
           ) : null}
 
           {myClasses.map((cls) => {
+            const classRow = classRowById.get(cls.id)
             const assignments = assignmentsByClass[cls.id] ?? []
             const progress = getStudentAssignmentProgress(assignments)
             const isLive = liveClassIds.has(cls.id)
@@ -260,6 +315,11 @@ export function StudentDashboard() {
                         <p className="font-semibold text-sm text-foreground truncate">
                           {cls.name}
                         </p>
+                        {classRow?.organization_visible ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            Organization visible
+                          </Badge>
+                        ) : null}
                         {isLive ? (
                           <Badge className="shrink-0 border-0 bg-emerald-100 text-[10px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
                             <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -277,6 +337,18 @@ export function StudentDashboard() {
                         </span>
                       </div>
                     </div>
+                    {classRow?.organization_visible ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 gap-1 text-xs text-muted-foreground"
+                        onClick={() => void setClassHidden(cls.id, true)}
+                      >
+                        <EyeOff className="h-3.5 w-3.5" />
+                        Hide
+                      </Button>
+                    ) : null}
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
                     <Link href={`/classes/${cls.id}/session`}>
@@ -321,6 +393,48 @@ export function StudentDashboard() {
               </Card>
             )
           })}
+
+          {hiddenClassRows.length > 0 ? (
+            <div className="pt-2">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Hidden classes
+              </h3>
+              <div className="grid gap-2">
+                {hiddenClassRows.map((classItem) => (
+                  <Card key={classItem.id}>
+                    <CardContent className="flex items-center gap-3 p-3">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
+                          CLASS_COLOR_MAP[classItem.color ?? "indigo"] ??
+                            "bg-primary",
+                        )}
+                      >
+                        {classItem.code.slice(0, 2)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {classItem.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {classItem.code}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => void setClassHidden(classItem.id, false)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Show
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">

@@ -17,6 +17,6 @@ export async function GET(request: Request, context: RouteContext) {
     )
   }
 
-  const classRow = await loadClass(classId, supabase)
+  const classRow = await loadClass(classId, supabase, user.id)
   return NextResponse.json({ class: classRow })
 }

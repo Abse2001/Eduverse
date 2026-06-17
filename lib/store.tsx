@@ -60,6 +60,32 @@ export type OrganizationInviteRow = {
   token: string
 }
 
+export type OrganizationJoinLinkRow = {
+  id: string
+  organization_id: string
+  purpose: string
+  token: string
+  default_role: Exclude<OrganizationUserRole, "org_owner" | "org_admin">
+  enabled: boolean
+  approval_required: boolean
+  max_uses: number | null
+  use_count: number
+  expires_at: string | null
+}
+
+export type OrganizationJoinRequestRow = {
+  id: string
+  organization_id: string
+  user_id: string
+  requested_role: Exclude<OrganizationUserRole, "org_owner" | "org_admin">
+  status: "pending" | "approved" | "rejected"
+  created_at: string
+  profile?: {
+    display_name: string
+    email: string
+  }
+}
+
 export type ClassLiveSessionRow = {
   id: string
   organization_id: string
@@ -95,6 +121,8 @@ interface AppContextValue {
   organizationClassesError: string | null
   organizationMembers: OrganizationMemberRow[]
   organizationInvites: OrganizationInviteRow[]
+  organizationJoinLinks: OrganizationJoinLinkRow[]
+  organizationJoinRequests: OrganizationJoinRequestRow[]
   organizationUsersStatus: DataStatus
   organizationUsersError: string | null
   classLiveSessions: ClassLiveSessionRow[]
@@ -109,6 +137,8 @@ interface AppContextValue {
   refreshOrganizationUsers: (options?: { force?: boolean }) => Promise<{
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
+    joinLinks: OrganizationJoinLinkRow[]
+    joinRequests: OrganizationJoinRequestRow[]
   }>
   refreshClassLiveSessions: (options?: {
     force?: boolean
@@ -158,6 +188,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [organizationInvites, setOrganizationInvites] = useState<
     OrganizationInviteRow[]
   >([])
+  const [organizationJoinLinks, setOrganizationJoinLinks] = useState<
+    OrganizationJoinLinkRow[]
+  >([])
+  const [organizationJoinRequests, setOrganizationJoinRequests] = useState<
+    OrganizationJoinRequestRow[]
+  >([])
   const [organizationUsersStatus, setOrganizationUsersStatus] =
     useState<DataStatus>("idle")
   const [organizationUsersError, setOrganizationUsersError] = useState<
@@ -178,6 +214,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const usersRequestRef = useRef<Promise<{
     members: OrganizationMemberRow[]
     invites: OrganizationInviteRow[]
+    joinLinks: OrganizationJoinLinkRow[]
+    joinRequests: OrganizationJoinRequestRow[]
   }> | null>(null)
   const liveSessionsRequestRef = useRef<Promise<ClassLiveSessionRow[]> | null>(
     null,
@@ -331,6 +369,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrganizationClasses([])
     setOrganizationMembers([])
     setOrganizationInvites([])
+    setOrganizationJoinLinks([])
+    setOrganizationJoinRequests([])
     setClassLiveSessions([])
     setOrganizationClassesStatus("idle")
     setFeatureDefinitionsStatus("idle")
@@ -491,13 +531,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!organizationId) {
         setOrganizationMembers([])
         setOrganizationInvites([])
+        setOrganizationJoinLinks([])
+        setOrganizationJoinRequests([])
         setOrganizationUsersStatus("idle")
         setOrganizationUsersError(null)
-        return { members: [], invites: [] }
+        return { members: [], invites: [], joinLinks: [], joinRequests: [] }
       }
 
       if (!force && organizationUsersStatus === "ready") {
-        return { members: organizationMembers, invites: organizationInvites }
+        return {
+          members: organizationMembers,
+          invites: organizationInvites,
+          joinLinks: organizationJoinLinks,
+          joinRequests: organizationJoinRequests,
+        }
       }
 
       if (!force && usersRequestRef.current) {
@@ -510,11 +557,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const request = apiGet<{
         members: OrganizationMemberRow[]
         invites: OrganizationInviteRow[]
+        joinLinks: OrganizationJoinLinkRow[]
+        joinRequests: OrganizationJoinRequestRow[]
       }>(`/api/organizations/${encodeURIComponent(organizationId)}/users`)
         .then((users) => {
           if (activeOrganizationIdRef.current === organizationId) {
             setOrganizationMembers(users.members)
             setOrganizationInvites(users.invites)
+            setOrganizationJoinLinks(users.joinLinks)
+            setOrganizationJoinRequests(users.joinRequests)
             setOrganizationUsersStatus("ready")
           }
 
@@ -524,6 +575,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (activeOrganizationIdRef.current === organizationId) {
             setOrganizationMembers([])
             setOrganizationInvites([])
+            setOrganizationJoinLinks([])
+            setOrganizationJoinRequests([])
             setOrganizationUsersStatus("error")
             setOrganizationUsersError(
               error instanceof Error ? error.message : "Could not load users",
@@ -544,6 +597,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       activeOrganization?.id,
       organizationInvites,
+      organizationJoinLinks,
+      organizationJoinRequests,
       organizationMembers,
       organizationUsersStatus,
     ],
@@ -617,6 +672,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setOrganizationClasses([])
     setOrganizationMembers([])
     setOrganizationInvites([])
+    setOrganizationJoinLinks([])
+    setOrganizationJoinRequests([])
     setClassLiveSessions([])
     setOrganizationClassesError(null)
     setOrganizationUsersError(null)
@@ -682,6 +739,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         organizationClassesError,
         organizationMembers,
         organizationInvites,
+        organizationJoinLinks,
+        organizationJoinRequests,
         organizationUsersStatus,
         organizationUsersError,
         classLiveSessions,

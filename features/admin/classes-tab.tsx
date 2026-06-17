@@ -60,6 +60,7 @@ type ClassFormState = {
   description: string
   room: string
   semester: string
+  organizationVisible: boolean
 }
 
 type FeatureValueMap = Record<string, boolean>
@@ -73,6 +74,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   description: "",
   room: "Online",
   semester: "Spring 2026",
+  organizationVisible: false,
 }
 
 export function ClassesTab() {
@@ -177,6 +179,7 @@ export function ClassesTab() {
       description: classItem.description,
       room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
+      organizationVisible: classItem.organization_visible,
     })
     setClassFeatureValues(
       getInitialClassFeatureValues(
@@ -247,6 +250,16 @@ export function ClassesTab() {
         null
 
       if (savedClassId) {
+        const visibilityError = await saveClassOrganizationVisibility(
+          savedClassId,
+          classForm.organizationVisible,
+        )
+
+        if (visibilityError) {
+          showClassError(visibilityError)
+          return
+        }
+
         const featureError = await saveClassFeatureSettings(
           savedClassId,
           activeOrganization.id,
@@ -398,6 +411,11 @@ export function ClassesTab() {
                     {classItem.semester ? (
                       <Badge variant="secondary" className="text-[10px] ml-2">
                         {classItem.semester}
+                      </Badge>
+                    ) : null}
+                    {classItem.organization_visible ? (
+                      <Badge variant="outline" className="text-[10px]">
+                        Organization visible
                       </Badge>
                     ) : null}
                   </div>
@@ -570,6 +588,27 @@ export function ClassesTab() {
                 }
               />
             </div>
+            <label className="flex items-start gap-3 rounded-lg border p-4">
+              <Switch
+                checked={classForm.organizationVisible}
+                onCheckedChange={(checked) =>
+                  setClassForm((value) => ({
+                    ...value,
+                    organizationVisible: checked,
+                  }))
+                }
+                aria-label="Toggle organization visibility"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">
+                  Visible to students in the organization
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Students can see this class even if they are not assigned to
+                  it. Each student can hide it from their own dashboard.
+                </span>
+              </span>
+            </label>
             {classFeatureRows.length > 0 ? (
               <div className="space-y-3 rounded-lg border p-4">
                 <div>
@@ -822,6 +861,21 @@ async function saveClassFeatureSettings(
   const { error } = await createClient()
     .from("class_feature_settings")
     .upsert(rows, { onConflict: "class_id,feature_key" })
+
+  return error?.message ?? null
+}
+
+async function saveClassOrganizationVisibility(
+  classId: string,
+  organizationVisible: boolean,
+) {
+  const { error } = await createClient().rpc(
+    "set_class_organization_visibility",
+    {
+      target_class_id: classId,
+      visible_to_organization: organizationVisible,
+    },
+  )
 
   return error?.message ?? null
 }

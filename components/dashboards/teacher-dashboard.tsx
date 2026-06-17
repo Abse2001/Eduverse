@@ -183,9 +183,16 @@ export function TeacherDashboard() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold text-sm text-foreground">
-                        {cls.name}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {cls.name}
+                        </p>
+                        {classRowById.get(cls.id)?.organization_visible ? (
+                          <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
+                            Organization visible
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {cls.code} &middot; {cls.room}

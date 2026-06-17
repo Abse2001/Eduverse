@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { getClassesForUser } from "@/lib/education/classes"
+import {
+  getClassesForUser,
+  getHiddenClassesForUser,
+} from "@/lib/education/classes"
 import type { User } from "@/lib/mock-data"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 
@@ -46,13 +49,35 @@ const classes: OrganizationClass[] = [
       role: "student",
     },
   ]),
+  createClass("class-6", [], null, {
+    organizationVisible: true,
+  }),
+  createClass("class-7", [], null, {
+    organizationVisible: true,
+    hiddenByCurrentUser: true,
+  }),
+  createClass(
+    "class-8",
+    [
+      {
+        id: "membership-5",
+        class_id: "class-8",
+        user_id: "student-1",
+        role: "student",
+      },
+    ],
+    null,
+    {
+      hiddenByCurrentUser: true,
+    },
+  ),
 ]
 
 describe("getClassesForUser", () => {
   test("returns student classes when the selected role is student", () => {
     expect(
       getClassesForUser(classes, baseUser).map((classItem) => classItem.id),
-    ).toEqual(["class-1"])
+    ).toEqual(["class-1", "class-6", "class-8"])
   })
 
   test("does not return teacher classes when the selected role is student", () => {
@@ -60,15 +85,23 @@ describe("getClassesForUser", () => {
       getClassesForUser(classes, { ...baseUser, id: "teacher-2" }).map(
         (classItem) => classItem.id,
       ),
-    ).toEqual(["class-5"])
+    ).toEqual(["class-5", "class-6"])
   })
 
-  test("returns all classes for admins", () => {
+  test("returns admin-visible classes and respects hidden preferences", () => {
     expect(
       getClassesForUser(classes, { ...baseUser, role: "admin" }).map(
         (classItem) => classItem.id,
       ),
-    ).toEqual(["class-1", "class-2", "class-3", "class-4", "class-5"])
+    ).toEqual([
+      "class-1",
+      "class-2",
+      "class-3",
+      "class-4",
+      "class-5",
+      "class-6",
+      "class-8",
+    ])
   })
 
   test("returns classes assigned through teacher_user_id", () => {
@@ -89,12 +122,24 @@ describe("getClassesForUser", () => {
       }).map((classItem) => classItem.id),
     ).toEqual(["class-4"])
   })
+
+  test("returns hidden accessible classes separately", () => {
+    expect(
+      getHiddenClassesForUser(classes, baseUser).map(
+        (classItem) => classItem.id,
+      ),
+    ).toEqual(["class-7"])
+  })
 })
 
 function createClass(
   id: string,
   memberships: OrganizationClass["memberships"],
   teacherUserId: string | null = null,
+  options: {
+    organizationVisible?: boolean
+    hiddenByCurrentUser?: boolean
+  } = {},
 ): OrganizationClass {
   return {
     id,
@@ -107,6 +152,8 @@ function createClass(
     room: null,
     semester: null,
     is_archived: false,
+    organization_visible: options.organizationVisible ?? false,
+    hidden_by_current_user: options.hiddenByCurrentUser ?? false,
     memberships,
     teacher: null,
     students: [],
