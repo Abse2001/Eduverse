@@ -192,6 +192,7 @@ async function loadTextMaterialContent(material: MaterialRow) {
 }
 
 async function extractPdfText(arrayBuffer: ArrayBuffer) {
+  installPdfJsNodeGlobals()
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
   const [{ join }, { pathToFileURL }] = await Promise.all([
     import("node:path"),
@@ -234,6 +235,33 @@ async function extractPdfText(arrayBuffer: ArrayBuffer) {
     return pageTexts.join("\n\n").trim().slice(0, 24000)
   } finally {
     await loadingTask.destroy()
+  }
+}
+
+function installPdfJsNodeGlobals() {
+  const globalScope = globalThis as Record<string, unknown>
+
+  globalScope.DOMMatrix ??= MinimalDOMMatrix
+}
+
+class MinimalDOMMatrix {
+  a = 1
+  b = 0
+  c = 0
+  d = 1
+  e = 0
+  f = 0
+
+  scaleSelf(scaleX = 1, scaleY = scaleX) {
+    this.a *= scaleX
+    this.d *= scaleY
+    return this
+  }
+
+  translateSelf(translateX = 0, translateY = 0) {
+    this.e += translateX
+    this.f += translateY
+    return this
   }
 }
 

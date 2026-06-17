@@ -776,7 +776,7 @@ function createSummaryPdf(input: {
   const bodyFontSize = 11
   const bodyLineHeight = 15
   const contentWidth = pageWidth - margin * 2
-  const lines = [
+  const lines: PdfBlock[] = [
     ...wrapPdfText(input.title, 48).map((text, index) => ({
       text,
       fontSize: index === 0 ? 18 : 16,
@@ -816,7 +816,7 @@ function createSummaryPdf(input: {
   let y = pageHeight - margin
 
   for (const line of lines) {
-    if ("table" in line && line.table) {
+    if (isPdfTableBlock(line)) {
       if (line.spaceBefore) y -= line.spaceBefore
 
       const columnCount = Math.max(line.headers.length, 1)
@@ -901,7 +901,7 @@ function createSummaryPdf(input: {
 
     y -= spaceBefore
 
-    if ("rule" in line && line.rule) {
+    if (isPdfRuleBlock(line)) {
       currentPage.push(
         `${margin} ${y - 4} m ${pageWidth - margin} ${y - 4} l S`,
       )
@@ -1009,12 +1009,22 @@ type PdfTableBlock = {
   spaceBefore?: number
 }
 
+type PdfBlock = PdfTextBlock | PdfRuleBlock | PdfTableBlock
+
+function isPdfTableBlock(block: PdfBlock): block is PdfTableBlock {
+  return "table" in block
+}
+
+function isPdfRuleBlock(block: PdfBlock): block is PdfRuleBlock {
+  return "rule" in block
+}
+
 function markdownToPdfBlocks(
   markdown: string,
   contentWidth: number,
   bodyFontSize: number,
 ) {
-  const blocks: Array<PdfTextBlock | PdfRuleBlock | PdfTableBlock> = []
+  const blocks: PdfBlock[] = []
   const bodyLineHeight = 15
   const sourceLines = markdown.replace(/\r\n/g, "\n").split("\n")
 

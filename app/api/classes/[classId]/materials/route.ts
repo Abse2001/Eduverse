@@ -20,7 +20,7 @@ type ClassMaterialRow = {
   original_filename: string
   mime_type: string
   size_bytes: number
-  ai_summary_generated_at: string | null
+  ai_summary_generated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -39,23 +39,25 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  let result = await supabase
+  const primaryResult = await supabase
     .from("class_materials")
     .select(MATERIAL_SELECT)
     .eq("class_id", classId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
+  let data = primaryResult.data as ClassMaterialRow[] | null
+  let error = primaryResult.error
 
-  if (isMissingSummaryColumnError(result.error)) {
-    result = await supabase
+  if (isMissingSummaryColumnError(error)) {
+    const legacyResult = await supabase
       .from("class_materials")
       .select(MATERIAL_SELECT_LEGACY)
       .eq("class_id", classId)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
+    data = legacyResult.data as ClassMaterialRow[] | null
+    error = legacyResult.error
   }
-
-  const { data, error } = result
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
