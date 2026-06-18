@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { deleteMaterialObject } from "@/lib/api/s3-materials"
 import { requireRouteUser } from "@/lib/api/supabase-route"
+import { createServerClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
@@ -10,6 +11,7 @@ type RouteContext = {
 
 type MaterialRecord = {
   id: string
+  organization_id: string
   class_id: string
   storage_bucket: string
   storage_key: string
@@ -26,7 +28,9 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { data: materialData, error: materialError } = await supabase
     .from("class_materials")
-    .select("id, class_id, storage_bucket, storage_key, deleted_at")
+    .select(
+      "id, organization_id, class_id, storage_bucket, storage_key, deleted_at",
+    )
     .eq("id", materialId)
     .eq("class_id", classId)
     .maybeSingle()
@@ -41,14 +45,44 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Material not found." }, { status: 404 })
   }
 
-  const { error: updateError } = await supabase
+  const { data: canManage, error: permissionError } = await supabase.rpc(
+    "can_manage_class",
+    {
+      target_org_id: material.organization_id,
+      target_class_id: classId,
+    },
+  )
+
+  if (permissionError) {
+    return NextResponse.json(
+      { error: permissionError.message },
+      { status: 500 },
+    )
+  }
+
+  if (!canManage) {
+    return NextResponse.json(
+      { error: "You do not have permission to delete this material." },
+      { status: 403 },
+    )
+  }
+
+  const admin = createServerClient()
+  const { count, error: updateError } = await admin
     .from("class_materials")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ deleted_at: new Date().toISOString() }, { count: "exact" })
     .eq("id", material.id)
     .eq("class_id", classId)
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  if (!count) {
+    return NextResponse.json(
+      { error: "You do not have permission to delete this material." },
+      { status: 403 },
+    )
   }
 
   await deleteMaterialObject({

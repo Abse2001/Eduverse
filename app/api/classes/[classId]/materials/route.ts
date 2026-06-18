@@ -20,9 +20,16 @@ type ClassMaterialRow = {
   original_filename: string
   mime_type: string
   size_bytes: number
+  ai_summary_generated_at?: string | null
   created_at: string
   updated_at: string
 }
+
+const MATERIAL_SELECT =
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary_generated_at, created_at, updated_at"
+
+const MATERIAL_SELECT_LEGACY =
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at"
 
 export async function GET(request: Request, context: RouteContext) {
   const { classId } = await context.params
@@ -32,14 +39,25 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: authError }, { status: 401 })
   }
 
-  const { data, error } = await supabase
+  const primaryResult = await supabase
     .from("class_materials")
-    .select(
-      "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
-    )
+    .select(MATERIAL_SELECT)
     .eq("class_id", classId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
+  let data = primaryResult.data as ClassMaterialRow[] | null
+  let error = primaryResult.error
+
+  if (isMissingSummaryColumnError(error)) {
+    const legacyResult = await supabase
+      .from("class_materials")
+      .select(MATERIAL_SELECT_LEGACY)
+      .eq("class_id", classId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+    data = legacyResult.data as ClassMaterialRow[] | null
+    error = legacyResult.error
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -66,7 +84,16 @@ function toMaterialResponse(row: ClassMaterialRow) {
     originalFilename: row.original_filename,
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
+    hasAiSummary: Boolean(row.ai_summary_generated_at),
+    aiSummaryGeneratedAt: row.ai_summary_generated_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function isMissingSummaryColumnError(error: { message?: string } | null) {
+  return (
+    Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("schema cache"))
+  )
 }

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
+import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import {
   deleteMaterialObject,
   uploadMaterialObject,
   validateMaterialUpload,
 } from "@/lib/api/s3-materials"
-import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -28,9 +28,16 @@ type MaterialRow = {
   original_filename: string
   mime_type: string
   size_bytes: number
+  ai_summary_generated_at: string | null
   created_at: string
   updated_at: string
 }
+
+const MATERIAL_SELECT =
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary_generated_at, created_at, updated_at"
+
+const MATERIAL_SELECT_LEGACY =
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at"
 
 export async function POST(request: Request, context: RouteContext) {
   const { classId } = await context.params
@@ -109,26 +116,35 @@ export async function POST(request: Request, context: RouteContext) {
       body: new Uint8Array(await file.arrayBuffer()),
     })
 
-    const { data: materialData, error: materialError } = await supabase
+    const materialInsert = {
+      organization_id: classRow.organization_id,
+      class_id: classRow.id,
+      uploaded_by_user_id: user.id,
+      title: title.trim(),
+      description: typeof description === "string" ? description.trim() : "",
+      type: validated.type,
+      storage_bucket: uploadedObject.bucket,
+      storage_key: uploadedObject.storageKey,
+      original_filename: validated.fileName,
+      mime_type: validated.mimeType,
+      size_bytes: validated.sizeBytes,
+      source: "manual",
+    }
+    let materialResult = await supabase
       .from("class_materials")
-      .insert({
-        organization_id: classRow.organization_id,
-        class_id: classRow.id,
-        uploaded_by_user_id: user.id,
-        title: title.trim(),
-        description: typeof description === "string" ? description.trim() : "",
-        type: validated.type,
-        storage_bucket: uploadedObject.bucket,
-        storage_key: uploadedObject.storageKey,
-        original_filename: validated.fileName,
-        mime_type: validated.mimeType,
-        size_bytes: validated.sizeBytes,
-        source: "manual",
-      })
-      .select(
-        "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at",
-      )
+      .insert(materialInsert)
+      .select(MATERIAL_SELECT)
       .single()
+
+    if (isMissingSummaryColumnError(materialResult.error)) {
+      materialResult = await supabase
+        .from("class_materials")
+        .insert(materialInsert)
+        .select(MATERIAL_SELECT_LEGACY)
+        .single()
+    }
+
+    const { data: materialData, error: materialError } = materialResult
 
     if (materialError) {
       await deleteMaterialObject(uploadedObject).catch(() => null)
@@ -185,7 +201,16 @@ function toMaterialResponse(row: MaterialRow) {
     originalFilename: row.original_filename,
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
+    hasAiSummary: Boolean(row.ai_summary_generated_at),
+    aiSummaryGeneratedAt: row.ai_summary_generated_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function isMissingSummaryColumnError(error: { message?: string } | null) {
+  return (
+    Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("schema cache"))
+  )
 }
