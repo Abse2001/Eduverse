@@ -1,6 +1,18 @@
+export type AiTextContentPart = {
+  type: "text"
+  text: string
+}
+
+export type AiImageContentPart = {
+  type: "image_url"
+  image_url: {
+    url: string
+  }
+}
+
 export type AiChatMessage = {
   role: "system" | "user" | "assistant"
-  content: string
+  content: string | (AiTextContentPart | AiImageContentPart)[]
 }
 
 type OpenRouterChoice = {
@@ -23,10 +35,12 @@ export const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 export async function generateAiText({
   messages,
+  model,
   temperature = 0.4,
   maxTokens = 900,
 }: {
   messages: AiChatMessage[]
+  model?: string
   temperature?: number
   maxTokens?: number
 }) {
@@ -46,7 +60,7 @@ export async function generateAiText({
       "X-Title": "Eduverse",
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL,
+      model: model ?? process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL,
       messages,
       temperature,
       max_tokens: maxTokens,
