@@ -217,10 +217,10 @@ async function loadStudyMaterialContent(
   }
 
   if (material.mime_type === "application/pdf") {
-    const buffer = await response.arrayBuffer()
+    const pdfBytes = new Uint8Array(await response.arrayBuffer())
     const extractedText =
       material.size_bytes <= MAX_PDF_TEXT_BYTES
-        ? await extractPdfText(buffer)
+        ? await extractPdfText(pdfBytes)
         : ""
 
     if (extractedText) {
@@ -232,7 +232,7 @@ async function loadStudyMaterialContent(
       }
     }
 
-    const visualPageDataUrls = await renderPdfPagesToImageDataUrls(buffer)
+    const visualPageDataUrls = await renderPdfPagesToImageDataUrls(pdfBytes)
 
     return {
       extractedText: "",
@@ -275,7 +275,7 @@ async function loadStudyMaterialContent(
   }
 }
 
-async function extractPdfText(arrayBuffer: ArrayBuffer) {
+async function extractPdfText(pdfBytes: Uint8Array) {
   installPdfJsNodeGlobals()
   const [pdfjs, pdfWorker] = await Promise.all([
     import("pdfjs-dist/legacy/build/pdf.mjs"),
@@ -283,7 +283,7 @@ async function extractPdfText(arrayBuffer: ArrayBuffer) {
   ])
   installPdfJsWorker(pdfWorker)
   const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(arrayBuffer),
+    data: new Uint8Array(pdfBytes),
   })
 
   try {
@@ -312,7 +312,7 @@ async function extractPdfText(arrayBuffer: ArrayBuffer) {
   }
 }
 
-async function renderPdfPagesToImageDataUrls(arrayBuffer: ArrayBuffer) {
+async function renderPdfPagesToImageDataUrls(pdfBytes: Uint8Array) {
   const canvasModule = await import("@napi-rs/canvas")
   installPdfJsCanvasGlobals(canvasModule)
   const [pdfjs, pdfWorker] = await Promise.all([
@@ -321,7 +321,7 @@ async function renderPdfPagesToImageDataUrls(arrayBuffer: ArrayBuffer) {
   ])
   installPdfJsWorker(pdfWorker)
   const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(arrayBuffer),
+    data: new Uint8Array(pdfBytes),
   })
 
   try {
