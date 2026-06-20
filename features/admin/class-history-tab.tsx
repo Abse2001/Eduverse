@@ -237,7 +237,7 @@ export function ClassHistoryTab() {
                           key={classItem.id}
                           className="px-5 py-4 transition-colors hover:bg-muted/50"
                         >
-                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,520px)] md:items-center">
                             <div className="flex min-w-0 items-center gap-3">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                                 <BookOpen className="h-4 w-4" />
@@ -254,7 +254,7 @@ export function ClassHistoryTab() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 md:min-w-[520px]">
+                            <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5">
                               <Metric label="Score">
                                 {formatScore(getAverageScore(scores))}
                               </Metric>
@@ -266,7 +266,9 @@ export function ClassHistoryTab() {
                                 {assignments.length}
                               </Metric>
                               <Metric label="Room">
-                                {classItem.room ?? "No room"}
+                                <span title={classItem.room ?? "No room"}>
+                                  {classItem.room ?? "No room"}
+                                </span>
                               </Metric>
                             </div>
                           </div>

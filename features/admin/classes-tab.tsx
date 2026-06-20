@@ -15,6 +15,7 @@ import {
   useState,
   useTransition,
 } from "react"
+import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -84,6 +85,7 @@ export function ClassesTab() {
     organizationClasses: classes,
     organizationClassesStatus,
     organizationClassesError,
+    organizationMembers,
     refreshOrganizationClasses,
   } = useApp()
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
@@ -96,7 +98,7 @@ export function ClassesTab() {
     null,
   )
   const [inviteClass, setInviteClass] = useState<OrganizationClass | null>(null)
-  const [inviteEmail, setInviteEmail] = useState("")
+  const [selectedMemberId, setSelectedMemberId] = useState("")
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [isClassDialogOpen, setIsClassDialogOpen] = useState(false)
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
@@ -200,7 +202,7 @@ export function ClassesTab() {
 
   function openInviteDialog(classItem: OrganizationClass) {
     setInviteClass(classItem)
-    setInviteEmail("")
+    setSelectedMemberId("")
     setInviteRole("student")
     setSuccessMessage(null)
     setIsInviteDialogOpen(true)
@@ -319,6 +321,11 @@ export function ClassesTab() {
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!inviteClass) return
+    const selectedMember = organizationMembers.find(
+      (member) => member.id === selectedMemberId,
+    )
+    const selectedEmail = selectedMember?.profile?.email
+    if (!selectedEmail) return
 
     setSuccessMessage(null)
 
@@ -326,7 +333,7 @@ export function ClassesTab() {
       const supabase = createClient()
       const { data, error } = await supabase.rpc("invite_class_member", {
         target_class_id: inviteClass.id,
-        invited_email: inviteEmail,
+        invited_email: selectedEmail,
         invited_class_role: inviteRole,
       })
 
@@ -337,9 +344,9 @@ export function ClassesTab() {
 
       setIsInviteDialogOpen(false)
       setInviteClass(null)
-      setInviteEmail("")
+      setSelectedMemberId("")
       await loadClasses()
-      setSuccessMessage(`${inviteEmail} added to ${inviteClass.name}.`)
+      setSuccessMessage(`${selectedEmail} added to ${inviteClass.name}.`)
     })
   }
 
@@ -689,22 +696,33 @@ export function ClassesTab() {
           <DialogHeader>
             <DialogTitle>Assign class member</DialogTitle>
             <DialogDescription>
-              Assign a teacher or student who already belongs to this
-              organization. New users must be invited from Users first.
+              Add an existing organization member to this class. Register new
+              users separately so their invite and previous terms are captured.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitInvite}>
             <div className="space-y-2">
-              <Label htmlFor="class-invite-email">
-                Organization member email
-              </Label>
-              <Input
-                id="class-invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                required
-              />
+              <Label>Existing organization member</Label>
+              <Select
+                value={selectedMemberId}
+                onValueChange={setSelectedMemberId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizationMembers.map((member) => {
+                    const name = member.profile?.display_name ?? "User"
+                    const email = member.profile?.email ?? "No email"
+
+                    return (
+                      <SelectItem key={member.id} value={member.id}>
+                        {name} ({email})
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Class role</Label>
@@ -723,6 +741,20 @@ export function ClassesTab() {
                 </SelectContent>
               </Select>
             </div>
+            {inviteClass ? (
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">
+                  New user for this class?
+                </p>
+                <Button asChild variant="link" className="h-auto p-0">
+                  <Link
+                    href={`/register?classId=${encodeURIComponent(inviteClass.id)}&role=${encodeURIComponent(inviteRole)}&returnTab=classes`}
+                  >
+                    Register a new member
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
             <DialogFooter>
               <Button
                 type="button"
@@ -731,7 +763,7 @@ export function ClassesTab() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || !selectedMemberId}>
                 {isPending ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />

@@ -1,11 +1,12 @@
 "use client"
 
-import { FormEvent, useEffect, useState, useTransition } from "react"
+import Link from "next/link"
+import { type FormEvent, useEffect, useState, useTransition } from "react"
 import {
   Ban,
   LoaderCircle,
   MailPlus,
-  MoreHorizontal,
+  Pencil,
   PlusCircle,
   RotateCcw,
   Search,
@@ -87,6 +88,17 @@ function getActiveMemberRoles(member: OrganizationMemberRow): OrgRole[] {
   return activeRoles.length > 0 ? activeRoles : [member.role]
 }
 
+function getEditUserHref(email: string) {
+  const params = new URLSearchParams({
+    mode: "edit",
+    email,
+    role: "student",
+    returnTab: "users",
+  })
+
+  return `/register?${params.toString()}`
+}
+
 export function UsersTab() {
   const {
     activeOrganization,
@@ -98,12 +110,13 @@ export function UsersTab() {
   } = useApp()
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<RoleFilter>("all")
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState<OrgRole>("teacher")
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
+  const [roleMember, setRoleMember] = useState<OrganizationMemberRow | null>(
+    null,
+  )
+  const [roleToAdd, setRoleToAdd] = useState<OrgRole>("student")
   const [isInviting, startInvite] = useTransition()
   const { toast } = useToast()
   const isLoading = organizationUsersStatus === "loading"
@@ -136,8 +149,8 @@ export function UsersTab() {
 
   function showInviteError(error: unknown) {
     showError(
-      "Invite action failed",
-      error instanceof Error ? error.message : "Could not send invite",
+      "User action failed",
+      error instanceof Error ? error.message : "Could not update user",
     )
   }
 
@@ -168,39 +181,70 @@ export function UsersTab() {
     return payload
   }
 
+  async function grantExistingMemberRole(
+    member: OrganizationMemberRow,
+    role: OrgRole,
+  ) {
+    if (!activeOrganization) throw new Error("No organization selected")
+
+    const { data, error } = await createClient().rpc(
+      "grant_existing_organization_member_role",
+      {
+        target_org_id: activeOrganization.id,
+        target_member_user_id: member.user_id,
+        target_role: role,
+      },
+    )
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data as { result?: "membership"; role?: OrgRole }
+  }
+
   useEffect(() => {
     void refreshOrganizationUsers().catch(() => {})
   }, [activeOrganization?.id, refreshOrganizationUsers])
 
-  function submitInvite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!activeOrganization) return
+  function openAddRoleDialog(member: OrganizationMemberRow) {
+    const roles = getActiveMemberRoles(member)
+    const nextRole = ROLE_ORDER.find((role) => !roles.includes(role))
 
+    if (!nextRole) {
+      showInfo(
+        "All roles active",
+        `${member.profile?.email ?? "This user"} already has every role.`,
+      )
+      return
+    }
+
+    setRoleMember(member)
+    setRoleToAdd(nextRole)
     setSuccessMessage(null)
     setLastInviteLink(null)
+  }
+
+  function submitAddRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!roleMember) return
+    const email = roleMember?.profile?.email
+    if (!email) return
 
     startInvite(async () => {
-      const submittedEmail = inviteEmail
-
-      let data: Awaited<ReturnType<typeof sendOrganizationInvite>>
       try {
-        data = await sendOrganizationInvite(submittedEmail, inviteRole)
+        await grantExistingMemberRole(roleMember, roleToAdd)
       } catch (error) {
         showInviteError(error)
         return
       }
 
-      setInviteEmail("")
-      setInviteRole("teacher")
-      setIsDialogOpen(false)
       await loadUsers()
-
-      if (data.result === "membership") {
-        showInfo("Role already active", `${submittedEmail} already has access.`)
-        return
-      }
-
-      showInviteResult(data)
+      setRoleMember(null)
+      showInfo(
+        "Role added",
+        `${email} now has the ${roleLabel(roleToAdd)} role.`,
+      )
     })
   }
 
@@ -360,13 +404,15 @@ export function UsersTab() {
                 </button>
               ))}
               <Button
+                asChild
                 size="sm"
                 variant="outline"
                 className="gap-1 text-xs h-7 ml-2"
-                onClick={() => setIsDialogOpen(true)}
               >
-                <PlusCircle className="w-3.5 h-3.5" />
-                Grant Role
+                <Link href="/register?returnTab=users">
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  Register
+                </Link>
               </Button>
             </div>
           </div>
@@ -446,12 +492,26 @@ export function UsersTab() {
                     <div className="hidden md:block text-xs text-muted-foreground shrink-0 capitalize">
                       {member.status}
                     </div>
+                    {roles.includes("student") ? (
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                      >
+                        <Link href={getEditUserHref(email)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Link>
+                      </Button>
+                    ) : null}
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => openAddRoleDialog(member)}
                     >
-                      <MoreHorizontal className="w-4 h-4" />
+                      Add role
                     </Button>
                   </div>
                 )
@@ -542,40 +602,43 @@ export function UsersTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={Boolean(roleMember)}
+        onOpenChange={(open) => {
+          if (!open) setRoleMember(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Grant organization role</DialogTitle>
+            <DialogTitle>Add organization role</DialogTitle>
             <DialogDescription>
-              Send a confirmation invite for an admin, teacher, or student role.
-              Users must accept before they can be assigned to classes.
+              Add an active role to this organization member.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={submitInvite}>
+          <form className="space-y-4" onSubmit={submitAddRole}>
             <div className="space-y-2">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                placeholder="teacher@example.com"
-                required
-              />
+              <Label>User</Label>
+              <Input readOnly value={roleMember?.profile?.email ?? ""} />
             </div>
             <div className="space-y-2">
-              <Label>Role to grant</Label>
+              <Label>Role to add</Label>
               <Select
-                value={inviteRole}
-                onValueChange={(value) => setInviteRole(value as OrgRole)}
+                value={roleToAdd}
+                onValueChange={(value) => setRoleToAdd(value as OrgRole)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="org_admin">Admin</SelectItem>
-                  <SelectItem value="teacher">Teacher</SelectItem>
-                  <SelectItem value="student">Student</SelectItem>
+                  {ROLE_ORDER.filter(
+                    (role) =>
+                      !roleMember ||
+                      !getActiveMemberRoles(roleMember).includes(role),
+                  ).map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {roleLabel(role)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -583,7 +646,7 @@ export function UsersTab() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsDialogOpen(false)}
+                onClick={() => setRoleMember(null)}
               >
                 Cancel
               </Button>
@@ -591,10 +654,10 @@ export function UsersTab() {
                 {isInviting ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Granting...
+                    Adding...
                   </>
                 ) : (
-                  "Grant role"
+                  "Add role"
                 )}
               </Button>
             </DialogFooter>

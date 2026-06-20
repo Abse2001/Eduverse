@@ -77,12 +77,6 @@ function initials(profile: ClassProfile | null) {
   )
 }
 
-function inviteLinkFromToken(token: string) {
-  if (typeof window === "undefined") return null
-
-  return `${window.location.origin}/invite/${token}`
-}
-
 type ClassHomeNavFeature = ResolvedClassFeature & {
   routeSegment: string
 }
@@ -246,7 +240,9 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     organizationClasses,
     organizationClassesStatus,
     organizationClassesError,
+    organizationMembers,
     refreshOrganizationClasses,
+    refreshOrganizationUsers,
   } = useApp()
   const cachedClass = organizationClasses.find(
     (classItem) => classItem.id === classId,
@@ -262,11 +258,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   )
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState("")
+  const [selectedMemberId, setSelectedMemberId] = useState("")
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const currentClassMemberships = classItem?.memberships.filter(
@@ -368,6 +363,12 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     })
   }, [resourceErrorMessage])
 
+  useEffect(() => {
+    if (!canManageClass) return
+
+    void refreshOrganizationUsers().catch(() => {})
+  }, [canManageClass, refreshOrganizationUsers])
+
   async function refreshClass(force = true) {
     setIsLoading(true)
     setErrorMessage(null)
@@ -451,16 +452,20 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!classItem) return
+    const selectedMember = organizationMembers.find(
+      (member) => member.id === selectedMemberId,
+    )
+    const selectedEmail = selectedMember?.profile?.email
+    if (!selectedEmail) return
 
     setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
 
     startTransition(async () => {
       const supabase = createClient()
       const { data, error } = await supabase.rpc("invite_class_member", {
         target_class_id: classItem.id,
-        invited_email: inviteEmail,
+        invited_email: selectedEmail,
         invited_class_role: inviteRole,
       })
 
@@ -473,29 +478,14 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       await refreshClass()
 
       if (data?.result === "membership") {
-        setSuccessMessage(`${inviteEmail} added to this class.`)
-        setInviteEmail("")
+        setSuccessMessage(`${selectedEmail} added to this class.`)
+        setSelectedMemberId("")
         setInviteRole("student")
         return
       }
 
-      const { data: inviteData } = await supabase
-        .from("organization_invites")
-        .select("token")
-        .eq("id", data?.invite_id)
-        .single()
-
-      const link = inviteData?.token
-        ? inviteLinkFromToken(inviteData.token)
-        : null
-
-      setLastInviteLink(link)
-      setSuccessMessage(
-        link
-          ? "Class invite created. Send this link to the user."
-          : "Class invite created.",
-      )
-      setInviteEmail("")
+      setSuccessMessage(`${selectedEmail} added to this class.`)
+      setSelectedMemberId("")
       setInviteRole("student")
     })
   }
@@ -508,7 +498,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
     setErrorMessage(null)
     setSuccessMessage(null)
-    setLastInviteLink(null)
 
     startTransition(async () => {
       const { error } = await createClient().rpc("remove_class_student", {
@@ -557,25 +546,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         {successMessage ? (
           <Alert>
             <AlertTitle>Updated</AlertTitle>
-            <AlertDescription>
-              <div className="space-y-2">
-                <p>{successMessage}</p>
-                {lastInviteLink ? (
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input readOnly value={lastInviteLink} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        void navigator.clipboard.writeText(lastInviteLink)
-                      }
-                    >
-                      Copy link
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </AlertDescription>
+            <AlertDescription>{successMessage}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -830,20 +801,33 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
           <DialogHeader>
             <DialogTitle>Add class member</DialogTitle>
             <DialogDescription>
-              Add an existing user immediately, or create an invite link if they
-              have not signed up yet.
+              Add an existing organization member to this class, or register a
+              new member with previous terms.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitInvite}>
             <div className="space-y-2">
-              <Label htmlFor="member-email">Email</Label>
-              <Input
-                id="member-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                required
-              />
+              <Label>Existing organization member</Label>
+              <Select
+                value={selectedMemberId}
+                onValueChange={setSelectedMemberId}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizationMembers.map((member) => {
+                    const name = member.profile?.display_name ?? "User"
+                    const email = member.profile?.email ?? "No email"
+
+                    return (
+                      <SelectItem key={member.id} value={member.id}>
+                        {name} ({email})
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Class role</Label>
@@ -864,6 +848,16 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                 </SelectContent>
               </Select>
             </div>
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="text-muted-foreground">New user for this class?</p>
+              <Button asChild variant="link" className="h-auto p-0">
+                <Link
+                  href={`/register?classId=${encodeURIComponent(classItem.id)}&role=${encodeURIComponent(inviteRole)}&returnTab=classes`}
+                >
+                  Register a new member
+                </Link>
+              </Button>
+            </div>
             <DialogFooter>
               <Button
                 type="button"
@@ -872,7 +866,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || !selectedMemberId}>
                 {isPending ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />

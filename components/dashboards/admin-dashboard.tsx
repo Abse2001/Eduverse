@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   Activity,
   Archive,
@@ -21,7 +22,24 @@ import { PublicLinkTab } from "@/features/admin/public-link-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+const ADMIN_DASHBOARD_TABS = [
+  "classes",
+  "history",
+  "users",
+  "features",
+  "activity",
+  "public-link",
+] as const
+
+type AdminDashboardTab = (typeof ADMIN_DASHBOARD_TABS)[number]
+
+const DEFAULT_ADMIN_DASHBOARD_TAB: AdminDashboardTab = "classes"
+const ADMIN_DASHBOARD_TAB_STORAGE_KEY = "eduverse.adminDashboard.tab"
+
 export function AdminDashboard() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const {
     currentUser,
     organizationClasses,
@@ -29,10 +47,31 @@ export function AdminDashboard() {
     organizationJoinRequests,
     refreshOrganizationUsers,
   } = useApp()
+  const requestedTab = normalizeAdminDashboardTab(searchParams.get("tab"))
+  const [activeTab, setActiveTab] = useState<AdminDashboardTab>(
+    () => requestedTab ?? getStoredAdminDashboardTab(),
+  )
+  const activeTabQuery = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", activeTab)
+    return params.toString()
+  }, [activeTab, searchParams])
 
   useEffect(() => {
     void refreshOrganizationUsers().catch(() => {})
   }, [refreshOrganizationUsers])
+
+  useEffect(() => {
+    if (requestedTab) setActiveTab(requestedTab)
+  }, [requestedTab])
+
+  useEffect(() => {
+    window.localStorage.setItem(ADMIN_DASHBOARD_TAB_STORAGE_KEY, activeTab)
+
+    if (searchParams.get("tab") === activeTab) return
+
+    router.replace(`${pathname}?${activeTabQuery}`, { scroll: false })
+  }, [activeTab, activeTabQuery, pathname, router, searchParams])
 
   if (currentUser.role !== "admin") {
     return (
@@ -96,7 +135,14 @@ export function AdminDashboard() {
         pendingAccessIcon={MailPlus}
       />
 
-      <Tabs defaultValue="classes">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) =>
+          setActiveTab(
+            normalizeAdminDashboardTab(value) ?? DEFAULT_ADMIN_DASHBOARD_TAB,
+          )
+        }
+      >
         <TabsList className="h-9">
           <TabsTrigger value="classes" className="text-xs gap-1.5">
             <BookOpen className="w-3.5 h-3.5" />
@@ -149,5 +195,23 @@ export function AdminDashboard() {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function normalizeAdminDashboardTab(
+  value: string | null,
+): AdminDashboardTab | null {
+  return ADMIN_DASHBOARD_TABS.includes(value as AdminDashboardTab)
+    ? (value as AdminDashboardTab)
+    : null
+}
+
+function getStoredAdminDashboardTab() {
+  if (typeof window === "undefined") return DEFAULT_ADMIN_DASHBOARD_TAB
+
+  return (
+    normalizeAdminDashboardTab(
+      window.localStorage.getItem(ADMIN_DASHBOARD_TAB_STORAGE_KEY),
+    ) ?? DEFAULT_ADMIN_DASHBOARD_TAB
   )
 }
