@@ -68,11 +68,32 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
 
   const admin = createServerClient()
-  const { count, error: updateError } = await admin
+  const deletedAt = new Date().toISOString()
+  const deletePayload = {
+    deleted_at: deletedAt,
+    ai_summary: null,
+    ai_summary_used_file_text: false,
+    ai_summary_generated_at: null,
+    ai_extracted_content: null,
+    ai_extracted_content_used_file_content: false,
+    ai_extracted_content_generated_at: null,
+  }
+  let { count, error: updateError } = await admin
     .from("class_materials")
-    .update({ deleted_at: new Date().toISOString() }, { count: "exact" })
+    .update(deletePayload, { count: "exact" })
     .eq("id", material.id)
     .eq("class_id", classId)
+
+  if (isMissingAiCacheColumnError(updateError)) {
+    const fallbackResult = await admin
+      .from("class_materials")
+      .update({ deleted_at: deletedAt }, { count: "exact" })
+      .eq("id", material.id)
+      .eq("class_id", classId)
+
+    count = fallbackResult.count
+    updateError = fallbackResult.error
+  }
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
@@ -91,4 +112,12 @@ export async function DELETE(request: Request, context: RouteContext) {
   }).catch(() => null)
 
   return NextResponse.json({ ok: true })
+}
+
+function isMissingAiCacheColumnError(error: { message?: string } | null) {
+  return (
+    Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("ai_extracted_content")) ||
+    Boolean(error?.message?.includes("schema cache"))
+  )
 }
