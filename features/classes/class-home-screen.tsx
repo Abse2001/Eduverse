@@ -2,6 +2,7 @@
 
 import { format } from "date-fns"
 import {
+  CircleAlert,
   Calendar,
   DoorOpen,
   LoaderCircle,
@@ -230,6 +231,17 @@ function getUpcomingClassDeadline({
   )
 }
 
+function getActiveOrganizationRoles(member: {
+  role: "org_admin" | "teacher" | "student"
+  roles: Array<{ role: "org_admin" | "teacher" | "student"; status: string }>
+}) {
+  const activeRoles = member.roles
+    .filter((roleRecord) => roleRecord.status === "active")
+    .map((roleRecord) => roleRecord.role)
+
+  return activeRoles.length > 0 ? activeRoles : [member.role]
+}
+
 export function ClassHomeScreen({ classId }: { classId: string }) {
   const {
     activeOrganization,
@@ -280,6 +292,8 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         classItem?.teacher_user_id === currentUser.id ||
         hasClassManagerMembership),
   )
+  const canManageRoster =
+    activeOrganizationRole === "org_admin" || currentUser.role === "admin"
   const assignmentsApi = useClassAssignments({
     classId,
     currentUserId: currentUser.id,
@@ -319,6 +333,13 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     )
   }, [activeOrganization, classItem, featureDefinitions])
   const classHomeNavFeatures = flattenClassHomeNavFeatures(classNavFeatures)
+  const eligibleOrganizationMembers = useMemo(
+    () =>
+      organizationMembers.filter((member) =>
+        getActiveOrganizationRoles(member).includes(inviteRole),
+      ),
+    [inviteRole, organizationMembers],
+  )
   const sessionsFeature = classHomeNavFeatures.find(
     (feature) => feature.key === "sessions",
   )
@@ -364,10 +385,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   }, [resourceErrorMessage])
 
   useEffect(() => {
-    if (!canManageClass) return
+    if (!canManageRoster) return
 
     void refreshOrganizationUsers().catch(() => {})
-  }, [canManageClass, refreshOrganizationUsers])
+  }, [canManageRoster, refreshOrganizationUsers])
 
   async function refreshClass(force = true) {
     setIsLoading(true)
@@ -451,7 +472,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
   function submitInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!classItem) return
+    if (!classItem || !canManageRoster) return
     const selectedMember = organizationMembers.find(
       (member) => member.id === selectedMemberId,
     )
@@ -491,7 +512,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   }
 
   function removeStudent(student: ClassProfile) {
-    if (!classItem) return
+    if (!classItem || !canManageRoster) return
 
     const confirmed = window.confirm(`Remove ${student.display_name}?`)
     if (!confirmed) return
@@ -512,6 +533,30 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
       await refreshClass()
       setSuccessMessage("Student removed from class.")
+    })
+  }
+
+  function removeTeacher(teacher: ClassProfile) {
+    if (!classItem || !canManageRoster) return
+
+    const confirmed = window.confirm(`Remove ${teacher.display_name}?`)
+    if (!confirmed) return
+
+    setErrorMessage(null)
+    setSuccessMessage(null)
+
+    startTransition(async () => {
+      const { error } = await createClient().rpc("remove_class_teacher", {
+        target_class_id: classItem.id,
+      })
+
+      if (error) {
+        setErrorMessage(error.message)
+        return
+      }
+
+      await refreshClass()
+      setSuccessMessage("Teacher removed from class.")
     })
   }
 
@@ -572,7 +617,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               />
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              {canManageClass ? (
+              {canManageRoster ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -609,6 +654,15 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               <Users className="w-3.5 h-3.5 opacity-70" />
               {classItem.students.length} students
             </Badge>
+            {canManageRoster && !classItem.teacher ? (
+              <Badge
+                variant="outline"
+                className="gap-1.5 border-red-200 bg-red-50 text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+              >
+                <CircleAlert className="h-3.5 w-3.5" />
+                No teacher assigned
+              </Badge>
+            ) : null}
             {classItem.semester ? (
               <Badge
                 variant="outline"
@@ -732,10 +786,22 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                       {initials(classItem.teacher)}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {classItem.teacher.display_name}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                        {classItem.teacher.display_name}
+                      </p>
+                      {canManageRoster ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeTeacher(classItem.teacher!)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : null}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {classItem.teacher.email}
                     </p>
@@ -750,7 +816,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   <CardTitle className="text-sm font-semibold">
                     Students ({classItem.students.length})
                   </CardTitle>
-                  {canManageClass ? (
+                  {canManageRoster ? (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -773,7 +839,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                     <span className="text-sm text-foreground truncate flex-1">
                       {student.display_name}
                     </span>
-                    {canManageClass ? (
+                    {canManageRoster ? (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -796,90 +862,95 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add class member</DialogTitle>
-            <DialogDescription>
-              Add an existing organization member to this class, or register a
-              new member with previous terms.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={submitInvite}>
-            <div className="space-y-2">
-              <Label>Existing organization member</Label>
-              <Select
-                value={selectedMemberId}
-                onValueChange={setSelectedMemberId}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {organizationMembers.map((member) => {
-                    const name = member.profile?.display_name ?? "User"
-                    const email = member.profile?.email ?? "No email"
-
-                    return (
-                      <SelectItem key={member.id} value={member.id}>
-                        {name} ({email})
-                      </SelectItem>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Class role</Label>
-              <Select
-                value={inviteRole}
-                onValueChange={(value) =>
-                  setInviteRole(value as "student" | "teacher")
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="student">Student</SelectItem>
-                  {currentUser.role === "admin" ? (
-                    <SelectItem value="teacher">Teacher</SelectItem>
-                  ) : null}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="text-muted-foreground">New user for this class?</p>
-              <Button asChild variant="link" className="h-auto p-0">
-                <Link
-                  href={`/register?classId=${encodeURIComponent(classItem.id)}&role=${encodeURIComponent(inviteRole)}&returnTab=classes`}
+      {canManageRoster ? (
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add class member</DialogTitle>
+              <DialogDescription>
+                Add an existing organization member to this class, or register a
+                new member with previous terms.
+              </DialogDescription>
+            </DialogHeader>
+            <form className="space-y-4" onSubmit={submitInvite}>
+              <div className="space-y-2">
+                <Label>Class role</Label>
+                <Select
+                  value={inviteRole}
+                  onValueChange={(value) => {
+                    setInviteRole(value as "student" | "teacher")
+                    setSelectedMemberId("")
+                  }}
                 >
-                  Register a new member
-                </Link>
-              </Button>
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isPending || !selectedMemberId}>
-                {isPending ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  "Add member"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="student">Student</SelectItem>
+                    {currentUser.role === "admin" ? (
+                      <SelectItem value="teacher">Teacher</SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Existing organization member</Label>
+                <Select
+                  value={selectedMemberId}
+                  onValueChange={setSelectedMemberId}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={`Select a ${inviteRole}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleOrganizationMembers.map((member) => {
+                      const name = member.profile?.display_name ?? "User"
+                      const email = member.profile?.email ?? "No email"
+
+                      return (
+                        <SelectItem key={member.id} value={member.id}>
+                          {name} ({email})
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="rounded-lg border p-3 text-sm">
+                <p className="text-muted-foreground">
+                  New user for this class?
+                </p>
+                <Button asChild variant="link" className="h-auto p-0">
+                  <Link
+                    href={`/register?classId=${encodeURIComponent(classItem.id)}&role=${encodeURIComponent(inviteRole)}&returnTab=classes`}
+                  >
+                    Register a new member
+                  </Link>
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isPending || !selectedMemberId}>
+                  {isPending ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add member"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   )
 }

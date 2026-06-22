@@ -67,6 +67,8 @@ type ClassFormState = {
 type FeatureValueMap = Record<string, boolean>
 type ExtensionValueMap = Record<string, boolean>
 
+const NO_TEACHER_VALUE = "none"
+
 const EMPTY_CLASS_FORM: ClassFormState = {
   name: "",
   code: "",
@@ -76,6 +78,17 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   room: "Online",
   semester: "Current term",
   organizationVisible: false,
+}
+
+function getActiveOrganizationRoles(member: {
+  role: "org_admin" | "teacher" | "student"
+  roles: Array<{ role: "org_admin" | "teacher" | "student"; status: string }>
+}) {
+  const activeRoles = member.roles
+    .filter((roleRecord) => roleRecord.status === "active")
+    .map((roleRecord) => roleRecord.role)
+
+  return activeRoles.length > 0 ? activeRoles : [member.role]
 }
 
 export function ClassesTab() {
@@ -126,6 +139,13 @@ export function ClassesTab() {
         classExtensionValues,
       ),
     [activeOrganization?.extensions, classExtensionValues],
+  )
+  const teacherMembers = useMemo(
+    () =>
+      organizationMembers.filter((member) =>
+        getActiveOrganizationRoles(member).includes("teacher"),
+      ),
+    [organizationMembers],
   )
 
   useEffect(() => {
@@ -475,8 +495,8 @@ export function ClassesTab() {
               {editingClass ? "Edit class" : "Create class"}
             </DialogTitle>
             <DialogDescription>
-              Assign an existing signed-up teacher by email. Students can be
-              added after the class is created.
+              Assign an existing teacher or leave the class unassigned. Students
+              can be added after the class is created.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitClass}>
@@ -512,19 +532,37 @@ export function ClassesTab() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="teacher-email">Teacher email</Label>
-                <Input
-                  id="teacher-email"
-                  type="email"
-                  value={classForm.teacherEmail}
-                  onChange={(event) =>
+                <Label>Teacher</Label>
+                <Select
+                  value={classForm.teacherEmail || NO_TEACHER_VALUE}
+                  onValueChange={(teacherEmail) =>
                     setClassForm((value) => ({
                       ...value,
-                      teacherEmail: event.target.value,
+                      teacherEmail:
+                        teacherEmail === NO_TEACHER_VALUE ? "" : teacherEmail,
                     }))
                   }
-                  required
-                />
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_TEACHER_VALUE}>
+                      No teacher assigned
+                    </SelectItem>
+                    {teacherMembers.map((member) => {
+                      const name = member.profile?.display_name ?? "Teacher"
+                      const email = member.profile?.email ?? ""
+                      if (!email) return null
+
+                      return (
+                        <SelectItem key={member.id} value={email}>
+                          {name} ({email})
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -796,7 +834,6 @@ function ClassFeatureSettingRow({
   onToggle: (featureKey: string, enabled: boolean) => void
 }) {
   const isLocked = !feature.orgEnabled
-  const isBlockedByClassParent = !feature.parentClassEnabled
 
   return (
     <div>
@@ -809,11 +846,6 @@ function ClassFeatureSettingRow({
             {isLocked ? (
               <Badge variant="outline" className="text-[10px]">
                 Disabled by organization
-              </Badge>
-            ) : null}
-            {isBlockedByClassParent ? (
-              <Badge variant="outline" className="text-[10px]">
-                Blocked by class parent
               </Badge>
             ) : null}
           </div>

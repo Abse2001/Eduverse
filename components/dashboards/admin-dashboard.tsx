@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
-  Activity,
   Archive,
   BookOpen,
   Globe2,
@@ -13,7 +12,6 @@ import {
   Users,
 } from "lucide-react"
 import { useApp } from "@/lib/store"
-import { ActivityTab } from "@/features/admin/activity-tab"
 import { AdminOverviewStats } from "@/features/admin/admin-overview-stats"
 import { ClassHistoryTab } from "@/features/admin/class-history-tab"
 import { ClassesTab } from "@/features/admin/classes-tab"
@@ -27,7 +25,6 @@ const ADMIN_DASHBOARD_TABS = [
   "history",
   "users",
   "features",
-  "activity",
   "public-link",
 ] as const
 
@@ -160,10 +157,6 @@ export function AdminDashboard() {
             <Puzzle className="w-3.5 h-3.5" />
             Features
           </TabsTrigger>
-          <TabsTrigger value="activity" className="text-xs gap-1.5">
-            <Activity className="w-3.5 h-3.5" />
-            Activity
-          </TabsTrigger>
           <TabsTrigger value="public-link" className="text-xs gap-1.5">
             <Globe2 className="w-3.5 h-3.5" />
             Public Link
@@ -184,10 +177,6 @@ export function AdminDashboard() {
 
         <TabsContent value="features" className="mt-4">
           <FeaturesTab />
-        </TabsContent>
-
-        <TabsContent value="activity" className="mt-4">
-          <ActivityTab />
         </TabsContent>
 
         <TabsContent value="public-link" className="mt-4">
