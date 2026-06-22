@@ -753,7 +753,6 @@ function isDashboardTab(value: string | null) {
     value === "history" ||
     value === "users" ||
     value === "features" ||
-    value === "activity" ||
     value === "public-link"
   )
 }

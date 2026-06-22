@@ -340,6 +340,7 @@ type FeatureRow = FeatureDefinition & {
   checked: boolean
   effectiveEnabled: boolean
   parentEnabled: boolean
+  parentLabel: string | null
   children: FeatureRow[]
 }
 
@@ -368,12 +369,9 @@ function FeatureSettingRow({
             <p className="text-sm font-medium text-foreground">
               {feature.label}
             </p>
-            <Badge variant="secondary" className="text-[10px]">
-              {feature.kind}
-            </Badge>
-            {isLockedByParent ? (
+            {isLockedByParent && feature.parentLabel ? (
               <Badge variant="outline" className="text-[10px]">
-                Blocked by parent
+                Enable {feature.parentLabel.toLowerCase()}
               </Badge>
             ) : null}
           </div>
@@ -429,6 +427,7 @@ function buildFeatureRows(
         definition.default_enabled,
       effectiveEnabled: false,
       parentEnabled: true,
+      parentLabel: null,
       children: [],
     })
   }
@@ -443,19 +442,24 @@ function buildFeatureRows(
     rowsByKey.get(row.parent_key)?.children.push(row)
   }
 
-  function applyEffectiveState(row: FeatureRow, parentEnabled: boolean) {
+  function applyEffectiveState(
+    row: FeatureRow,
+    parentEnabled: boolean,
+    parentLabel: string | null,
+  ) {
     row.parentEnabled = parentEnabled
+    row.parentLabel = parentLabel
     row.effectiveEnabled = parentEnabled && row.checked
 
     for (const child of row.children) {
-      applyEffectiveState(child, row.effectiveEnabled)
+      applyEffectiveState(child, row.effectiveEnabled, row.label)
     }
   }
 
   const topLevelRows = rows.filter((row) => !row.parent_key)
 
   for (const row of topLevelRows) {
-    applyEffectiveState(row, true)
+    applyEffectiveState(row, true, null)
   }
 
   return topLevelRows
