@@ -26,22 +26,23 @@ import {
   type ClassAssignment,
   getAssignmentDerivedStatus,
   loadClassAssignments,
+  readCachedClassAssignments,
 } from "@/features/assignments/use-class-assignments"
-import {
-  groupArchivedClassesByTerm,
-  useArchivedClasses,
-} from "@/features/classes/use-archived-classes"
 import {
   formatScore,
   getAverageScore,
   getStudentGradedScores,
 } from "@/features/classes/grade-metrics"
 import {
+  groupArchivedClassesByTerm,
+  useArchivedClasses,
+} from "@/features/classes/use-archived-classes"
+import { useToast } from "@/hooks/use-toast"
+import {
   getClassesForUser,
   getHiddenClassesForUser,
 } from "@/lib/education/classes"
 import type { ClassExamApiDto } from "@/lib/exams/types"
-import { useToast } from "@/hooks/use-toast"
 import { useApp } from "@/lib/store"
 import { toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
@@ -56,6 +57,17 @@ type DashboardDeadline = {
   type: "assignment" | "exam"
   href: string
 }
+
+type StudentExamDashboardCacheEntry = {
+  page: ClassExamApiDto["student"] | null
+  loaded: boolean
+  request: Promise<ClassExamApiDto["student"] | null> | null
+}
+
+const studentExamDashboardCache = new Map<
+  string,
+  StudentExamDashboardCacheEntry
+>()
 
 export function StudentDashboard() {
   const {
@@ -202,6 +214,32 @@ export function StudentDashboard() {
       return
     }
 
+    setAssignmentsByClass(
+      Object.fromEntries(
+        classIds.flatMap((classId) => {
+          const assignments = readCachedClassAssignments({
+            classId,
+            currentUserId,
+            canManage: false,
+          })
+          return assignments ? [[classId, assignments] as const] : []
+        }),
+      ),
+    )
+    setExamsByClass(
+      Object.fromEntries(
+        classIds.flatMap((classId) => {
+          const examCacheEntry = readCachedClassExamDashboardData({
+            classId,
+            currentUserId,
+          })
+          return examCacheEntry?.loaded
+            ? [[classId, examCacheEntry.page] as const]
+            : []
+        }),
+      ),
+    )
+
     Promise.all(
       classIds.map(async (classId) => {
         const [assignments, examPage] = await Promise.all([
@@ -209,8 +247,13 @@ export function StudentDashboard() {
             classId,
             currentUserId,
             canManage: false,
+            force: true,
           }),
-          loadClassExamDashboardData(classId),
+          loadClassExamDashboardData({
+            classId,
+            currentUserId,
+            force: true,
+          }),
         ])
 
         return [classId, assignments, examPage] as const
@@ -259,12 +302,26 @@ export function StudentDashboard() {
       return
     }
 
+    setArchivedAssignmentsByClass(
+      Object.fromEntries(
+        archivedClassIds.flatMap((classId) => {
+          const assignments = readCachedClassAssignments({
+            classId,
+            currentUserId,
+            canManage: false,
+          })
+          return assignments ? [[classId, assignments] as const] : []
+        }),
+      ),
+    )
+
     Promise.all(
       archivedClassIds.map(async (classId) => {
         const assignments = await loadClassAssignments({
           classId,
           currentUserId,
           canManage: false,
+          force: true,
         })
 
         return [classId, assignments] as const
@@ -733,7 +790,64 @@ function getStudentAssignmentProgress(assignments: ClassAssignment[]) {
   return Math.round((completed / assignments.length) * 100)
 }
 
-async function loadClassExamDashboardData(classId: string) {
+async function loadClassExamDashboardData({
+  classId,
+  currentUserId,
+  force = false,
+}: {
+  classId: string
+  currentUserId: string | null
+  force?: boolean
+}) {
+  const cacheKey = getStudentExamDashboardCacheKey(classId, currentUserId)
+  const cached = studentExamDashboardCache.get(cacheKey)
+
+  if (!force && cached?.loaded) {
+    return cached.page
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = fetchClassExamDashboardData(classId)
+    .then((page) => {
+      studentExamDashboardCache.set(cacheKey, {
+        page,
+        loaded: true,
+        request: studentExamDashboardCache.get(cacheKey)?.request ?? null,
+      })
+      return page
+    })
+    .finally(() => {
+      const latestCached = studentExamDashboardCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  studentExamDashboardCache.set(cacheKey, {
+    page: cached?.page ?? null,
+    loaded: cached?.loaded ?? false,
+    request,
+  })
+
+  return request
+}
+
+function readCachedClassExamDashboardData({
+  classId,
+  currentUserId,
+}: {
+  classId: string
+  currentUserId: string | null
+}) {
+  return studentExamDashboardCache.get(
+    getStudentExamDashboardCacheKey(classId, currentUserId),
+  )
+}
+
+async function fetchClassExamDashboardData(classId: string) {
   const response = await fetch(
     `/api/classes/${encodeURIComponent(classId)}/exams`,
     { cache: "no-store" },
@@ -755,6 +869,13 @@ async function loadClassExamDashboardData(classId: string) {
   }
 
   return (payload as ClassExamApiDto).student
+}
+
+function getStudentExamDashboardCacheKey(
+  classId: string,
+  currentUserId: string | null,
+) {
+  return `${classId}:${currentUserId ?? "anonymous"}`
 }
 
 function getStudentExamDeadlines(

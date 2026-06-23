@@ -34,6 +34,17 @@ type DownloadUrlResponse = {
   mimeType: string
 }
 
+type MaterialsCacheEntry = {
+  materials: ClassMaterial[] | null
+  request: Promise<ClassMaterial[]> | null
+}
+
+const materialsCache = new Map<string, MaterialsCacheEntry>()
+const materialsListeners = new Map<
+  string,
+  Set<(materials: ClassMaterial[]) => void>
+>()
+
 export function useClassMaterials({
   classId,
   uploaderUserId,
@@ -82,11 +93,14 @@ export function useClassMaterials({
   )
 
   const refreshMaterials = useCallback(async () => {
-    setIsLoading(true)
+    const cachedMaterials = readMaterialsCache(classId)
+    setIsLoading(!cachedMaterials)
     setErrorMessage(null)
 
     try {
-      const nextMaterials = await loadMaterialsWithThumbnails(classId)
+      const nextMaterials = await loadMaterialsWithThumbnails(classId, {
+        force: true,
+      })
 
       setMaterials(nextMaterials)
       return nextMaterials
@@ -103,10 +117,25 @@ export function useClassMaterials({
 
   useEffect(() => {
     let cancelled = false
-    setIsLoading(true)
+    const cachedMaterials = readMaterialsCache(classId)
+
+    if (cachedMaterials) {
+      setMaterials(cachedMaterials)
+      setIsLoading(false)
+    } else {
+      setMaterials([])
+      setIsLoading(true)
+    }
     setErrorMessage(null)
 
-    loadMaterialsWithThumbnails(classId)
+    const unsubscribe = subscribeMaterials(classId, (nextMaterials) => {
+      if (cancelled) return
+      setMaterials(nextMaterials)
+      setIsLoading(false)
+      setErrorMessage(null)
+    })
+
+    loadMaterialsWithThumbnails(classId, { force: true })
       .then((nextMaterials) => {
         if (cancelled) return
         setMaterials(nextMaterials)
@@ -125,6 +154,7 @@ export function useClassMaterials({
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [classId])
 
@@ -165,13 +195,15 @@ export function useClassMaterials({
         throw new Error(uploadPayload?.error ?? "Could not upload material.")
       }
 
-      setMaterials((prev) => {
-        const next = [uploadPayload.material as ClassMaterial, ...prev]
-        return next.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        )
-      })
+      const optimisticMaterials = [
+        uploadPayload.material as ClassMaterial,
+        ...materials,
+      ].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      setMaterials(optimisticMaterials)
+      writeMaterialsCache(classId, optimisticMaterials)
 
       await refreshMaterials()
     } catch (error) {
@@ -188,11 +220,13 @@ export function useClassMaterials({
     let removedMaterial: ClassMaterial | null = null
 
     setErrorMessage(null)
-    setMaterials((prev) => {
-      removedMaterial =
-        prev.find((material) => material.id === materialId) ?? null
-      return prev.filter((material) => material.id !== materialId)
-    })
+    removedMaterial =
+      materials.find((material) => material.id === materialId) ?? null
+    const nextMaterials = materials.filter(
+      (material) => material.id !== materialId,
+    )
+    setMaterials(nextMaterials)
+    writeMaterialsCache(classId, nextMaterials)
 
     const response = await fetch(
       `/api/classes/${encodeURIComponent(
@@ -208,13 +242,15 @@ export function useClassMaterials({
       const message = payload?.error ?? "Could not delete material."
 
       if (removedMaterial) {
-        setMaterials((prev) => {
-          const next = [removedMaterial as ClassMaterial, ...prev]
-          return next.sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          )
-        })
+        const restoredMaterials = [
+          removedMaterial as ClassMaterial,
+          ...nextMaterials,
+        ].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        setMaterials(restoredMaterials)
+        writeMaterialsCache(classId, restoredMaterials)
       }
 
       throw new Error(message)
@@ -233,7 +269,73 @@ export function useClassMaterials({
   }
 }
 
-async function loadMaterialsWithThumbnails(classId: string) {
+async function loadMaterialsWithThumbnails(
+  classId: string,
+  { force = false }: { force?: boolean } = {},
+) {
+  const cached = materialsCache.get(classId)
+
+  if (!force && cached?.materials) {
+    return cached.materials
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = fetchMaterialsWithThumbnails(classId)
+    .then((materials) => {
+      writeMaterialsCache(classId, materials)
+      return materials
+    })
+    .finally(() => {
+      const latestCached = materialsCache.get(classId)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  materialsCache.set(classId, {
+    materials: cached?.materials ?? null,
+    request,
+  })
+
+  return request
+}
+
+function readMaterialsCache(classId: string) {
+  return materialsCache.get(classId)?.materials ?? null
+}
+
+function subscribeMaterials(
+  classId: string,
+  listener: (materials: ClassMaterial[]) => void,
+) {
+  const listeners = materialsListeners.get(classId) ?? new Set()
+  listeners.add(listener)
+  materialsListeners.set(classId, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      materialsListeners.delete(classId)
+    }
+  }
+}
+
+function writeMaterialsCache(classId: string, materials: ClassMaterial[]) {
+  const current = materialsCache.get(classId)
+  materialsCache.set(classId, {
+    materials,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of materialsListeners.get(classId) ?? []) {
+    listener(materials)
+  }
+}
+
+async function fetchMaterialsWithThumbnails(classId: string) {
   const response = await fetch(
     `/api/classes/${encodeURIComponent(classId)}/materials`,
   )

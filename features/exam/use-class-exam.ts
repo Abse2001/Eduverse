@@ -4,13 +4,22 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type {
   ClassExamApiDto,
   GradeAttemptInput,
-  IntegrityEventInput,
   IntegrityActionInput,
+  IntegrityEventInput,
   ManagerExamDetailDto,
   StartAttemptInput,
   StudentActiveExamDto,
   UpsertExamInput,
 } from "@/lib/exams/types"
+import { useApp } from "@/lib/store"
+
+type ExamCacheEntry = {
+  data: ClassExamApiDto | null
+  request: Promise<ClassExamApiDto> | null
+}
+
+const examCache = new Map<string, ExamCacheEntry>()
+const examListeners = new Map<string, Set<(data: ClassExamApiDto) => void>>()
 
 export function useClassExam(
   classId: string,
@@ -19,6 +28,7 @@ export function useClassExam(
     selectedExamId?: string | null
   },
 ) {
+  const { activeOrganizationRole, authUser } = useApp()
   const enabled = options?.enabled ?? true
   const selectedExamId = options?.selectedExamId ?? null
   const [data, setData] = useState<ClassExamApiDto | null>(null)
@@ -27,6 +37,12 @@ export function useClassExam(
   const [isMutating, setIsMutating] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const dataRef = useRef<ClassExamApiDto | null>(null)
+  const cacheKey = getExamCacheKey({
+    classId,
+    selectedExamId,
+    userId: authUser?.id ?? null,
+    role: activeOrganizationRole,
+  })
 
   useEffect(() => {
     dataRef.current = data
@@ -43,9 +59,15 @@ export function useClassExam(
       }
 
       const shouldRefreshInBackground =
-        options?.background === true || dataRef.current !== null
+        options?.background === true ||
+        dataRef.current !== null ||
+        readExamCache(cacheKey) !== null
 
       if (shouldRefreshInBackground) {
+        const cachedData = readExamCache(cacheKey)
+        if (!dataRef.current && cachedData) {
+          setData(cachedData)
+        }
         setIsRefreshing(true)
       } else {
         setIsLoading(true)
@@ -53,24 +75,14 @@ export function useClassExam(
       setErrorMessage(null)
 
       try {
-        const searchParams = new URLSearchParams()
-        if (selectedExamId) searchParams.set("examId", selectedExamId)
-        const query = searchParams.size > 0 ? `?${searchParams}` : ""
-        const response = await requestExamApi({
-          url: `/api/classes/${encodeURIComponent(classId)}/exams${query}`,
-          fallbackMessage: "Could not load exams.",
-          retryCount: 1,
+        const payload = await loadClassExamData({
+          classId,
+          selectedExamId,
+          cacheKey,
+          force: true,
         })
-        const payload = (await response.json().catch(() => null)) as
-          | (ClassExamApiDto & { error?: string })
-          | { error?: string }
-          | null
 
-        if (!response.ok || !payload || "error" in payload) {
-          throw new Error(payload?.error ?? "Could not load exams.")
-        }
-
-        setData(payload as ClassExamApiDto)
+        setData(payload)
         return payload
       } catch (error) {
         const message =
@@ -85,7 +97,7 @@ export function useClassExam(
         setIsRefreshing(false)
       }
     },
-    [classId, enabled, selectedExamId],
+    [cacheKey, classId, enabled, selectedExamId],
   )
 
   useEffect(() => {
@@ -96,7 +108,22 @@ export function useClassExam(
       return
     }
 
+    const cachedData = readExamCache(cacheKey)
+    if (cachedData) {
+      setData(cachedData)
+      setIsLoading(false)
+      setErrorMessage(null)
+    }
+
+    const unsubscribe = subscribeExamCache(cacheKey, (nextData) => {
+      setData(nextData)
+      setIsLoading(false)
+      setErrorMessage(null)
+    })
+
     refresh().catch(() => {})
+
+    return unsubscribe
   }, [enabled, refresh])
 
   async function createExam(body: UpsertExamInput) {
@@ -414,6 +441,114 @@ export function useClassExam(
 }
 
 export type UseClassExamResult = ReturnType<typeof useClassExam>
+
+async function loadClassExamData({
+  classId,
+  selectedExamId,
+  cacheKey,
+  force = false,
+}: {
+  classId: string
+  selectedExamId: string | null
+  cacheKey: string
+  force?: boolean
+}) {
+  const cached = examCache.get(cacheKey)
+
+  if (!force && cached?.data) {
+    return cached.data
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = fetchClassExamData(classId, selectedExamId)
+    .then((data) => {
+      writeExamCache(cacheKey, data)
+      return data
+    })
+    .finally(() => {
+      const latestCached = examCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  examCache.set(cacheKey, { data: cached?.data ?? null, request })
+
+  return request
+}
+
+async function fetchClassExamData(
+  classId: string,
+  selectedExamId: string | null,
+) {
+  const searchParams = new URLSearchParams()
+  if (selectedExamId) searchParams.set("examId", selectedExamId)
+  const query = searchParams.size > 0 ? `?${searchParams}` : ""
+  const response = await requestExamApi({
+    url: `/api/classes/${encodeURIComponent(classId)}/exams${query}`,
+    fallbackMessage: "Could not load exams.",
+    retryCount: 1,
+  })
+  const payload = (await response.json().catch(() => null)) as
+    | (ClassExamApiDto & { error?: string })
+    | { error?: string }
+    | null
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(payload?.error ?? "Could not load exams.")
+  }
+
+  return payload as ClassExamApiDto
+}
+
+function readExamCache(cacheKey: string) {
+  return examCache.get(cacheKey)?.data ?? null
+}
+
+function subscribeExamCache(
+  cacheKey: string,
+  listener: (data: ClassExamApiDto) => void,
+) {
+  const listeners = examListeners.get(cacheKey) ?? new Set()
+  listeners.add(listener)
+  examListeners.set(cacheKey, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      examListeners.delete(cacheKey)
+    }
+  }
+}
+
+function writeExamCache(cacheKey: string, data: ClassExamApiDto) {
+  const current = examCache.get(cacheKey)
+  examCache.set(cacheKey, {
+    data,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of examListeners.get(cacheKey) ?? []) {
+    listener(data)
+  }
+}
+
+function getExamCacheKey({
+  classId,
+  selectedExamId,
+  userId,
+  role,
+}: {
+  classId: string
+  selectedExamId: string | null
+  userId: string | null
+  role: string | null
+}) {
+  return `${classId}:${selectedExamId ?? "index"}:${userId ?? "anonymous"}:${role ?? "none"}`
+}
 
 async function parseActionResponse(
   response: Response,

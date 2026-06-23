@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import {
   type ClassAssignment,
   loadClassAssignments,
+  readCachedClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import {
   formatScore,
@@ -86,12 +87,26 @@ export function TeacherDashboard() {
       return
     }
 
+    setAssignmentsByClass(
+      Object.fromEntries(
+        classIds.flatMap((classId) => {
+          const assignments = readCachedClassAssignments({
+            classId,
+            currentUserId,
+            canManage: true,
+          })
+          return assignments ? [[classId, assignments] as const] : []
+        }),
+      ),
+    )
+
     Promise.all(
       classIds.map(async (classId) => {
         const assignments = await loadClassAssignments({
           classId,
           currentUserId,
           canManage: true,
+          force: true,
         })
 
         return [classId, assignments] as const
@@ -129,12 +144,26 @@ export function TeacherDashboard() {
       return
     }
 
+    setArchivedAssignmentsByClass(
+      Object.fromEntries(
+        archivedClassIds.flatMap((classId) => {
+          const assignments = readCachedClassAssignments({
+            classId,
+            currentUserId,
+            canManage: true,
+          })
+          return assignments ? [[classId, assignments] as const] : []
+        }),
+      ),
+    )
+
     Promise.all(
       archivedClassIds.map(async (classId) => {
         const assignments = await loadClassAssignments({
           classId,
           currentUserId,
           canManage: true,
+          force: true,
         })
 
         return [classId, assignments] as const
