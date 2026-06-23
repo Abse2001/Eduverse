@@ -1,6 +1,7 @@
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
   RefObject,
 } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -11,25 +12,37 @@ import type {
   WhiteboardPoint,
   WhiteboardShape,
   WhiteboardStrokeTool,
+  WhiteboardViewport,
 } from "./live-session-types"
 import type { Tool } from "./session-data"
 
-const BOARD_WIDTH = 1400
-const BOARD_HEIGHT = 900
 const PRESENTATION_BOARD_HEIGHT = 900
 const DEFAULT_PRESENTATION_ASPECT_RATIO = 16 / 9
 const REGULAR_WHITEBOARD_BOARD_ID = "whiteboard"
 const SELECTION_OUTLINE_PADDING = 8
+const SELECTION_HANDLE_SIZE = 6
+const MIN_RESIZE_SIZE = 12
+const ROTATE_HANDLE_DISTANCE = 28
+const ROTATE_HANDLE_RADIUS = 7
+const DEFAULT_VIEWPORT: WhiteboardViewport = { x: 0, y: 0, scale: 1 }
+const MIN_VIEWPORT_SCALE = 0.35
+const MAX_VIEWPORT_SCALE = 3
+const whiteboardViewportCache = new Map<string, WhiteboardViewport>()
 
 type DrawableTool = WhiteboardStrokeTool
 type ShapeTool = WhiteboardShape
 type StrokeOperation = Extract<WhiteboardOperation, { type: "stroke" }>
 type ShapeOperation = Extract<WhiteboardOperation, { type: "shape" }>
-type DrawableOperation = StrokeOperation | ShapeOperation
+type TextOperation = Extract<WhiteboardOperation, { type: "text" }>
+type DrawableOperation = StrokeOperation | ShapeOperation | TextOperation
 type DeleteOperation = Extract<WhiteboardOperation, { type: "delete" }>
 type DeleteManyOperation = Extract<WhiteboardOperation, { type: "delete:many" }>
 type MoveOperation = Extract<WhiteboardOperation, { type: "move" }>
 type MoveManyOperation = Extract<WhiteboardOperation, { type: "move:many" }>
+type ResizeOperation = Extract<WhiteboardOperation, { type: "resize" }>
+type RotateOperation = Extract<WhiteboardOperation, { type: "rotate" }>
+type StyleOperation = Extract<WhiteboardOperation, { type: "style" }>
+type SelectionResizeHandle = "nw" | "ne" | "sw" | "se"
 type OperationBounds = {
   left: number
   right: number
@@ -60,6 +73,7 @@ interface WhiteboardState {
   handlePointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void
   handlePointerUp: (event?: ReactPointerEvent<HTMLCanvasElement>) => void
   handlePointerCancel: (event?: ReactPointerEvent<HTMLCanvasElement>) => void
+  handleWheel: (event: ReactWheelEvent<HTMLCanvasElement>) => void
   handleKeyDown: (event: ReactKeyboardEvent<HTMLCanvasElement>) => void
   handleDeleteSelection: () => void
   handleUndo: () => void
@@ -94,6 +108,7 @@ interface BoardState {
   operations: WhiteboardOperation[]
   redoOperations: WhiteboardOperation[]
   boardVersion: number
+  viewport: WhiteboardViewport
 }
 
 function createMessageId() {
@@ -118,6 +133,10 @@ function createShapeId() {
   return `shape-${createMessageId()}`
 }
 
+function createTextId() {
+  return `text-${createMessageId()}`
+}
+
 function createClearId() {
   return `clear-${createMessageId()}`
 }
@@ -138,11 +157,24 @@ function createMoveManyId() {
   return `move-many-${createMessageId()}`
 }
 
+function createResizeId() {
+  return `resize-${createMessageId()}`
+}
+
+function createRotateId() {
+  return `rotate-${createMessageId()}`
+}
+
+function createStyleId() {
+  return `style-${createMessageId()}`
+}
+
 function createEmptyBoardState(): BoardState {
   return {
     operations: [],
     redoOperations: [],
     boardVersion: 0,
+    viewport: { ...DEFAULT_VIEWPORT },
   }
 }
 
@@ -170,24 +202,36 @@ function isShapeTool(tool: Tool): tool is ShapeTool {
   return tool === "line" || tool === "rect" || tool === "circle"
 }
 
+function isTextTool(tool: Tool) {
+  return tool === "text"
+}
+
 function drawBoardBackground(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
   overlayActive: boolean,
   overlayAspectRatio = DEFAULT_PRESENTATION_ASPECT_RATIO,
   isDarkMode = false,
+  viewport: WhiteboardViewport = DEFAULT_VIEWPORT,
 ) {
   const safeOverlayAspectRatio =
     Number.isFinite(overlayAspectRatio) && overlayAspectRatio > 0
       ? overlayAspectRatio
       : DEFAULT_PRESENTATION_ASPECT_RATIO
+  const rect = canvas.getBoundingClientRect()
+  const regularBoardWidth = Math.max(1, Math.round(rect.width || canvas.width))
+  const regularBoardHeight = Math.max(
+    1,
+    Math.round(rect.height || canvas.height),
+  )
 
   canvas.width = overlayActive
     ? Math.round(PRESENTATION_BOARD_HEIGHT * safeOverlayAspectRatio)
-    : BOARD_WIDTH
-  canvas.height = overlayActive ? PRESENTATION_BOARD_HEIGHT : BOARD_HEIGHT
+    : regularBoardWidth
+  canvas.height = overlayActive ? PRESENTATION_BOARD_HEIGHT : regularBoardHeight
 
   ctx.globalCompositeOperation = "source-over"
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   if (overlayActive) {
@@ -196,36 +240,87 @@ function drawBoardBackground(
 
   ctx.fillStyle = isDarkMode ? "#000000" : "#fafafa"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.setTransform(
+    viewport.scale,
+    0,
+    0,
+    viewport.scale,
+    -viewport.x * viewport.scale,
+    -viewport.y * viewport.scale,
+  )
   ctx.strokeStyle = isDarkMode ? "#1f2937" : "#e5e7eb"
-  ctx.lineWidth = 0.5
+  ctx.lineWidth = 1 / viewport.scale
 
-  for (let x = 0; x <= canvas.width; x += 40) {
+  const gridSize = 40
+  const left = viewport.x
+  const right = viewport.x + canvas.width / viewport.scale
+  const top = viewport.y
+  const bottom = viewport.y + canvas.height / viewport.scale
+  const startX = Math.floor(left / gridSize) * gridSize
+  const startY = Math.floor(top / gridSize) * gridSize
+
+  for (let x = startX; x <= right; x += gridSize) {
     ctx.beginPath()
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, canvas.height)
+    ctx.moveTo(x, top)
+    ctx.lineTo(x, bottom)
     ctx.stroke()
   }
 
-  for (let y = 0; y <= canvas.height; y += 40) {
+  for (let y = startY; y <= bottom; y += gridSize) {
     ctx.beginPath()
-    ctx.moveTo(0, y)
-    ctx.lineTo(canvas.width, y)
+    ctx.moveTo(left, y)
+    ctx.lineTo(right, y)
     ctx.stroke()
   }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
 }
 
-function normalizePoint(point: WhiteboardPoint, canvas: HTMLCanvasElement) {
+function normalizePoint(
+  point: WhiteboardPoint,
+  _canvas: HTMLCanvasElement,
+  viewport: WhiteboardViewport = DEFAULT_VIEWPORT,
+) {
   return {
-    x: point.x / canvas.width,
-    y: point.y / canvas.height,
+    x: viewport.x + point.x / viewport.scale,
+    y: viewport.y + point.y / viewport.scale,
   }
 }
 
-function denormalizePoint(point: WhiteboardPoint, canvas: HTMLCanvasElement) {
-  return {
-    x: point.x * canvas.width,
-    y: point.y * canvas.height,
-  }
+function denormalizePoint(point: WhiteboardPoint, _canvas: HTMLCanvasElement) {
+  return point
+}
+
+function applyViewportTransform(
+  ctx: CanvasRenderingContext2D,
+  viewport: WhiteboardViewport,
+) {
+  ctx.setTransform(
+    viewport.scale,
+    0,
+    0,
+    viewport.scale,
+    -viewport.x * viewport.scale,
+    -viewport.y * viewport.scale,
+  )
+}
+
+function resetViewportTransform(ctx: CanvasRenderingContext2D) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+}
+
+function clampViewportScale(scale: number) {
+  return Math.min(MAX_VIEWPORT_SCALE, Math.max(MIN_VIEWPORT_SCALE, scale))
+}
+
+function isFiniteViewport(viewport: WhiteboardViewport) {
+  return (
+    Number.isFinite(viewport.x) &&
+    Number.isFinite(viewport.y) &&
+    Number.isFinite(viewport.scale) &&
+    viewport.scale >= MIN_VIEWPORT_SCALE &&
+    viewport.scale <= MAX_VIEWPORT_SCALE
+  )
 }
 
 function configureStroke(
@@ -286,6 +381,45 @@ function drawShape(
   ctx.stroke()
 }
 
+function drawShapeOperation(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  operation: ShapeOperation,
+) {
+  const startPoint = denormalizePoint(operation.startPoint, canvas)
+  const endPoint = denormalizePoint(operation.endPoint, canvas)
+  const rotation = operation.rotation ?? 0
+
+  if (rotation === 0 || operation.tool === "line") {
+    drawShape(
+      ctx,
+      operation.tool,
+      operation.color,
+      operation.brushSize,
+      startPoint,
+      endPoint,
+    )
+    return
+  }
+
+  const bounds = getBoundsFromPoints(startPoint, endPoint)
+  const center = getBoundsCenter(bounds)
+
+  ctx.save()
+  ctx.translate(center.x, center.y)
+  ctx.rotate(rotation)
+  ctx.translate(-center.x, -center.y)
+  drawShape(
+    ctx,
+    operation.tool,
+    operation.color,
+    operation.brushSize,
+    startPoint,
+    endPoint,
+  )
+  ctx.restore()
+}
+
 function drawStrokePoint(
   ctx: CanvasRenderingContext2D,
   color: string,
@@ -325,6 +459,88 @@ function drawStrokeOperation(
   }
 
   ctx.stroke()
+}
+
+function getTextLineHeight(fontSize: number) {
+  return fontSize * 1.25
+}
+
+function measureTextDimensions(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+) {
+  const lines = text.split("\n")
+  const lineHeight = getTextLineHeight(fontSize)
+
+  ctx.save()
+  ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+  const width = Math.max(
+    1,
+    ...lines.map((line) => ctx.measureText(line || " ").width),
+  )
+  ctx.restore()
+
+  return {
+    width,
+    height: Math.max(1, lines.length) * lineHeight,
+  }
+}
+
+function getTextDimensions(
+  ctx: CanvasRenderingContext2D,
+  operation: TextOperation,
+) {
+  const measured = measureTextDimensions(
+    ctx,
+    operation.text,
+    operation.fontSize,
+  )
+
+  return {
+    width:
+      typeof operation.width === "number" && Number.isFinite(operation.width)
+        ? operation.width
+        : measured.width,
+    height:
+      typeof operation.height === "number" && Number.isFinite(operation.height)
+        ? operation.height
+        : measured.height,
+    naturalWidth: measured.width,
+    naturalHeight: measured.height,
+  }
+}
+
+function drawTextOperation(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  operation: TextOperation,
+) {
+  const point = denormalizePoint(operation.point, canvas)
+  const lines = operation.text.split("\n")
+  const dimensions = getTextDimensions(ctx, operation)
+  const scaleX = dimensions.width / dimensions.naturalWidth
+  const scaleY = dimensions.height / dimensions.naturalHeight
+  const center = {
+    x: point.x + dimensions.width / 2,
+    y: point.y + dimensions.height / 2,
+  }
+
+  ctx.save()
+  ctx.globalCompositeOperation = "source-over"
+  ctx.translate(center.x, center.y)
+  ctx.rotate(operation.rotation ?? 0)
+  ctx.translate(-dimensions.width / 2, -dimensions.height / 2)
+  ctx.scale(scaleX, scaleY)
+  ctx.fillStyle = operation.color
+  ctx.font = `${operation.fontSize}px Inter, system-ui, sans-serif`
+  ctx.textBaseline = "top"
+
+  lines.forEach((line, index) => {
+    ctx.fillText(line, 0, index * getTextLineHeight(operation.fontSize))
+  })
+
+  ctx.restore()
 }
 
 function getVisibleDrawableOperations(
@@ -388,6 +604,48 @@ function getVisibleDrawableOperations(
       continue
     }
 
+    if (operation.type === "resize") {
+      const targetIds = new Set(operation.targetIds)
+
+      for (let index = 0; index < visibleOperations.length; index += 1) {
+        if (targetIds.has(visibleOperations[index].id)) {
+          visibleOperations[index] = resizeDrawableOperation(
+            visibleOperations[index],
+            operation,
+          )
+        }
+      }
+      continue
+    }
+
+    if (operation.type === "rotate") {
+      const targetIds = new Set(operation.targetIds)
+
+      for (let index = 0; index < visibleOperations.length; index += 1) {
+        if (targetIds.has(visibleOperations[index].id)) {
+          visibleOperations[index] = rotateDrawableOperation(
+            visibleOperations[index],
+            operation,
+          )
+        }
+      }
+      continue
+    }
+
+    if (operation.type === "style") {
+      const targetIds = new Set(operation.targetIds)
+
+      for (let index = 0; index < visibleOperations.length; index += 1) {
+        if (targetIds.has(visibleOperations[index].id)) {
+          visibleOperations[index] = styleDrawableOperation(
+            visibleOperations[index],
+            operation,
+          )
+        }
+      }
+      continue
+    }
+
     visibleOperations.push(operation)
   }
 
@@ -396,6 +654,45 @@ function getVisibleDrawableOperations(
 
 function getStateSyncOperations(nextOperations: WhiteboardOperation[]) {
   return getVisibleDrawableOperations(nextOperations)
+}
+
+function styleDrawableOperation(
+  operation: DrawableOperation,
+  styleOperation: StyleOperation,
+): DrawableOperation {
+  if (operation.type === "text") {
+    const nextFontSize = styleOperation.fontSize
+
+    if (typeof nextFontSize !== "number" || !Number.isFinite(nextFontSize)) {
+      return operation
+    }
+
+    const fontSize = Math.max(1, nextFontSize)
+    const scale = fontSize / operation.fontSize
+
+    return {
+      ...operation,
+      fontSize,
+      width:
+        typeof operation.width === "number" && Number.isFinite(operation.width)
+          ? Math.max(MIN_RESIZE_SIZE, operation.width * scale)
+          : undefined,
+      height:
+        typeof operation.height === "number" &&
+        Number.isFinite(operation.height)
+          ? Math.max(MIN_RESIZE_SIZE, operation.height * scale)
+          : undefined,
+    }
+  }
+
+  const nextBrushSize = styleOperation.brushSize
+
+  return typeof nextBrushSize === "number" && Number.isFinite(nextBrushSize)
+    ? {
+        ...operation,
+        brushSize: Math.max(1, nextBrushSize),
+      }
+    : operation
 }
 
 function movePoint(point: WhiteboardPoint, delta: WhiteboardPoint) {
@@ -416,11 +713,449 @@ function moveDrawableOperation(
     }
   }
 
+  if (operation.type === "text") {
+    return {
+      ...operation,
+      point: movePoint(operation.point, delta),
+    }
+  }
+
   return {
     ...operation,
     startPoint: movePoint(operation.startPoint, delta),
     endPoint: movePoint(operation.endPoint, delta),
   }
+}
+
+function resizePoint(
+  point: WhiteboardPoint,
+  origin: WhiteboardPoint,
+  scaleX: number,
+  scaleY: number,
+) {
+  return {
+    x: origin.x + (point.x - origin.x) * scaleX,
+    y: origin.y + (point.y - origin.y) * scaleY,
+  }
+}
+
+function resizePointInRotatedSpace({
+  point,
+  origin,
+  startPoint,
+  currentPoint,
+  rotation,
+}: {
+  point: WhiteboardPoint
+  origin: WhiteboardPoint
+  startPoint: WhiteboardPoint
+  currentPoint: WhiteboardPoint
+  rotation: number
+}) {
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const xAxis = { x: cos, y: sin }
+  const yAxis = { x: -sin, y: cos }
+  const toLocal = (worldPoint: WhiteboardPoint) => {
+    const vector = {
+      x: worldPoint.x - origin.x,
+      y: worldPoint.y - origin.y,
+    }
+
+    return {
+      x: vector.x * xAxis.x + vector.y * xAxis.y,
+      y: vector.x * yAxis.x + vector.y * yAxis.y,
+    }
+  }
+  const fromLocal = (localPoint: WhiteboardPoint) => ({
+    x: origin.x + localPoint.x * xAxis.x + localPoint.y * yAxis.x,
+    y: origin.y + localPoint.x * xAxis.y + localPoint.y * yAxis.y,
+  })
+  const startLocal = toLocal(startPoint)
+  const currentLocal = toLocal(currentPoint)
+  const scaleX =
+    Math.abs(startLocal.x) < 0.001 ? 1 : currentLocal.x / startLocal.x
+  const scaleY =
+    Math.abs(startLocal.y) < 0.001 ? 1 : currentLocal.y / startLocal.y
+  const localPoint = toLocal(point)
+
+  return fromLocal({
+    x: localPoint.x * scaleX,
+    y: localPoint.y * scaleY,
+  })
+}
+
+function getRotatedResizeBox({
+  origin,
+  currentPoint,
+  handle,
+  rotation,
+}: {
+  origin: WhiteboardPoint
+  currentPoint: WhiteboardPoint
+  handle: SelectionResizeHandle
+  rotation: number
+}) {
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const xAxis = { x: cos, y: sin }
+  const yAxis = { x: -sin, y: cos }
+  const vector = {
+    x: currentPoint.x - origin.x,
+    y: currentPoint.y - origin.y,
+  }
+  const localVector = {
+    x: vector.x * xAxis.x + vector.y * xAxis.y,
+    y: vector.x * yAxis.x + vector.y * yAxis.y,
+  }
+  const widthSign = handle.includes("e") ? 1 : -1
+  const heightSign = handle.includes("s") ? 1 : -1
+  const width = Math.max(MIN_RESIZE_SIZE, localVector.x * widthSign)
+  const height = Math.max(MIN_RESIZE_SIZE, localVector.y * heightSign)
+  const fixedHandle = getOppositeSelectionHandle(handle)
+  const fixedLocalPoint = {
+    x: fixedHandle.includes("e") ? width / 2 : -width / 2,
+    y: fixedHandle.includes("s") ? height / 2 : -height / 2,
+  }
+  const rotatedFixedLocalPoint = {
+    x: fixedLocalPoint.x * xAxis.x + fixedLocalPoint.y * yAxis.x,
+    y: fixedLocalPoint.x * xAxis.y + fixedLocalPoint.y * yAxis.y,
+  }
+
+  return {
+    center: {
+      x: origin.x - rotatedFixedLocalPoint.x,
+      y: origin.y - rotatedFixedLocalPoint.y,
+    },
+    width,
+    height,
+  }
+}
+
+function resizeDrawableOperation(
+  operation: DrawableOperation,
+  resizeOperation: ResizeOperation,
+): DrawableOperation {
+  const { origin, scaleX, scaleY } = resizeOperation
+
+  if (operation.type === "stroke") {
+    if (
+      resizeOperation.handle &&
+      resizeOperation.currentPoint &&
+      resizeOperation.startPoint &&
+      typeof resizeOperation.rotation === "number"
+    ) {
+      return {
+        ...operation,
+        rotation: resizeOperation.rotation,
+        points: operation.points.map((point) =>
+          resizePointInRotatedSpace({
+            point,
+            origin,
+            startPoint: resizeOperation.startPoint as WhiteboardPoint,
+            currentPoint: resizeOperation.currentPoint as WhiteboardPoint,
+            rotation: resizeOperation.rotation as number,
+          }),
+        ),
+      }
+    }
+
+    return {
+      ...operation,
+      rotation: undefined,
+      points: operation.points.map((point) =>
+        resizePoint(point, origin, scaleX, scaleY),
+      ),
+    }
+  }
+
+  if (operation.type === "text") {
+    const currentWidth =
+      typeof operation.width === "number" && Number.isFinite(operation.width)
+        ? operation.width
+        : Math.max(1, operation.text.length) * operation.fontSize * 0.58
+    const currentHeight =
+      typeof operation.height === "number" && Number.isFinite(operation.height)
+        ? operation.height
+        : Math.max(1, operation.text.split("\n").length) *
+          getTextLineHeight(operation.fontSize)
+    const nextWidth = Math.max(MIN_RESIZE_SIZE, Math.abs(currentWidth * scaleX))
+    const nextHeight = Math.max(
+      MIN_RESIZE_SIZE,
+      Math.abs(currentHeight * scaleY),
+    )
+    const rotation = operation.rotation ?? 0
+
+    if (resizeOperation.handle && resizeOperation.currentPoint && rotation) {
+      const box = getRotatedResizeBox({
+        origin: resizeOperation.origin,
+        currentPoint: resizeOperation.currentPoint,
+        handle: resizeOperation.handle,
+        rotation,
+      })
+
+      return {
+        ...operation,
+        point: {
+          x: box.center.x - box.width / 2,
+          y: box.center.y - box.height / 2,
+        },
+        width: box.width,
+        height: box.height,
+      }
+    }
+
+    if (resizeOperation.handle) {
+      const fixedRight = operation.point.x + currentWidth
+      const fixedBottom = operation.point.y + currentHeight
+      const point = {
+        x: resizeOperation.handle.includes("w")
+          ? fixedRight - nextWidth
+          : operation.point.x,
+        y: resizeOperation.handle.includes("n")
+          ? fixedBottom - nextHeight
+          : operation.point.y,
+      }
+
+      return {
+        ...operation,
+        point,
+        width: nextWidth,
+        height: nextHeight,
+      }
+    }
+
+    return {
+      ...operation,
+      point: resizePoint(operation.point, origin, scaleX, scaleY),
+      width: nextWidth,
+      height: nextHeight,
+    }
+  }
+
+  if (
+    operation.tool === "line" &&
+    resizeOperation.handle &&
+    resizeOperation.currentPoint
+  ) {
+    const fixedPoint = resizeOperation.handle.includes("e")
+      ? operation.startPoint
+      : operation.endPoint
+    const movingPoint = resizeOperation.handle.includes("e")
+      ? operation.endPoint
+      : operation.startPoint
+    const axis = {
+      x: movingPoint.x - fixedPoint.x,
+      y: movingPoint.y - fixedPoint.y,
+    }
+    const length = Math.hypot(axis.x, axis.y)
+
+    if (length < 0.001) {
+      return operation
+    }
+
+    const unit = {
+      x: axis.x / length,
+      y: axis.y / length,
+    }
+    const draggedVector = {
+      x: resizeOperation.currentPoint.x - fixedPoint.x,
+      y: resizeOperation.currentPoint.y - fixedPoint.y,
+    }
+    const projectedLength = Math.max(
+      MIN_RESIZE_SIZE,
+      draggedVector.x * unit.x + draggedVector.y * unit.y,
+    )
+    const nextMovingPoint = {
+      x: fixedPoint.x + unit.x * projectedLength,
+      y: fixedPoint.y + unit.y * projectedLength,
+    }
+
+    return {
+      ...operation,
+      startPoint: resizeOperation.handle.includes("e")
+        ? fixedPoint
+        : nextMovingPoint,
+      endPoint: resizeOperation.handle.includes("e")
+        ? nextMovingPoint
+        : fixedPoint,
+    }
+  }
+
+  if (
+    operation.tool !== "line" &&
+    resizeOperation.handle &&
+    resizeOperation.currentPoint &&
+    operation.rotation
+  ) {
+    const box = getRotatedResizeBox({
+      origin: resizeOperation.origin,
+      currentPoint: resizeOperation.currentPoint,
+      handle: resizeOperation.handle,
+      rotation: operation.rotation,
+    })
+
+    return {
+      ...operation,
+      startPoint: {
+        x: box.center.x - box.width / 2,
+        y: box.center.y - box.height / 2,
+      },
+      endPoint: {
+        x: box.center.x + box.width / 2,
+        y: box.center.y + box.height / 2,
+      },
+    }
+  }
+
+  return {
+    ...operation,
+    startPoint: resizePoint(operation.startPoint, origin, scaleX, scaleY),
+    endPoint: resizePoint(operation.endPoint, origin, scaleX, scaleY),
+  }
+}
+
+function rotatePoint(
+  point: WhiteboardPoint,
+  origin: WhiteboardPoint,
+  angle: number,
+) {
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const x = point.x - origin.x
+  const y = point.y - origin.y
+
+  return {
+    x: origin.x + x * cos - y * sin,
+    y: origin.y + x * sin + y * cos,
+  }
+}
+
+function getRotatedBounds(bounds: OperationBounds, angle = 0) {
+  if (angle === 0) {
+    return bounds
+  }
+
+  const center = getBoundsCenter(bounds)
+  const points = [
+    { x: bounds.left, y: bounds.top },
+    { x: bounds.right, y: bounds.top },
+    { x: bounds.right, y: bounds.bottom },
+    { x: bounds.left, y: bounds.bottom },
+  ].map((point) => rotatePoint(point, center, angle))
+
+  return getBoundsFromPointList(points)
+}
+
+function translateBoundsToRotatedCenter(
+  bounds: OperationBounds,
+  origin: WhiteboardPoint,
+  angle: number,
+) {
+  const center = getBoundsCenter(bounds)
+  const nextCenter = rotatePoint(center, origin, angle)
+
+  return {
+    x: nextCenter.x - center.x,
+    y: nextCenter.y - center.y,
+  }
+}
+
+function getFallbackTextDimensions(operation: TextOperation) {
+  return {
+    width:
+      typeof operation.width === "number" && Number.isFinite(operation.width)
+        ? operation.width
+        : Math.max(1, operation.text.length) * operation.fontSize * 0.58,
+    height:
+      typeof operation.height === "number" && Number.isFinite(operation.height)
+        ? operation.height
+        : Math.max(1, operation.text.split("\n").length) *
+          getTextLineHeight(operation.fontSize),
+  }
+}
+
+function rotateDrawableOperation(
+  operation: DrawableOperation,
+  rotateOperation: RotateOperation,
+): DrawableOperation {
+  const { origin, angle } = rotateOperation
+
+  if (operation.type === "stroke") {
+    const nextRotation =
+      (typeof operation.rotation === "number"
+        ? operation.rotation
+        : getOrientedAngleFromPoints(operation.points)) + angle
+
+    return {
+      ...operation,
+      rotation: nextRotation,
+      points: operation.points.map((point) =>
+        rotatePoint(point, origin, angle),
+      ),
+    }
+  }
+
+  if (operation.type === "text") {
+    const dimensions = getFallbackTextDimensions(operation)
+    const bounds = {
+      left: operation.point.x,
+      right: operation.point.x + dimensions.width,
+      top: operation.point.y,
+      bottom: operation.point.y + dimensions.height,
+    }
+    const delta = translateBoundsToRotatedCenter(bounds, origin, angle)
+
+    return {
+      ...operation,
+      point: movePoint(operation.point, delta),
+      rotation: (operation.rotation ?? 0) + angle,
+    }
+  }
+
+  if (operation.tool !== "line") {
+    const bounds = getBoundsFromPoints(operation.startPoint, operation.endPoint)
+    const delta = translateBoundsToRotatedCenter(bounds, origin, angle)
+
+    return {
+      ...operation,
+      startPoint: movePoint(operation.startPoint, delta),
+      endPoint: movePoint(operation.endPoint, delta),
+      rotation: (operation.rotation ?? 0) + angle,
+    }
+  }
+
+  return {
+    ...operation,
+    startPoint: rotatePoint(operation.startPoint, origin, angle),
+    endPoint: rotatePoint(operation.endPoint, origin, angle),
+  }
+}
+
+function getUnrotatedTextOperationBounds(
+  operation: TextOperation,
+  canvas: HTMLCanvasElement,
+): OperationBounds | null {
+  const context = canvas.getContext("2d")
+  if (!context) return null
+
+  const point = denormalizePoint(operation.point, canvas)
+  const dimensions = getTextDimensions(context, operation)
+  return {
+    left: point.x,
+    right: point.x + dimensions.width,
+    top: point.y,
+    bottom: point.y + dimensions.height,
+  }
+}
+
+function getTextOperationBounds(
+  operation: TextOperation,
+  canvas: HTMLCanvasElement,
+): OperationBounds | null {
+  const bounds = getUnrotatedTextOperationBounds(operation, canvas)
+
+  return bounds ? getRotatedBounds(bounds, operation.rotation) : null
 }
 
 function getOperationBounds(
@@ -431,12 +1166,21 @@ function getOperationBounds(
     const startPoint = denormalizePoint(operation.startPoint, canvas)
     const endPoint = denormalizePoint(operation.endPoint, canvas)
 
-    return {
+    const bounds = {
       left: Math.min(startPoint.x, endPoint.x),
       right: Math.max(startPoint.x, endPoint.x),
       top: Math.min(startPoint.y, endPoint.y),
       bottom: Math.max(startPoint.y, endPoint.y),
     }
+
+    return getRotatedBounds(
+      bounds,
+      operation.tool === "line" ? 0 : operation.rotation,
+    )
+  }
+
+  if (operation.type === "text") {
+    return getTextOperationBounds(operation, canvas)
   }
 
   const points = operation.points.map((point) =>
@@ -508,6 +1252,23 @@ function getBoundsFromPoints(
   }
 }
 
+function getBoundsFromPointList(points: WhiteboardPoint[]): OperationBounds {
+  return points.reduce(
+    (bounds, point) => ({
+      left: Math.min(bounds.left, point.x),
+      right: Math.max(bounds.right, point.x),
+      top: Math.min(bounds.top, point.y),
+      bottom: Math.max(bounds.bottom, point.y),
+    }),
+    {
+      left: points[0].x,
+      right: points[0].x,
+      top: points[0].y,
+      bottom: points[0].y,
+    },
+  )
+}
+
 function boundsIntersect(first: OperationBounds, second: OperationBounds) {
   return (
     first.left <= second.right &&
@@ -535,11 +1296,15 @@ function drawSelectionOutline(
   bounds: OperationBounds,
 ) {
   const padding = SELECTION_OUTLINE_PADDING
-  const handleSize = 6
+  const handleSize = SELECTION_HANDLE_SIZE
   const left = bounds.left - padding
   const top = bounds.top - padding
   const width = Math.max(1, bounds.right - bounds.left + padding * 2)
   const height = Math.max(1, bounds.bottom - bounds.top + padding * 2)
+  const rotateHandle = {
+    x: left + width / 2,
+    y: top - ROTATE_HANDLE_DISTANCE,
+  }
   const handlePoints = [
     { x: left, y: top },
     { x: left + width, y: top },
@@ -553,6 +1318,10 @@ function drawSelectionOutline(
   ctx.strokeStyle = "#2563eb"
   ctx.lineWidth = 1.5
   ctx.strokeRect(left, top, width, height)
+  ctx.beginPath()
+  ctx.moveTo(left + width / 2, top)
+  ctx.lineTo(rotateHandle.x, rotateHandle.y)
+  ctx.stroke()
   ctx.setLineDash([])
   ctx.fillStyle = "#ffffff"
 
@@ -571,7 +1340,485 @@ function drawSelectionOutline(
     )
   }
 
+  ctx.beginPath()
+  ctx.arc(rotateHandle.x, rotateHandle.y, ROTATE_HANDLE_RADIUS, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
   ctx.restore()
+}
+
+function drawRotatedSelectionOutline(
+  ctx: CanvasRenderingContext2D,
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>,
+) {
+  const handleSize = SELECTION_HANDLE_SIZE
+  const topCenter = getHandlePointsTopCenter(handlePoints)
+  const rotateHandle = getHandlePointsRotateHandlePoint(handlePoints)
+
+  ctx.save()
+  ctx.globalCompositeOperation = "source-over"
+  ctx.setLineDash([6, 4])
+  ctx.strokeStyle = "#2563eb"
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(handlePoints.nw.x, handlePoints.nw.y)
+  ctx.lineTo(handlePoints.ne.x, handlePoints.ne.y)
+  ctx.lineTo(handlePoints.se.x, handlePoints.se.y)
+  ctx.lineTo(handlePoints.sw.x, handlePoints.sw.y)
+  ctx.closePath()
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(topCenter.x, topCenter.y)
+  ctx.lineTo(rotateHandle.x, rotateHandle.y)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.fillStyle = "#ffffff"
+
+  for (const point of Object.values(handlePoints)) {
+    ctx.fillRect(
+      point.x - handleSize / 2,
+      point.y - handleSize / 2,
+      handleSize,
+      handleSize,
+    )
+    ctx.strokeRect(
+      point.x - handleSize / 2,
+      point.y - handleSize / 2,
+      handleSize,
+      handleSize,
+    )
+  }
+
+  ctx.beginPath()
+  ctx.arc(rotateHandle.x, rotateHandle.y, ROTATE_HANDLE_RADIUS, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.restore()
+}
+
+function getSelectionHandlePoints(bounds: OperationBounds) {
+  const padding = SELECTION_OUTLINE_PADDING
+  const left = bounds.left - padding
+  const top = bounds.top - padding
+  const right = bounds.right + padding
+  const bottom = bounds.bottom + padding
+
+  return {
+    nw: { x: left, y: top },
+    ne: { x: right, y: top },
+    sw: { x: left, y: bottom },
+    se: { x: right, y: bottom },
+  } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+}
+
+function getResizeHandlePoints(bounds: OperationBounds) {
+  return {
+    nw: { x: bounds.left, y: bounds.top },
+    ne: { x: bounds.right, y: bounds.top },
+    sw: { x: bounds.left, y: bounds.bottom },
+    se: { x: bounds.right, y: bounds.bottom },
+  } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+}
+
+function getRotateHandlePoint(bounds: OperationBounds) {
+  const padding = SELECTION_OUTLINE_PADDING
+
+  return {
+    x: bounds.left + (bounds.right - bounds.left) / 2,
+    y: bounds.top - padding - ROTATE_HANDLE_DISTANCE,
+  }
+}
+
+function getHandlePointsCenter(
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>,
+) {
+  return {
+    x:
+      (handlePoints.nw.x +
+        handlePoints.ne.x +
+        handlePoints.sw.x +
+        handlePoints.se.x) /
+      4,
+    y:
+      (handlePoints.nw.y +
+        handlePoints.ne.y +
+        handlePoints.sw.y +
+        handlePoints.se.y) /
+      4,
+  }
+}
+
+function getHandlePointsTopCenter(
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>,
+) {
+  return {
+    x: (handlePoints.nw.x + handlePoints.ne.x) / 2,
+    y: (handlePoints.nw.y + handlePoints.ne.y) / 2,
+  }
+}
+
+function getHandlePointsRotateHandlePoint(
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>,
+) {
+  const topCenter = getHandlePointsTopCenter(handlePoints)
+  const center = getHandlePointsCenter(handlePoints)
+  const outward = {
+    x: topCenter.x - center.x,
+    y: topCenter.y - center.y,
+  }
+  const outwardLength = Math.hypot(outward.x, outward.y)
+
+  if (outwardLength >= 0.001) {
+    return {
+      x: topCenter.x + (outward.x / outwardLength) * ROTATE_HANDLE_DISTANCE,
+      y: topCenter.y + (outward.y / outwardLength) * ROTATE_HANDLE_DISTANCE,
+    }
+  }
+
+  const topEdge = {
+    x: handlePoints.ne.x - handlePoints.nw.x,
+    y: handlePoints.ne.y - handlePoints.nw.y,
+  }
+  const edgeLength = Math.hypot(topEdge.x, topEdge.y)
+
+  if (edgeLength < 0.001) {
+    return {
+      x: topCenter.x,
+      y: topCenter.y - ROTATE_HANDLE_DISTANCE,
+    }
+  }
+
+  return {
+    x: topCenter.x + (topEdge.y / edgeLength) * ROTATE_HANDLE_DISTANCE,
+    y: topCenter.y - (topEdge.x / edgeLength) * ROTATE_HANDLE_DISTANCE,
+  }
+}
+
+function getOppositeSelectionHandle(handle: SelectionResizeHandle) {
+  const opposite = {
+    nw: "se",
+    ne: "sw",
+    sw: "ne",
+    se: "nw",
+  } satisfies Record<SelectionResizeHandle, SelectionResizeHandle>
+
+  return opposite[handle]
+}
+
+function getSelectionHandleAtPoint(
+  bounds: OperationBounds,
+  point: WhiteboardPoint,
+): SelectionResizeHandle | null {
+  return getHandleAtPoint(getSelectionHandlePoints(bounds), point)
+}
+
+function getHandleAtPoint(
+  handles: Record<SelectionResizeHandle, WhiteboardPoint>,
+  point: WhiteboardPoint,
+): SelectionResizeHandle | null {
+  const radius = Math.max(SELECTION_HANDLE_SIZE, 8)
+
+  for (const [handle, handlePoint] of Object.entries(handles)) {
+    if (
+      Math.abs(point.x - handlePoint.x) <= radius &&
+      Math.abs(point.y - handlePoint.y) <= radius
+    ) {
+      return handle as SelectionResizeHandle
+    }
+  }
+
+  return null
+}
+
+function getOrientedAngleFromPoints(points: WhiteboardPoint[]) {
+  const mean = points.reduce(
+    (sum, point) => ({
+      x: sum.x + point.x / points.length,
+      y: sum.y + point.y / points.length,
+    }),
+    { x: 0, y: 0 },
+  )
+  const covariance = points.reduce(
+    (sum, point) => {
+      const x = point.x - mean.x
+      const y = point.y - mean.y
+
+      return {
+        xx: sum.xx + x * x,
+        xy: sum.xy + x * y,
+        yy: sum.yy + y * y,
+      }
+    },
+    { xx: 0, xy: 0, yy: 0 },
+  )
+  const angle =
+    covariance.xx === covariance.yy && covariance.xy === 0
+      ? 0
+      : 0.5 * Math.atan2(2 * covariance.xy, covariance.xx - covariance.yy)
+
+  return angle
+}
+
+function getOrientedHandlePointsFromPoints(
+  points: WhiteboardPoint[],
+  orientation?: number,
+) {
+  if (points.length === 0) {
+    return null
+  }
+
+  if (points.length === 1) {
+    const point = points[0]
+    const halfSize = MIN_RESIZE_SIZE / 2
+
+    return {
+      nw: { x: point.x - halfSize, y: point.y - halfSize },
+      ne: { x: point.x + halfSize, y: point.y - halfSize },
+      sw: { x: point.x - halfSize, y: point.y + halfSize },
+      se: { x: point.x + halfSize, y: point.y + halfSize },
+    } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+  }
+
+  const mean = points.reduce(
+    (sum, point) => ({
+      x: sum.x + point.x / points.length,
+      y: sum.y + point.y / points.length,
+    }),
+    { x: 0, y: 0 },
+  )
+  const angle = orientation ?? getOrientedAngleFromPoints(points)
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const xAxis = { x: cos, y: sin }
+  const yAxis = { x: -sin, y: cos }
+  const projections = points.map((point) => {
+    const vector = {
+      x: point.x - mean.x,
+      y: point.y - mean.y,
+    }
+
+    return {
+      x: vector.x * xAxis.x + vector.y * xAxis.y,
+      y: vector.x * yAxis.x + vector.y * yAxis.y,
+    }
+  })
+  const initialProjection = projections[0]
+  const projectionBounds = projections.reduce(
+    (bounds, point) => ({
+      left: Math.min(bounds.left, point.x),
+      right: Math.max(bounds.right, point.x),
+      top: Math.min(bounds.top, point.y),
+      bottom: Math.max(bounds.bottom, point.y),
+    }),
+    {
+      left: initialProjection.x,
+      right: initialProjection.x,
+      top: initialProjection.y,
+      bottom: initialProjection.y,
+    },
+  )
+  const width = projectionBounds.right - projectionBounds.left
+  const height = projectionBounds.bottom - projectionBounds.top
+  const paddedBounds = {
+    left:
+      width < MIN_RESIZE_SIZE
+        ? (projectionBounds.left + projectionBounds.right) / 2 -
+          MIN_RESIZE_SIZE / 2
+        : projectionBounds.left,
+    right:
+      width < MIN_RESIZE_SIZE
+        ? (projectionBounds.left + projectionBounds.right) / 2 +
+          MIN_RESIZE_SIZE / 2
+        : projectionBounds.right,
+    top:
+      height < MIN_RESIZE_SIZE
+        ? (projectionBounds.top + projectionBounds.bottom) / 2 -
+          MIN_RESIZE_SIZE / 2
+        : projectionBounds.top,
+    bottom:
+      height < MIN_RESIZE_SIZE
+        ? (projectionBounds.top + projectionBounds.bottom) / 2 +
+          MIN_RESIZE_SIZE / 2
+        : projectionBounds.bottom,
+  }
+  const toWorld = (point: WhiteboardPoint) => ({
+    x: mean.x + point.x * xAxis.x + point.y * yAxis.x,
+    y: mean.y + point.x * xAxis.y + point.y * yAxis.y,
+  })
+
+  return {
+    nw: toWorld({ x: paddedBounds.left, y: paddedBounds.top }),
+    ne: toWorld({ x: paddedBounds.right, y: paddedBounds.top }),
+    sw: toWorld({ x: paddedBounds.left, y: paddedBounds.bottom }),
+    se: toWorld({ x: paddedBounds.right, y: paddedBounds.bottom }),
+  } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+}
+
+function getOperationHandlePoints(
+  operation: DrawableOperation,
+  canvas: HTMLCanvasElement,
+) {
+  if (operation.type === "stroke") {
+    return getOrientedHandlePointsFromPoints(
+      operation.points.map((point) => denormalizePoint(point, canvas)),
+      operation.rotation,
+    )
+  }
+
+  if (operation.type === "shape" && operation.tool === "line") {
+    const startPoint = denormalizePoint(operation.startPoint, canvas)
+    const endPoint = denormalizePoint(operation.endPoint, canvas)
+    const axis = {
+      x: endPoint.x - startPoint.x,
+      y: endPoint.y - startPoint.y,
+    }
+    const length = Math.hypot(axis.x, axis.y)
+
+    if (length < 0.001) {
+      return getOrientedHandlePointsFromPoints([startPoint])
+    }
+
+    const normal = {
+      x: (-axis.y / length) * MIN_RESIZE_SIZE * 0.5,
+      y: (axis.x / length) * MIN_RESIZE_SIZE * 0.5,
+    }
+
+    return {
+      nw: { x: startPoint.x + normal.x, y: startPoint.y + normal.y },
+      sw: { x: startPoint.x - normal.x, y: startPoint.y - normal.y },
+      ne: { x: endPoint.x + normal.x, y: endPoint.y + normal.y },
+      se: { x: endPoint.x - normal.x, y: endPoint.y - normal.y },
+    } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+  }
+
+  const bounds =
+    operation.type === "text"
+      ? getUnrotatedTextOperationBounds(operation, canvas)
+      : getBoundsFromPoints(
+          denormalizePoint(operation.startPoint, canvas),
+          denormalizePoint(operation.endPoint, canvas),
+        )
+
+  if (!bounds) {
+    return null
+  }
+
+  const center = getBoundsCenter(bounds)
+  const rotation = operation.rotation ?? 0
+
+  return {
+    nw: rotatePoint({ x: bounds.left, y: bounds.top }, center, rotation),
+    ne: rotatePoint({ x: bounds.right, y: bounds.top }, center, rotation),
+    sw: rotatePoint({ x: bounds.left, y: bounds.bottom }, center, rotation),
+    se: rotatePoint({ x: bounds.right, y: bounds.bottom }, center, rotation),
+  } satisfies Record<SelectionResizeHandle, WhiteboardPoint>
+}
+
+function hitsRotateHandle(bounds: OperationBounds, point: WhiteboardPoint) {
+  return (
+    getDistance(getRotateHandlePoint(bounds), point) <= ROTATE_HANDLE_RADIUS + 4
+  )
+}
+
+function hitsHandlePointsRotateHandle(
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>,
+  point: WhiteboardPoint,
+) {
+  return (
+    getDistance(getHandlePointsRotateHandlePoint(handlePoints), point) <=
+    ROTATE_HANDLE_RADIUS + 4
+  )
+}
+
+function getBoundsCenter(bounds: OperationBounds): WhiteboardPoint {
+  return {
+    x: bounds.left + (bounds.right - bounds.left) / 2,
+    y: bounds.top + (bounds.bottom - bounds.top) / 2,
+  }
+}
+
+function getResizeOperationFromHandle({
+  bounds,
+  currentPoint,
+  handle,
+  targetIds,
+  id,
+}: {
+  bounds: OperationBounds
+  currentPoint: WhiteboardPoint
+  handle: SelectionResizeHandle
+  targetIds: string[]
+  id: string
+}): ResizeOperation {
+  const handles = getResizeHandlePoints(bounds)
+  const originPoint = handles[getOppositeSelectionHandle(handle)]
+  const startPoint = handles[handle]
+  const minWidth =
+    startPoint.x >= originPoint.x ? MIN_RESIZE_SIZE : -MIN_RESIZE_SIZE
+  const minHeight =
+    startPoint.y >= originPoint.y ? MIN_RESIZE_SIZE : -MIN_RESIZE_SIZE
+  const clampedPoint = {
+    x:
+      startPoint.x >= originPoint.x
+        ? Math.max(currentPoint.x, originPoint.x + minWidth)
+        : Math.min(currentPoint.x, originPoint.x + minWidth),
+    y:
+      startPoint.y >= originPoint.y
+        ? Math.max(currentPoint.y, originPoint.y + minHeight)
+        : Math.min(currentPoint.y, originPoint.y + minHeight),
+  }
+  const width = startPoint.x - originPoint.x
+  const height = startPoint.y - originPoint.y
+
+  return {
+    id,
+    type: "resize",
+    targetIds,
+    origin: originPoint,
+    scaleX: width === 0 ? 1 : (clampedPoint.x - originPoint.x) / width,
+    scaleY: height === 0 ? 1 : (clampedPoint.y - originPoint.y) / height,
+    handle,
+    currentPoint: clampedPoint,
+  }
+}
+
+function getResizeOperationFromHandlePoints({
+  handlePoints,
+  currentPoint,
+  handle,
+  targetIds,
+  id,
+}: {
+  handlePoints: Record<SelectionResizeHandle, WhiteboardPoint>
+  currentPoint: WhiteboardPoint
+  handle: SelectionResizeHandle
+  targetIds: string[]
+  id: string
+}): ResizeOperation {
+  const originPoint = handlePoints[getOppositeSelectionHandle(handle)]
+  const startPoint = handlePoints[handle]
+  const width = startPoint.x - originPoint.x
+  const height = startPoint.y - originPoint.y
+  const topEdge = {
+    x: handlePoints.ne.x - handlePoints.nw.x,
+    y: handlePoints.ne.y - handlePoints.nw.y,
+  }
+  const rotation = Math.atan2(topEdge.y, topEdge.x)
+
+  return {
+    id,
+    type: "resize",
+    targetIds,
+    origin: originPoint,
+    scaleX: width === 0 ? 1 : (currentPoint.x - originPoint.x) / width,
+    scaleY: height === 0 ? 1 : (currentPoint.y - originPoint.y) / height,
+    handle,
+    currentPoint,
+    startPoint,
+    rotation,
+  }
 }
 
 function drawMarqueeOutline(
@@ -672,12 +1919,21 @@ function hitsShape(
   const right = Math.max(startPoint.x, endPoint.x)
   const top = Math.min(startPoint.y, endPoint.y)
   const bottom = Math.max(startPoint.y, endPoint.y)
+  const rotation = operation.rotation ?? 0
+  const hitPoint =
+    rotation === 0
+      ? point
+      : rotatePoint(
+          point,
+          getBoundsCenter({ left, right, top, bottom }),
+          -rotation,
+        )
 
   if (
-    point.x < left - threshold ||
-    point.x > right + threshold ||
-    point.y < top - threshold ||
-    point.y > bottom + threshold
+    hitPoint.x < left - threshold ||
+    hitPoint.x > right + threshold ||
+    hitPoint.y < top - threshold ||
+    hitPoint.y > bottom + threshold
   ) {
     return false
   }
@@ -688,10 +1944,10 @@ function hitsShape(
     }
 
     const distanceToEdge = Math.min(
-      Math.abs(point.x - left),
-      Math.abs(point.x - right),
-      Math.abs(point.y - top),
-      Math.abs(point.y - bottom),
+      Math.abs(hitPoint.x - left),
+      Math.abs(hitPoint.x - right),
+      Math.abs(hitPoint.y - top),
+      Math.abs(hitPoint.y - bottom),
     )
 
     return distanceToEdge <= threshold
@@ -705,12 +1961,12 @@ function hitsShape(
   }
 
   if (radiusX <= threshold || radiusY <= threshold) {
-    return getDistance(point, center) <= threshold
+    return getDistance(hitPoint, center) <= threshold
   }
 
   const normalizedDistance = Math.hypot(
-    (point.x - center.x) / radiusX,
-    (point.y - center.y) / radiusY,
+    (hitPoint.x - center.x) / radiusX,
+    (hitPoint.y - center.y) / radiusY,
   )
 
   if (includeInterior) {
@@ -730,6 +1986,17 @@ function hitsDrawableOperation(
   radius: number,
   includeShapeInterior = false,
 ) {
+  if (operation.type === "text") {
+    const bounds = getUnrotatedTextOperationBounds(operation, canvas)
+    const rotation = operation.rotation ?? 0
+    const hitPoint =
+      bounds && rotation !== 0
+        ? rotatePoint(point, getBoundsCenter(bounds), -rotation)
+        : point
+
+    return bounds ? boundsContainPoint(bounds, hitPoint, radius) : false
+  }
+
   return operation.type === "stroke"
     ? hitsStroke(operation, point, canvas, radius)
     : hitsShape(operation, point, canvas, radius, includeShapeInterior)
@@ -784,13 +2051,29 @@ export function useWhiteboard({
   const [redoCount, setRedoCount] = useState(0)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [hasSelection, setHasSelection] = useState(false)
+  const [, setViewportVersion] = useState(0)
   const isDarkMode = useResolvedDarkMode()
+  const viewportRef = useRef<WhiteboardViewport>(
+    whiteboardViewportCache.get(boardId) ?? { ...DEFAULT_VIEWPORT },
+  )
+  const viewportSyncFrame = useRef<number | null>(null)
   const isDrawingRef = useRef(false)
   const lastPos = useRef<WhiteboardPoint | null>(null)
   const startPos = useRef<WhiteboardPoint | null>(null)
   const previewSnapshot = useRef<ImageData | null>(null)
   const selectedOperationIds = useRef(new Set<string>())
   const movingOperationIds = useRef<string[]>([])
+  const resizingOperationIds = useRef<string[]>([])
+  const resizeStartBounds = useRef<OperationBounds | null>(null)
+  const resizeStartHandlePoints = useRef<Record<
+    SelectionResizeHandle,
+    WhiteboardPoint
+  > | null>(null)
+  const activeResizeHandle = useRef<SelectionResizeHandle | null>(null)
+  const resizePointerOffset = useRef<WhiteboardPoint>({ x: 0, y: 0 })
+  const rotatingOperationIds = useRef<string[]>([])
+  const rotateOrigin = useRef<WhiteboardPoint | null>(null)
+  const rotateStartAngle = useRef<number | null>(null)
   const marqueeStartPos = useRef<WhiteboardPoint | null>(null)
   const marqueeBaseSelectionIds = useRef<string[]>([])
   const activeStrokeId = useRef<string | null>(null)
@@ -841,6 +2124,7 @@ export function useWhiteboard({
       overlayActive,
       overlayAspectRatio,
       isDarkMode,
+      overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
     )
   }, [getContext, isDarkMode, overlayActive, overlayAspectRatio])
 
@@ -858,20 +2142,23 @@ export function useWhiteboard({
         overlayActive,
         overlayAspectRatio,
         isDarkMode,
+        overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+      )
+      applyViewportTransform(
+        context.ctx,
+        overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
       )
 
       const visibleOperations = getVisibleDrawableOperations(nextOperations)
 
       for (const operation of visibleOperations) {
+        if (operation.type === "text") {
+          drawTextOperation(context.ctx, context.canvas, operation)
+          continue
+        }
+
         if (operation.type === "shape") {
-          drawShape(
-            context.ctx,
-            operation.tool,
-            operation.color,
-            operation.brushSize,
-            denormalizePoint(operation.startPoint, context.canvas),
-            denormalizePoint(operation.endPoint, context.canvas),
-          )
+          drawShapeOperation(context.ctx, context.canvas, operation)
           continue
         }
 
@@ -885,11 +2172,21 @@ export function useWhiteboard({
         const bounds = getSelectionBounds(selectedOperations, context.canvas)
 
         if (bounds) {
-          drawSelectionOutline(context.ctx, bounds)
+          const operationHandlePoints =
+            selectedOperations.length === 1
+              ? getOperationHandlePoints(selectedOperations[0], context.canvas)
+              : null
+
+          if (operationHandlePoints) {
+            drawRotatedSelectionOutline(context.ctx, operationHandlePoints)
+          } else {
+            drawSelectionOutline(context.ctx, bounds)
+          }
         }
       }
 
       context.ctx.globalCompositeOperation = "source-over"
+      resetViewportTransform(context.ctx)
     },
     [getContext, isDarkMode, overlayActive, overlayAspectRatio],
   )
@@ -907,26 +2204,73 @@ export function useWhiteboard({
     [renderOperations],
   )
 
+  const getScreenPos = (
+    clientX: number,
+    clientY: number,
+    canvas: HTMLCanvasElement,
+  ) => {
+    const rect = canvas.getBoundingClientRect()
+    const x = clientX - rect.left
+    const y = clientY - rect.top
+
+    return {
+      x: Math.min(Math.max(x * (canvas.width / rect.width), 0), canvas.width),
+      y: Math.min(
+        Math.max(y * (canvas.height / rect.height), 0),
+        canvas.height,
+      ),
+    }
+  }
+
   const getPos = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return null
 
-    const rect = canvas.getBoundingClientRect()
-    const boardRatio = canvas.width / canvas.height
-    const containerRatio = rect.width / rect.height
-    const drawWidth =
-      containerRatio > boardRatio ? rect.height * boardRatio : rect.width
-    const drawHeight =
-      containerRatio > boardRatio ? rect.height : rect.width / boardRatio
-    const offsetX = (rect.width - drawWidth) / 2
-    const offsetY = (rect.height - drawHeight) / 2
-    const x = event.clientX - rect.left - offsetX
-    const y = event.clientY - rect.top - offsetY
+    const screenPoint = getScreenPos(event.clientX, event.clientY, canvas)
 
-    return {
-      x: Math.min(Math.max(x * (canvas.width / drawWidth), 0), canvas.width),
-      y: Math.min(Math.max(y * (canvas.height / drawHeight), 0), canvas.height),
+    return overlayActive
+      ? screenPoint
+      : normalizePoint(screenPoint, canvas, viewportRef.current)
+  }
+
+  const handleWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    if (!isTeacher || overlayActive) {
+      return
     }
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    event.preventDefault()
+
+    const viewport = viewportRef.current
+    const screenPoint = getScreenPos(event.clientX, event.clientY, canvas)
+
+    if (event.ctrlKey || event.metaKey) {
+      const worldPoint = normalizePoint(screenPoint, canvas, viewport)
+      const nextScale = clampViewportScale(
+        viewport.scale * Math.exp(-event.deltaY * 0.002),
+      )
+
+      applyViewport(
+        {
+          x: worldPoint.x - screenPoint.x / nextScale,
+          y: worldPoint.y - screenPoint.y / nextScale,
+          scale: nextScale,
+        },
+        { broadcast: true },
+      )
+      return
+    }
+
+    applyViewport(
+      {
+        x: viewport.x + event.deltaX / viewport.scale,
+        y: viewport.y + event.deltaY / viewport.scale,
+        scale: viewport.scale,
+      },
+      { broadcast: true },
+    )
   }
 
   const sendWhiteboardMessage = useCallback(
@@ -948,6 +2292,49 @@ export function useWhiteboard({
     [boardId, currentUserId, sendMessage, syncEnabled],
   )
 
+  const applyViewport = useCallback(
+    (viewport: WhiteboardViewport, options?: { broadcast?: boolean }) => {
+      if (overlayActive || !isFiniteViewport(viewport)) {
+        return
+      }
+
+      viewportRef.current = {
+        x: viewport.x,
+        y: viewport.y,
+        scale: clampViewportScale(viewport.scale),
+      }
+      whiteboardViewportCache.set(boardId, viewportRef.current)
+      setViewportVersion((version) => version + 1)
+      renderOperations(operations.current)
+
+      if (!options?.broadcast || !isTeacher) {
+        return
+      }
+
+      if (viewportSyncFrame.current !== null) {
+        cancelAnimationFrame(viewportSyncFrame.current)
+      }
+
+      viewportSyncFrame.current = requestAnimationFrame(() => {
+        viewportSyncFrame.current = null
+        sendWhiteboardMessage(
+          {
+            type: "viewport",
+            viewport: viewportRef.current,
+          },
+          { reliable: false },
+        )
+      })
+    },
+    [
+      boardId,
+      isTeacher,
+      overlayActive,
+      renderOperations,
+      sendWhiteboardMessage,
+    ],
+  )
+
   const sendStateSync = useCallback(
     (requestId?: string) => {
       sendWhiteboardMessage(
@@ -956,11 +2343,12 @@ export function useWhiteboard({
           ...(requestId ? { requestId } : {}),
           version: boardVersion.current,
           operations: getStateSyncOperations(operations.current),
+          ...(!overlayActive ? { viewport: viewportRef.current } : {}),
         },
         { reliable: true },
       )
     },
-    [sendWhiteboardMessage],
+    [overlayActive, sendWhiteboardMessage],
   )
 
   const commitOperation = useCallback((operation: WhiteboardOperation) => {
@@ -978,6 +2366,53 @@ export function useWhiteboard({
       renderOperations(operations.current)
     },
     [renderOperations],
+  )
+
+  const handleBrushSizeChange = useCallback(
+    (size: number) => {
+      const nextSize = Math.max(1, size)
+
+      setBrushSize(nextSize)
+
+      if (selectedOperationIds.current.size === 0) {
+        return
+      }
+
+      const selectedIds = selectedOperationIds.current
+      const selectedOperations = getVisibleDrawableOperations(
+        operations.current,
+      ).filter((operation) => selectedIds.has(operation.id))
+      const appliesToText = selectedOperations.some(
+        (operation) => operation.type === "text",
+      )
+      const appliesToStrokeOrShape = selectedOperations.some(
+        (operation) => operation.type !== "text",
+      )
+
+      if (!appliesToText && !appliesToStrokeOrShape) {
+        return
+      }
+
+      const operation = {
+        id: createStyleId(),
+        type: "style",
+        targetIds: selectedOperations.map((operation) => operation.id),
+        ...(appliesToStrokeOrShape ? { brushSize: nextSize } : {}),
+        ...(appliesToText ? { fontSize: Math.max(16, nextSize * 6) } : {}),
+      } satisfies StyleOperation
+      const version = commitOperation(operation)
+
+      renderOperations(operations.current)
+      sendWhiteboardMessage(
+        {
+          type: "style",
+          operation,
+          version,
+        },
+        { reliable: true },
+      )
+    },
+    [commitOperation, renderOperations, sendWhiteboardMessage],
   )
 
   const reconcileSelection = useCallback(
@@ -1167,7 +2602,7 @@ export function useWhiteboard({
       {
         type: "stroke:points",
         strokeId,
-        points: points.map((point) => normalizePoint(point, context.canvas)),
+        points,
       },
       { reliable: false },
     )
@@ -1219,6 +2654,14 @@ export function useWhiteboard({
     previewSnapshot.current = null
     activeStrokeId.current = null
     movingOperationIds.current = []
+    resizingOperationIds.current = []
+    resizeStartBounds.current = null
+    resizeStartHandlePoints.current = null
+    activeResizeHandle.current = null
+    resizePointerOffset.current = { x: 0, y: 0 }
+    rotatingOperationIds.current = []
+    rotateOrigin.current = null
+    rotateStartAngle.current = null
     activeStrokePoints.current = []
     pendingStrokePoints.current = []
   }, [])
@@ -1228,16 +2671,19 @@ export function useWhiteboard({
     operations.current = []
     redoOperations.current = []
     boardVersion.current = 0
+    viewportRef.current = { ...DEFAULT_VIEWPORT }
+    whiteboardViewportCache.set(boardId, viewportRef.current)
     selectedOperationIds.current = new Set()
     remoteStrokes.current.clear()
     stateRequested.current.clear()
     stateRequestIds.current.clear()
     clearStateResponseTimers()
     setHasSelection(false)
+    setViewportVersion((version) => version + 1)
     setRedoCount(0)
     resetDrawingState()
     resetBoard()
-  }, [clearStateResponseTimers, resetBoard, resetDrawingState])
+  }, [boardId, clearStateResponseTimers, resetBoard, resetDrawingState])
 
   useEffect(() => {
     if (lastResetKey.current === resetKey) {
@@ -1253,6 +2699,7 @@ export function useWhiteboard({
       !isTeacher ||
       (!isDrawableTool(activeTool) &&
         !isShapeTool(activeTool) &&
+        !isTextTool(activeTool) &&
         !isEraserTool(activeTool) &&
         !isPointerTool(activeTool))
     ) {
@@ -1280,6 +2727,71 @@ export function useWhiteboard({
         selectedOperations,
         context.canvas,
       )
+      const operationHandlePoints =
+        selectedOperations.length === 1
+          ? getOperationHandlePoints(selectedOperations[0], context.canvas)
+          : null
+      const operationResizeHandle = operationHandlePoints
+        ? getHandleAtPoint(operationHandlePoints, pos)
+        : null
+      const resizeHandle =
+        operationResizeHandle ??
+        (!operationHandlePoints && selectionBounds
+          ? getSelectionHandleAtPoint(selectionBounds, pos)
+          : null)
+      const resizeHandlePoint =
+        operationResizeHandle && operationHandlePoints
+          ? operationHandlePoints[operationResizeHandle]
+          : selectionBounds && resizeHandle
+            ? getResizeHandlePoints(selectionBounds)[resizeHandle]
+            : null
+      const rotateHandleHit = operationHandlePoints
+        ? hitsHandlePointsRotateHandle(operationHandlePoints, pos)
+        : selectionBounds
+          ? hitsRotateHandle(selectionBounds, pos)
+          : false
+      const rotateOriginPoint = operationHandlePoints
+        ? getHandlePointsCenter(operationHandlePoints)
+        : selectionBounds
+          ? getBoundsCenter(selectionBounds)
+          : null
+
+      if (selectedIds.length > 0 && rotateOriginPoint && rotateHandleHit) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        isDrawingRef.current = true
+        lastPos.current = pos
+        startPos.current = pos
+        rotatingOperationIds.current = selectedIds
+        rotateOrigin.current = rotateOriginPoint
+        rotateStartAngle.current = Math.atan2(
+          pos.y - rotateOriginPoint.y,
+          pos.x - rotateOriginPoint.x,
+        )
+        return
+      }
+
+      if (
+        selectedIds.length > 0 &&
+        selectionBounds &&
+        resizeHandle &&
+        resizeHandlePoint
+      ) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        isDrawingRef.current = true
+        lastPos.current = pos
+        startPos.current = pos
+        resizingOperationIds.current = selectedIds
+        resizeStartBounds.current = selectionBounds
+        resizeStartHandlePoints.current = operationResizeHandle
+          ? operationHandlePoints
+          : null
+        activeResizeHandle.current = resizeHandle
+        resizePointerOffset.current = {
+          x: pos.x - resizeHandlePoint.x,
+          y: pos.y - resizeHandlePoint.y,
+        }
+        return
+      }
 
       if (
         !targetOperation &&
@@ -1334,6 +2846,41 @@ export function useWhiteboard({
       return
     }
 
+    if (isTextTool(activeTool)) {
+      const text = window.prompt("Text")?.trim()
+      if (!text) return
+
+      const fontSize = Math.max(16, brushSize * 6)
+      const dimensions = measureTextDimensions(context.ctx, text, fontSize)
+      const operation = {
+        id: createTextId(),
+        type: "text",
+        color,
+        fontSize,
+        point: pos,
+        width: dimensions.width,
+        height: dimensions.height,
+        text,
+      } satisfies TextOperation
+      const version = commitOperation(operation)
+
+      applyViewportTransform(
+        context.ctx,
+        overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+      )
+      drawTextOperation(context.ctx, context.canvas, operation)
+      resetViewportTransform(context.ctx)
+      sendWhiteboardMessage(
+        {
+          type: "text",
+          operation,
+          version,
+        },
+        { reliable: true },
+      )
+      return
+    }
+
     event.currentTarget.setPointerCapture(event.pointerId)
     isDrawingRef.current = true
     lastPos.current = pos
@@ -1350,10 +2897,14 @@ export function useWhiteboard({
     }
 
     const strokeId = createStrokeId()
-    const normalizedPoint = normalizePoint(pos, context.canvas)
+    const normalizedPoint = pos
     activeStrokeId.current = strokeId
     activeStrokePoints.current = [normalizedPoint]
     pendingStrokePoints.current = []
+    applyViewportTransform(
+      context.ctx,
+      overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+    )
     configureStroke(context.ctx, color, brushSize)
     context.ctx.beginPath()
     context.ctx.moveTo(pos.x, pos.y)
@@ -1378,6 +2929,7 @@ export function useWhiteboard({
       !isTeacher ||
       (!isDrawableTool(activeTool) &&
         !isShapeTool(activeTool) &&
+        !isTextTool(activeTool) &&
         !isEraserTool(activeTool) &&
         !isPointerTool(activeTool))
     ) {
@@ -1414,11 +2966,65 @@ export function useWhiteboard({
 
     if (
       isPointerTool(activeTool) &&
+      rotatingOperationIds.current.length > 0 &&
+      rotateOrigin.current &&
+      rotateStartAngle.current !== null
+    ) {
+      const currentAngle = Math.atan2(
+        pos.y - rotateOrigin.current.y,
+        pos.x - rotateOrigin.current.x,
+      )
+      const operation = {
+        id: "rotate-preview",
+        type: "rotate",
+        targetIds: rotatingOperationIds.current,
+        origin: rotateOrigin.current,
+        angle: currentAngle - rotateStartAngle.current,
+      } satisfies RotateOperation
+
+      renderOperations([...operations.current, operation])
+      lastPos.current = pos
+      return
+    }
+
+    if (
+      isPointerTool(activeTool) &&
+      resizingOperationIds.current.length > 0 &&
+      resizeStartBounds.current &&
+      activeResizeHandle.current
+    ) {
+      const resizePoint = {
+        x: pos.x - resizePointerOffset.current.x,
+        y: pos.y - resizePointerOffset.current.y,
+      }
+      const operation = resizeStartHandlePoints.current
+        ? getResizeOperationFromHandlePoints({
+            handlePoints: resizeStartHandlePoints.current,
+            currentPoint: resizePoint,
+            handle: activeResizeHandle.current,
+            targetIds: resizingOperationIds.current,
+            id: "resize-preview",
+          })
+        : getResizeOperationFromHandle({
+            bounds: resizeStartBounds.current,
+            currentPoint: resizePoint,
+            handle: activeResizeHandle.current,
+            targetIds: resizingOperationIds.current,
+            id: "resize-preview",
+          })
+
+      renderOperations([...operations.current, operation])
+      lastPos.current = pos
+      return
+    }
+
+    if (
+      isPointerTool(activeTool) &&
       movingOperationIds.current.length > 0 &&
       startPos.current
     ) {
-      const startPoint = normalizePoint(startPos.current, context.canvas)
-      const currentPoint = normalizePoint(pos, context.canvas)
+      const startPoint = startPos.current
+      const currentPoint = pos
       const delta = {
         x: currentPoint.x - startPoint.x,
         y: currentPoint.y - startPoint.y,
@@ -1452,6 +3058,10 @@ export function useWhiteboard({
     if (isShapeTool(activeTool)) {
       if (previewSnapshot.current && startPos.current) {
         context.ctx.putImageData(previewSnapshot.current, 0, 0)
+        applyViewportTransform(
+          context.ctx,
+          overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+        )
         drawShape(
           context.ctx,
           activeTool,
@@ -1467,7 +3077,7 @@ export function useWhiteboard({
 
     drawStrokePoint(context.ctx, color, brushSize, pos)
     pendingStrokePoints.current.push(pos)
-    activeStrokePoints.current.push(normalizePoint(pos, context.canvas))
+    activeStrokePoints.current.push(pos)
     scheduleStrokeFlush()
     lastPos.current = pos
   }
@@ -1514,14 +3124,108 @@ export function useWhiteboard({
       isTeacher &&
       isPointerTool(activeTool) &&
       context &&
+      rotatingOperationIds.current.length > 0 &&
+      rotateOrigin.current &&
+      rotateStartAngle.current !== null &&
+      startPos.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (endPoint) {
+        const currentAngle = Math.atan2(
+          endPoint.y - rotateOrigin.current.y,
+          endPoint.x - rotateOrigin.current.x,
+        )
+        const angle = currentAngle - rotateStartAngle.current
+        const movedEnough = Math.abs(angle) >= 0.01
+
+        if (movedEnough) {
+          const operation = {
+            id: createRotateId(),
+            type: "rotate",
+            targetIds: rotatingOperationIds.current,
+            origin: rotateOrigin.current,
+            angle,
+          } satisfies RotateOperation
+          const version = commitOperation(operation)
+
+          renderOperations(operations.current)
+          sendWhiteboardMessage(
+            {
+              type: "rotate",
+              operation,
+              version,
+            },
+            { reliable: true },
+          )
+        } else {
+          renderOperations(operations.current)
+        }
+      }
+    } else if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isPointerTool(activeTool) &&
+      context &&
+      resizingOperationIds.current.length > 0 &&
+      resizeStartBounds.current &&
+      activeResizeHandle.current &&
+      startPos.current
+    ) {
+      const endPoint = event ? getPos(event) : lastPos.current
+
+      if (endPoint) {
+        const movedEnough =
+          getDistance(startPos.current, endPoint) >= Math.max(2, brushSize / 2)
+
+        if (movedEnough) {
+          const resizePoint = {
+            x: endPoint.x - resizePointerOffset.current.x,
+            y: endPoint.y - resizePointerOffset.current.y,
+          }
+          const operation = resizeStartHandlePoints.current
+            ? getResizeOperationFromHandlePoints({
+                handlePoints: resizeStartHandlePoints.current,
+                currentPoint: resizePoint,
+                handle: activeResizeHandle.current,
+                targetIds: resizingOperationIds.current,
+                id: createResizeId(),
+              })
+            : getResizeOperationFromHandle({
+                bounds: resizeStartBounds.current,
+                currentPoint: resizePoint,
+                handle: activeResizeHandle.current,
+                targetIds: resizingOperationIds.current,
+                id: createResizeId(),
+              })
+          const version = commitOperation(operation)
+
+          renderOperations(operations.current)
+          sendWhiteboardMessage(
+            {
+              type: "resize",
+              operation,
+              version,
+            },
+            { reliable: true },
+          )
+        } else {
+          renderOperations(operations.current)
+        }
+      }
+    } else if (
+      isDrawingRef.current &&
+      isTeacher &&
+      isPointerTool(activeTool) &&
+      context &&
       movingOperationIds.current.length > 0 &&
       startPos.current
     ) {
       const endPoint = event ? getPos(event) : lastPos.current
 
       if (endPoint) {
-        const startPoint = normalizePoint(startPos.current, context.canvas)
-        const normalizedEndPoint = normalizePoint(endPoint, context.canvas)
+        const startPoint = startPos.current
+        const normalizedEndPoint = endPoint
         const delta = {
           x: normalizedEndPoint.x - startPoint.x,
           y: normalizedEndPoint.y - startPoint.y,
@@ -1582,12 +3286,16 @@ export function useWhiteboard({
           tool: activeTool,
           color,
           brushSize,
-          startPoint: normalizePoint(startPos.current, context.canvas),
-          endPoint: normalizePoint(endPoint, context.canvas),
+          startPoint: startPos.current,
+          endPoint,
         } satisfies Extract<WhiteboardOperation, { type: "shape" }>
         const version = commitOperation(operation)
 
         context.ctx.putImageData(previewSnapshot.current, 0, 0)
+        applyViewportTransform(
+          context.ctx,
+          overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+        )
         drawShape(
           context.ctx,
           activeTool,
@@ -1616,9 +3324,7 @@ export function useWhiteboard({
       if (context && endPoint && lastPos.current) {
         drawStrokePoint(context.ctx, color, brushSize, endPoint)
         pendingStrokePoints.current.push(endPoint)
-        activeStrokePoints.current.push(
-          normalizePoint(endPoint, context.canvas),
-        )
+        activeStrokePoints.current.push(endPoint)
       }
 
       flushStrokePoints()
@@ -1652,6 +3358,7 @@ export function useWhiteboard({
 
     if (context) {
       context.ctx.globalCompositeOperation = "source-over"
+      resetViewportTransform(context.ctx)
     }
   }
 
@@ -1744,6 +3451,7 @@ export function useWhiteboard({
       operations: operations.current,
       redoOperations: redoOperations.current,
       boardVersion: boardVersion.current,
+      viewport: viewportRef.current,
     })
 
     const nextBoardState =
@@ -1753,9 +3461,13 @@ export function useWhiteboard({
     operations.current = nextBoardState.operations
     redoOperations.current = nextBoardState.redoOperations
     boardVersion.current = nextBoardState.boardVersion
+    viewportRef.current =
+      whiteboardViewportCache.get(boardId) ?? nextBoardState.viewport
+    whiteboardViewportCache.set(boardId, viewportRef.current)
     selectedOperationIds.current = new Set()
     remoteStrokes.current.clear()
     setHasSelection(false)
+    setViewportVersion((version) => version + 1)
     setRedoCount(nextBoardState.redoOperations.length)
     resetDrawingState()
     renderOperations(nextBoardState.operations)
@@ -1766,13 +3478,31 @@ export function useWhiteboard({
   }, [renderOperations])
 
   useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const observer = new ResizeObserver(() => {
+      renderOperations(operations.current)
+    })
+    observer.observe(canvas)
+
+    return () => observer.disconnect()
+  }, [renderOperations])
+
+  useEffect(() => {
     return () => {
+      if (!overlayActive) {
+        whiteboardViewportCache.set(boardId, viewportRef.current)
+      }
       if (strokeFlushFrame.current !== null) {
         cancelAnimationFrame(strokeFlushFrame.current)
       }
+      if (viewportSyncFrame.current !== null) {
+        cancelAnimationFrame(viewportSyncFrame.current)
+      }
       clearStateResponseTimers()
     }
-  }, [clearStateResponseTimers])
+  }, [boardId, clearStateResponseTimers, overlayActive])
 
   useEffect(() => {
     if (!syncEnabled) {
@@ -1796,10 +3526,21 @@ export function useWhiteboard({
         { reliable: true },
       )
     }
+
+    if (isTeacher && !overlayActive) {
+      sendWhiteboardMessage(
+        {
+          type: "viewport",
+          viewport: viewportRef.current,
+        },
+        { reliable: true },
+      )
+    }
   }, [
     boardId,
     clearStateResponseTimers,
     isTeacher,
+    overlayActive,
     sendWhiteboardMessage,
     syncEnabled,
   ])
@@ -1894,7 +3635,19 @@ export function useWhiteboard({
         redoOperations.current = []
         setRedoCount(0)
         remoteStrokes.current.clear()
+        if (!isTeacher && message.viewport && !overlayActive) {
+          viewportRef.current = message.viewport
+          whiteboardViewportCache.set(boardId, viewportRef.current)
+          setViewportVersion((version) => version + 1)
+        }
         renderOperations(message.operations)
+        continue
+      }
+
+      if (message.type === "viewport") {
+        if (!isTeacher && !overlayActive) {
+          applyViewport(message.viewport)
+        }
         continue
       }
 
@@ -1950,7 +3703,13 @@ export function useWhiteboard({
         continue
       }
 
-      if (message.type === "move" || message.type === "move:many") {
+      if (
+        message.type === "move" ||
+        message.type === "move:many" ||
+        message.type === "resize" ||
+        message.type === "rotate" ||
+        message.type === "style"
+      ) {
         if (message.version < boardVersion.current) {
           continue
         }
@@ -1972,6 +3731,10 @@ export function useWhiteboard({
           lastPoint: point,
           points: [message.point],
         })
+        applyViewportTransform(
+          context.ctx,
+          overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+        )
         configureStroke(context.ctx, message.color, message.brushSize)
         context.ctx.beginPath()
         context.ctx.moveTo(point.x, point.y)
@@ -1987,15 +3750,32 @@ export function useWhiteboard({
         operations.current = [...operations.current, message.operation]
         redoOperations.current = []
         setRedoCount(0)
-        drawShape(
+        applyViewportTransform(
           context.ctx,
-          message.operation.tool,
-          message.operation.color,
-          message.operation.brushSize,
-          denormalizePoint(message.operation.startPoint, context.canvas),
-          denormalizePoint(message.operation.endPoint, context.canvas),
+          overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
         )
+        drawShapeOperation(context.ctx, context.canvas, message.operation)
         context.ctx.globalCompositeOperation = "source-over"
+        resetViewportTransform(context.ctx)
+        continue
+      }
+
+      if (message.type === "text") {
+        if (message.version < boardVersion.current) {
+          continue
+        }
+
+        boardVersion.current = message.version
+        operations.current = [...operations.current, message.operation]
+        redoOperations.current = []
+        setRedoCount(0)
+        applyViewportTransform(
+          context.ctx,
+          overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+        )
+        drawTextOperation(context.ctx, context.canvas, message.operation)
+        context.ctx.globalCompositeOperation = "source-over"
+        resetViewportTransform(context.ctx)
         continue
       }
 
@@ -2007,6 +3787,10 @@ export function useWhiteboard({
 
         for (const normalizedPoint of message.points) {
           const point = denormalizePoint(normalizedPoint, context.canvas)
+          applyViewportTransform(
+            context.ctx,
+            overlayActive ? DEFAULT_VIEWPORT : viewportRef.current,
+          )
           drawStrokePoint(context.ctx, stroke.color, stroke.brushSize, point)
           stroke.lastPoint = point
           stroke.points.push(normalizedPoint)
@@ -2025,6 +3809,7 @@ export function useWhiteboard({
 
         remoteStrokes.current.delete(message.strokeId)
         context.ctx.globalCompositeOperation = "source-over"
+        resetViewportTransform(context.ctx)
       }
     }
   }, [
@@ -2046,7 +3831,7 @@ export function useWhiteboard({
     color,
     setColor,
     brushSize,
-    setBrushSize,
+    setBrushSize: handleBrushSizeChange,
     showColorPicker,
     setShowColorPicker,
     hasSelection,
@@ -2055,6 +3840,7 @@ export function useWhiteboard({
     handlePointerMove,
     handlePointerUp,
     handlePointerCancel,
+    handleWheel,
     handleKeyDown,
     handleDeleteSelection,
     handleUndo,

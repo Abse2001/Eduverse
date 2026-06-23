@@ -533,7 +533,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
               <TooltipContent side="right">Color</TooltipContent>
             </Tooltip>
 
-            {[2, 4, 8].map((size) => (
+            {[1, 2, 3, 4, 6, 8, 12, 16].map((size) => (
               <Tooltip key={size}>
                 <TooltipTrigger asChild>
                   <button
@@ -605,7 +605,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
                     className={cn(
                       "absolute inset-0 z-10 h-full w-full touch-none",
                       isTeacher &&
-                        ["pen", "line", "rect", "circle"].includes(
+                        ["pen", "line", "rect", "circle", "text"].includes(
                           whiteboard.activeTool,
                         )
                         ? "cursor-crosshair"
@@ -622,6 +622,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
                     onPointerMove={whiteboard.handlePointerMove}
                     onPointerUp={whiteboard.handlePointerUp}
                     onPointerCancel={whiteboard.handlePointerCancel}
+                    onWheel={whiteboard.handleWheel}
                     onKeyDown={whiteboard.handleKeyDown}
                   />
                 </div>
@@ -667,9 +668,9 @@ export function SessionScreen({ cls }: { cls: Class }) {
                 aria-label="Whiteboard canvas"
                 tabIndex={isTeacher ? 0 : -1}
                 className={cn(
-                  "relative z-10 w-full h-full touch-none object-contain bg-white dark:bg-black",
+                  "relative z-10 h-full w-full touch-none bg-white dark:bg-black",
                   isTeacher &&
-                    ["pen", "line", "rect", "circle"].includes(
+                    ["pen", "line", "rect", "circle", "text"].includes(
                       whiteboard.activeTool,
                     )
                     ? "cursor-crosshair"
@@ -686,6 +687,7 @@ export function SessionScreen({ cls }: { cls: Class }) {
                 onPointerMove={whiteboard.handlePointerMove}
                 onPointerUp={whiteboard.handlePointerUp}
                 onPointerCancel={whiteboard.handlePointerCancel}
+                onWheel={whiteboard.handleWheel}
                 onKeyDown={whiteboard.handleKeyDown}
               />
             ) : null}

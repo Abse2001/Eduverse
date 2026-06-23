@@ -1,5 +1,5 @@
-import type { Role } from "@/lib/mock-data"
 import type { ConnectionState, TrackPublication } from "livekit-client"
+import type { Role } from "@/lib/mock-data"
 
 export interface SessionParticipant {
   id: string
@@ -67,8 +67,15 @@ export interface WhiteboardPoint {
   y: number
 }
 
+export interface WhiteboardViewport {
+  x: number
+  y: number
+  scale: number
+}
+
 export type WhiteboardShape = "line" | "rect" | "circle"
 export type WhiteboardStrokeTool = "pen"
+export type WhiteboardResizeHandle = "nw" | "ne" | "sw" | "se"
 
 export type WhiteboardOperation =
   | {
@@ -78,6 +85,7 @@ export type WhiteboardOperation =
       color: string
       brushSize: number
       points: WhiteboardPoint[]
+      rotation?: number
     }
   | {
       id: string
@@ -87,6 +95,18 @@ export type WhiteboardOperation =
       brushSize: number
       startPoint: WhiteboardPoint
       endPoint: WhiteboardPoint
+      rotation?: number
+    }
+  | {
+      id: string
+      type: "text"
+      color: string
+      fontSize: number
+      point: WhiteboardPoint
+      width?: number
+      height?: number
+      rotation?: number
+      text: string
     }
   | {
       id: string
@@ -113,6 +133,32 @@ export type WhiteboardOperation =
       type: "move:many"
       targetIds: string[]
       delta: WhiteboardPoint
+    }
+  | {
+      id: string
+      type: "resize"
+      targetIds: string[]
+      origin: WhiteboardPoint
+      scaleX: number
+      scaleY: number
+      handle?: WhiteboardResizeHandle
+      currentPoint?: WhiteboardPoint
+      startPoint?: WhiteboardPoint
+      rotation?: number
+    }
+  | {
+      id: string
+      type: "rotate"
+      targetIds: string[]
+      origin: WhiteboardPoint
+      angle: number
+    }
+  | {
+      id: string
+      type: "style"
+      targetIds: string[]
+      brushSize?: number
+      fontSize?: number
     }
 
 export type LiveSessionWhiteboardMessage = {
@@ -152,6 +198,14 @@ export type LiveSessionWhiteboardMessage = {
       boardId?: string
       type: "shape"
       operation: Extract<WhiteboardOperation, { type: "shape" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      boardId?: string
+      type: "text"
+      operation: Extract<WhiteboardOperation, { type: "text" }>
       version: number
     }
   | {
@@ -198,6 +252,30 @@ export type LiveSessionWhiteboardMessage = {
       id: string
       senderId: string
       boardId?: string
+      type: "resize"
+      operation: Extract<WhiteboardOperation, { type: "resize" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      boardId?: string
+      type: "rotate"
+      operation: Extract<WhiteboardOperation, { type: "rotate" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      boardId?: string
+      type: "style"
+      operation: Extract<WhiteboardOperation, { type: "style" }>
+      version: number
+    }
+  | {
+      id: string
+      senderId: string
+      boardId?: string
       type: "state:request"
       requestId: string
       requesterRole?: Role
@@ -210,6 +288,14 @@ export type LiveSessionWhiteboardMessage = {
       requestId?: string
       version: number
       operations: WhiteboardOperation[]
+      viewport?: WhiteboardViewport
+    }
+  | {
+      id: string
+      senderId: string
+      boardId?: string
+      type: "viewport"
+      viewport: WhiteboardViewport
     }
   | {
       id: string

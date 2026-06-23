@@ -4,7 +4,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Megaphone,
-  MoreHorizontal,
   Search,
   Trash2,
   X,
@@ -109,9 +108,6 @@ export function ChatScreen({ cls }: { cls: Class }) {
           onClick={() => setIsSearchOpen((prev) => !prev)}
         >
           <Search className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="shrink-0">
-          <MoreHorizontal className="w-4 h-4" />
         </Button>
       </div>
 

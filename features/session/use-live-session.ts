@@ -1,23 +1,23 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ConnectionState,
-  Room,
-  RoomEvent,
-  Track,
   type Participant,
+  Room,
   type RoomConnectOptions,
+  RoomEvent,
   type RoomEventCallbacks,
   type RoomOptions,
+  Track,
   type TrackPublication,
 } from "livekit-client"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Role, User } from "@/lib/mock-data"
 import { getUserById } from "@/lib/mock-data"
 import type {
-  LiveSessionChatMessage,
   LiveMediaDeviceStatus,
   LiveMediaStatus,
+  LiveSessionChatMessage,
   LiveSessionNotice,
   LiveSessionState,
   LiveSessionWhiteboardMessage,
@@ -28,6 +28,7 @@ import type {
   WhiteboardPoint,
   WhiteboardShape,
   WhiteboardStrokeTool,
+  WhiteboardViewport,
 } from "./live-session-types"
 
 const ROOM_OPTIONS: RoomOptions = {
@@ -146,6 +147,22 @@ function isWhiteboardPointList(
   return Array.isArray(value) && value.every(isWhiteboardPoint)
 }
 
+function isWhiteboardViewport(
+  value: JsonValue | undefined,
+): value is WhiteboardViewport & JsonObject {
+  return (
+    isJsonObject(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    typeof value.scale === "number" &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.scale) &&
+    value.scale >= 0.25 &&
+    value.scale <= 4
+  )
+}
+
 function isStringList(value: JsonValue | undefined): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
 }
@@ -160,6 +177,10 @@ function isWhiteboardStrokeTool(
   value: JsonValue | undefined,
 ): value is WhiteboardStrokeTool {
   return value === "pen"
+}
+
+function isWhiteboardResizeHandle(value: JsonValue | undefined) {
+  return value === "nw" || value === "ne" || value === "sw" || value === "se"
 }
 
 function isRole(value: string | undefined): value is Role {
@@ -396,12 +417,66 @@ function isWhiteboardOperation(
     return isStringList(value.targetIds) && isWhiteboardPoint(value.delta)
   }
 
+  if (value.type === "resize") {
+    return (
+      isStringList(value.targetIds) &&
+      isWhiteboardPoint(value.origin) &&
+      typeof value.scaleX === "number" &&
+      typeof value.scaleY === "number" &&
+      (value.handle === undefined || isWhiteboardResizeHandle(value.handle)) &&
+      (value.currentPoint === undefined ||
+        isWhiteboardPoint(value.currentPoint)) &&
+      (value.startPoint === undefined || isWhiteboardPoint(value.startPoint)) &&
+      (value.rotation === undefined ||
+        (typeof value.rotation === "number" && Number.isFinite(value.rotation)))
+    )
+  }
+
+  if (value.type === "rotate") {
+    return (
+      isStringList(value.targetIds) &&
+      isWhiteboardPoint(value.origin) &&
+      typeof value.angle === "number" &&
+      Number.isFinite(value.angle)
+    )
+  }
+
+  if (value.type === "style") {
+    return (
+      isStringList(value.targetIds) &&
+      (value.brushSize === undefined ||
+        (typeof value.brushSize === "number" &&
+          Number.isFinite(value.brushSize))) &&
+      (value.fontSize === undefined ||
+        (typeof value.fontSize === "number" && Number.isFinite(value.fontSize)))
+    )
+  }
+
   if (
     value.type === "stroke" &&
     isWhiteboardStrokeTool(value.tool) &&
     typeof value.color === "string" &&
     typeof value.brushSize === "number" &&
-    isWhiteboardPointList(value.points)
+    isWhiteboardPointList(value.points) &&
+    (value.rotation === undefined ||
+      (typeof value.rotation === "number" && Number.isFinite(value.rotation)))
+  ) {
+    return true
+  }
+
+  if (
+    value.type === "text" &&
+    typeof value.color === "string" &&
+    typeof value.fontSize === "number" &&
+    isWhiteboardPoint(value.point) &&
+    (value.width === undefined ||
+      (typeof value.width === "number" && Number.isFinite(value.width))) &&
+    (value.height === undefined ||
+      (typeof value.height === "number" && Number.isFinite(value.height))) &&
+    (value.rotation === undefined ||
+      (typeof value.rotation === "number" &&
+        Number.isFinite(value.rotation))) &&
+    typeof value.text === "string"
   ) {
     return true
   }
@@ -412,7 +487,9 @@ function isWhiteboardOperation(
     typeof value.color === "string" &&
     typeof value.brushSize === "number" &&
     isWhiteboardPoint(value.startPoint) &&
-    isWhiteboardPoint(value.endPoint)
+    isWhiteboardPoint(value.endPoint) &&
+    (value.rotation === undefined ||
+      (typeof value.rotation === "number" && Number.isFinite(value.rotation)))
   )
 }
 
@@ -453,9 +530,14 @@ function isWhiteboardMessage(
     value.type === "state:sync" &&
     (value.requestId === undefined || typeof value.requestId === "string") &&
     typeof value.version === "number" &&
-    isWhiteboardOperationList(value.operations)
+    isWhiteboardOperationList(value.operations) &&
+    (value.viewport === undefined || isWhiteboardViewport(value.viewport))
   ) {
     return true
+  }
+
+  if (value.type === "viewport") {
+    return isWhiteboardViewport(value.viewport)
   }
 
   if (value.type === "shape") {
@@ -464,6 +546,15 @@ function isWhiteboardMessage(
       typeof value.version === "number" &&
       isWhiteboardOperation(operation) &&
       operation.type === "shape"
+    )
+  }
+
+  if (value.type === "text") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "text"
     )
   }
 
@@ -509,6 +600,33 @@ function isWhiteboardMessage(
       typeof value.version === "number" &&
       isWhiteboardOperation(operation) &&
       operation.type === "move:many"
+    )
+  }
+
+  if (value.type === "resize") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "resize"
+    )
+  }
+
+  if (value.type === "rotate") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "rotate"
+    )
+  }
+
+  if (value.type === "style") {
+    const operation = value.operation
+    return (
+      typeof value.version === "number" &&
+      isWhiteboardOperation(operation) &&
+      operation.type === "style"
     )
   }
 
@@ -992,12 +1110,10 @@ export function useLiveSession({
         : prev.camera,
       screen: canDeriveMediaStatus(prev.screen)
         ? {
-            state:
-              localParticipant && localParticipant.isPresenting ? "on" : "off",
-            label:
-              localParticipant && localParticipant.isPresenting
-                ? "Screen sharing is on"
-                : "Screen sharing is off",
+            state: localParticipant?.isPresenting ? "on" : "off",
+            label: localParticipant?.isPresenting
+              ? "Screen sharing is on"
+              : "Screen sharing is off",
           }
         : prev.screen,
     }))

@@ -81,9 +81,20 @@ type PreviewConsoleLine = {
   level: "log" | "info" | "warn" | "error"
   message: string
 }
+type SavedIdeWorkspace = {
+  version: 1
+  templateId: string
+  workspace: Workspace
+  activePath: string
+  openPaths: string[]
+  cwd: string
+  fontSize: number
+  savedAt: string
+}
 
 const TERMINAL_COLLAPSED_SIZE = 5
 const TERMINAL_DEFAULT_SIZE = 28
+const IDE_WORKSPACE_STORAGE_PREFIX = "eduverse:ide-workspace:"
 
 export default function IdePage({
   params,
@@ -145,6 +156,19 @@ export default function IdePage({
     () => buildPreviewDocument(workspace, activePath, isDarkMode),
     [workspace, activePath, isDarkMode],
   )
+
+  useEffect(() => {
+    const savedWorkspace = loadSavedIdeWorkspace(classId)
+    if (!savedWorkspace) return
+
+    setTemplateId(savedWorkspace.templateId)
+    setWorkspace(savedWorkspace.workspace)
+    setActivePath(savedWorkspace.activePath)
+    setOpenPaths(savedWorkspace.openPaths)
+    setCwd(savedWorkspace.cwd)
+    setFontSize(savedWorkspace.fontSize)
+    setSavedAt(new Date(savedWorkspace.savedAt))
+  }, [classId])
 
   useEffect(() => {
     setPreviewConsoleLines([])
@@ -235,24 +259,39 @@ export default function IdePage({
     ])
   }
 
-  function switchTemplate(nextTemplateId: string) {
-    const nextTemplate =
-      PROJECT_TEMPLATES.find((template) => template.id === nextTemplateId) ??
-      PROJECT_TEMPLATES[0]
-
+  function loadTemplate(nextTemplateId: string, messagePrefix: string) {
+    const nextTemplate = getProjectTemplate(nextTemplateId)
     setTemplateId(nextTemplate.id)
     setWorkspace(nextTemplate.files)
     setActivePath(nextTemplate.entryFile)
     setOpenPaths([nextTemplate.entryFile])
     setCwd("/")
     setPreviewMode("preview")
+    setSavedAt(null)
     setTerminalLines([
       {
         id: terminalIdRef.current++,
         kind: "success",
-        text: `Loaded ${nextTemplate.label}.`,
+        text: `${messagePrefix} ${nextTemplate.label}.`,
       },
     ])
+  }
+
+  function switchTemplate(nextTemplateId: string) {
+    loadTemplate(nextTemplateId, "Loaded")
+  }
+
+  function resetSavedWorkspace() {
+    if (
+      !window.confirm(
+        "Clear the saved IDE workspace for this class and reset the current files?",
+      )
+    ) {
+      return
+    }
+
+    window.localStorage.removeItem(getIdeWorkspaceStorageKey(classId))
+    loadTemplate(templateId, "Reset")
   }
 
   function openFile(path: string) {
@@ -423,6 +462,15 @@ export default function IdePage({
   }
 
   function executeCommand(command: string) {
+    if (command.trim() === "save") {
+      const result = saveWorkspace()
+      appendTerminal({
+        kind: result.ok ? "success" : "error",
+        text: result.message,
+      })
+      return
+    }
+
     const result = runVirtualCommand({
       command,
       cwd,
@@ -495,6 +543,31 @@ export default function IdePage({
     }
   }
 
+  function saveWorkspace() {
+    const nextSavedAt = new Date()
+    const savedWorkspace: SavedIdeWorkspace = {
+      version: 1,
+      templateId,
+      workspace,
+      activePath,
+      openPaths,
+      cwd,
+      fontSize,
+      savedAt: nextSavedAt.toISOString(),
+    }
+
+    try {
+      window.localStorage.setItem(
+        getIdeWorkspaceStorageKey(classId),
+        JSON.stringify(savedWorkspace),
+      )
+      setSavedAt(nextSavedAt)
+      return { ok: true, message: "Workspace saved to this browser." }
+    } catch {
+      return { ok: false, message: "Could not save workspace." }
+    }
+  }
+
   if (!cls) {
     return (
       <ClassRouteFallback isLoading={isLoading} errorMessage={errorMessage} />
@@ -558,7 +631,21 @@ export default function IdePage({
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 px-3 text-xs"
-              onClick={() => setSavedAt(new Date())}
+              onClick={resetSavedWorkspace}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 px-3 text-xs"
+              onClick={() => {
+                const result = saveWorkspace()
+                if (!result.ok) {
+                  appendTerminal({ kind: "error", text: result.message })
+                }
+              }}
             >
               <Save className="h-3.5 w-3.5" />
               Save
@@ -1061,4 +1148,85 @@ function ConsoleList({
       ))}
     </div>
   )
+}
+
+function getIdeWorkspaceStorageKey(classId: string) {
+  return `${IDE_WORKSPACE_STORAGE_PREFIX}${classId}`
+}
+
+function getProjectTemplate(templateId: string) {
+  return (
+    PROJECT_TEMPLATES.find((template) => template.id === templateId) ??
+    PROJECT_TEMPLATES[0]
+  )
+}
+
+function loadSavedIdeWorkspace(classId: string): SavedIdeWorkspace | null {
+  try {
+    const raw = window.localStorage.getItem(getIdeWorkspaceStorageKey(classId))
+    if (!raw) return null
+
+    const value = JSON.parse(raw) as unknown
+    if (!isSavedIdeWorkspace(value)) return null
+
+    const activePath =
+      value.workspace[value.activePath]?.kind === "file"
+        ? value.activePath
+        : firstFilePath(value.workspace)
+    if (!activePath) return null
+
+    const openPaths = value.openPaths.filter(
+      (path) => value.workspace[path]?.kind === "file",
+    )
+
+    return {
+      ...value,
+      activePath,
+      openPaths: openPaths.length > 0 ? openPaths : [activePath],
+      cwd: value.workspace[value.cwd]?.kind === "directory" ? value.cwd : "/",
+      fontSize: Math.min(22, Math.max(11, value.fontSize)),
+    }
+  } catch {
+    return null
+  }
+}
+
+function isSavedIdeWorkspace(value: unknown): value is SavedIdeWorkspace {
+  if (!value || typeof value !== "object") return false
+
+  const workspace = (value as { workspace?: unknown }).workspace
+  return (
+    (value as { version?: unknown }).version === 1 &&
+    typeof (value as { templateId?: unknown }).templateId === "string" &&
+    isWorkspace(workspace) &&
+    typeof (value as { activePath?: unknown }).activePath === "string" &&
+    Array.isArray((value as { openPaths?: unknown }).openPaths) &&
+    (value as { openPaths: unknown[] }).openPaths.every(
+      (path) => typeof path === "string",
+    ) &&
+    typeof (value as { cwd?: unknown }).cwd === "string" &&
+    typeof (value as { fontSize?: unknown }).fontSize === "number" &&
+    typeof (value as { savedAt?: unknown }).savedAt === "string" &&
+    !Number.isNaN(Date.parse((value as { savedAt: string }).savedAt))
+  )
+}
+
+function isWorkspace(value: unknown): value is Workspace {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.values(value).every((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return false
+    }
+
+    const kind = (entry as { kind?: unknown }).kind
+    const content = (entry as { content?: unknown }).content
+    return (
+      (kind === "directory" && content === undefined) ||
+      (kind === "file" &&
+        (content === undefined || typeof content === "string"))
+    )
+  })
 }

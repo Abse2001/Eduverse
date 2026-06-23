@@ -1,6 +1,21 @@
-import { Circle, Eraser, Minus, MousePointer2, Pen, Square } from "lucide-react"
+import {
+  Circle,
+  Eraser,
+  Minus,
+  MousePointer2,
+  Pen,
+  Square,
+  Type,
+} from "lucide-react"
 
-export type Tool = "pen" | "eraser" | "line" | "rect" | "circle" | "pointer"
+export type Tool =
+  | "pen"
+  | "eraser"
+  | "line"
+  | "rect"
+  | "circle"
+  | "text"
+  | "pointer"
 
 export const SESSION_COLORS = [
   "#1e1e1e",
@@ -24,6 +39,7 @@ export const SESSION_TOOLS: Array<{
   { id: "line", icon: Minus, label: "Line" },
   { id: "rect", icon: Square, label: "Rectangle" },
   { id: "circle", icon: Circle, label: "Circle" },
+  { id: "text", icon: Type, label: "Text" },
 ]
 
 export const MOCK_SESSION_CHAT = [
