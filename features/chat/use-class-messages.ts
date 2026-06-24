@@ -19,6 +19,17 @@ type MessageResponse = {
   error?: string
 }
 
+type MessagesCacheEntry = {
+  messages: ChatMessage[] | null
+  request: Promise<ChatMessage[]> | null
+}
+
+const messagesCache = new Map<string, MessagesCacheEntry>()
+const messageListeners = new Map<
+  string,
+  Set<(messages: ChatMessage[]) => void>
+>()
+
 export function useClassMessages({
   classId,
   currentUserId,
@@ -31,23 +42,31 @@ export function useClassMessages({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isAnnouncementMode, setIsAnnouncementMode] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const cacheKey = getMessagesCacheKey(classId, currentUserId)
 
   useEffect(() => {
     let cancelled = false
-    setIsLoading(true)
+    const cachedMessages = readMessagesCache(cacheKey)
+
+    if (cachedMessages) {
+      setMessages(cachedMessages)
+      setIsLoading(false)
+    } else {
+      setMessages([])
+      setIsLoading(true)
+    }
     setErrorMessage(null)
 
-    fetch(`/api/classes/${encodeURIComponent(classId)}/messages`)
-      .then(async (response) => {
-        const payload = (await response
-          .json()
-          .catch(() => null)) as MessagesResponse | null
+    const unsubscribe = subscribeMessages(cacheKey, (nextMessages) => {
+      if (cancelled) return
+      setMessages(nextMessages)
+      setIsLoading(false)
+      setErrorMessage(null)
+    })
 
-        if (!response.ok || !payload?.messages) {
-          throw new Error(payload?.error ?? "Could not load messages.")
-        }
-
-        if (!cancelled) setMessages(payload.messages)
+    loadClassMessages({ classId, cacheKey, force: true })
+      .then((nextMessages) => {
+        if (!cancelled) setMessages(nextMessages)
       })
       .catch((error) => {
         if (cancelled) return
@@ -62,8 +81,9 @@ export function useClassMessages({
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
-  }, [classId])
+  }, [cacheKey, classId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -123,7 +143,10 @@ export function useClassMessages({
         throw new Error(payload?.error ?? "Could not send message.")
       }
 
-      setMessages((prev) => [...prev, payload.message as ChatMessage])
+      writeMessagesCache(cacheKey, [
+        ...(readMessagesCache(cacheKey) ?? messages),
+        payload.message as ChatMessage,
+      ])
       setInput("")
       setIsAnnouncementMode(false)
     } catch (error) {
@@ -155,8 +178,9 @@ export function useClassMessages({
         )
       }
 
-      setMessages((prev) =>
-        prev.map((message) =>
+      writeMessagesCache(
+        cacheKey,
+        (readMessagesCache(cacheKey) ?? messages).map((message) =>
           message.id === messageId
             ? { ...message, showInAnnouncementCarousel: false }
             : message,
@@ -198,7 +222,10 @@ export function useClassMessages({
         throw new Error(payload?.error ?? "Could not share media.")
       }
 
-      setMessages((prev) => [...prev, payload.message as ChatMessage])
+      writeMessagesCache(cacheKey, [
+        ...(readMessagesCache(cacheKey) ?? messages),
+        payload.message as ChatMessage,
+      ])
       setInput("")
     } catch (error) {
       setErrorMessage(
@@ -229,4 +256,94 @@ export function useClassMessages({
     canSendAnnouncement,
     currentUserId,
   }
+}
+
+async function loadClassMessages({
+  classId,
+  cacheKey,
+  force = false,
+}: {
+  classId: string
+  cacheKey: string
+  force?: boolean
+}) {
+  const cached = messagesCache.get(cacheKey)
+
+  if (!force && cached?.messages) {
+    return cached.messages
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = fetchClassMessages(classId)
+    .then((messages) => {
+      writeMessagesCache(cacheKey, messages)
+      return messages
+    })
+    .finally(() => {
+      const latestCached = messagesCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  messagesCache.set(cacheKey, {
+    messages: cached?.messages ?? null,
+    request,
+  })
+
+  return request
+}
+
+async function fetchClassMessages(classId: string) {
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(classId)}/messages`,
+  )
+  const payload = (await response
+    .json()
+    .catch(() => null)) as MessagesResponse | null
+
+  if (!response.ok || !payload?.messages) {
+    throw new Error(payload?.error ?? "Could not load messages.")
+  }
+
+  return payload.messages
+}
+
+function readMessagesCache(cacheKey: string) {
+  return messagesCache.get(cacheKey)?.messages ?? null
+}
+
+function subscribeMessages(
+  cacheKey: string,
+  listener: (messages: ChatMessage[]) => void,
+) {
+  const listeners = messageListeners.get(cacheKey) ?? new Set()
+  listeners.add(listener)
+  messageListeners.set(cacheKey, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      messageListeners.delete(cacheKey)
+    }
+  }
+}
+
+function writeMessagesCache(cacheKey: string, messages: ChatMessage[]) {
+  const current = messagesCache.get(cacheKey)
+  messagesCache.set(cacheKey, {
+    messages,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of messageListeners.get(cacheKey) ?? []) {
+    listener(messages)
+  }
+}
+
+function getMessagesCacheKey(classId: string, currentUserId: string) {
+  return `${classId}:${currentUserId}`
 }

@@ -69,6 +69,18 @@ type DownloadUrlResponse = {
   downloadUrl: string
 }
 
+type AssignmentCacheKey = string
+type AssignmentCacheEntry = {
+  assignments: ClassAssignment[] | null
+  request: Promise<ClassAssignment[]> | null
+}
+
+const assignmentCache = new Map<AssignmentCacheKey, AssignmentCacheEntry>()
+const assignmentListeners = new Map<
+  AssignmentCacheKey,
+  Set<(assignments: ClassAssignment[]) => void>
+>()
+
 export function useClassAssignments({
   classId,
   currentUserId,
@@ -82,9 +94,11 @@ export function useClassAssignments({
   const [isLoading, setIsLoading] = useState(true)
   const [isMutating, setIsMutating] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const cacheKey = getAssignmentCacheKey({ classId, currentUserId, canManage })
 
   const refreshAssignments = useCallback(async () => {
-    setIsLoading(true)
+    const cachedAssignments = readAssignmentCache(cacheKey)
+    setIsLoading(!cachedAssignments)
     setErrorMessage(null)
 
     try {
@@ -92,6 +106,7 @@ export function useClassAssignments({
         classId,
         currentUserId,
         canManage,
+        force: true,
       })
       setAssignments(nextAssignments)
       return nextAssignments
@@ -104,14 +119,32 @@ export function useClassAssignments({
     } finally {
       setIsLoading(false)
     }
-  }, [canManage, classId, currentUserId])
+  }, [cacheKey, canManage, classId, currentUserId])
 
   useEffect(() => {
     let cancelled = false
-    setIsLoading(true)
+    const cachedAssignments = readAssignmentCache(cacheKey)
+
+    if (cachedAssignments) {
+      setAssignments(cachedAssignments)
+      setIsLoading(false)
+    } else {
+      setAssignments([])
+      setIsLoading(true)
+    }
     setErrorMessage(null)
 
-    loadClassAssignments({ classId, currentUserId, canManage })
+    const unsubscribe = subscribeClassAssignments(
+      cacheKey,
+      (nextAssignments) => {
+        if (cancelled) return
+        setAssignments(nextAssignments)
+        setIsLoading(false)
+        setErrorMessage(null)
+      },
+    )
+
+    loadClassAssignments({ classId, currentUserId, canManage, force: true })
       .then((nextAssignments) => {
         if (cancelled) return
         setAssignments(nextAssignments)
@@ -132,8 +165,9 @@ export function useClassAssignments({
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
-  }, [canManage, classId, currentUserId])
+  }, [cacheKey, canManage, classId, currentUserId])
 
   const counts = useMemo(() => {
     const now = Date.now()
@@ -407,11 +441,108 @@ export function getAssignmentDerivedStatus(
 
 export async function loadClassAssignments({
   classId,
+  currentUserId,
+  canManage,
+  force = false,
+}: {
+  classId: string
+  currentUserId: string | null
+  canManage: boolean
+  force?: boolean
+}) {
+  const cacheKey = getAssignmentCacheKey({ classId, currentUserId, canManage })
+  const cached = assignmentCache.get(cacheKey)
+
+  if (!force && cached?.assignments) {
+    return cached.assignments
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = fetchClassAssignments(classId)
+    .then((assignments) => {
+      writeAssignmentCache(cacheKey, assignments)
+      return assignments
+    })
+    .finally(() => {
+      const latestCached = assignmentCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  assignmentCache.set(cacheKey, {
+    assignments: cached?.assignments ?? null,
+    request,
+  })
+
+  return request
+}
+
+export function readCachedClassAssignments({
+  classId,
+  currentUserId,
+  canManage,
 }: {
   classId: string
   currentUserId: string | null
   canManage: boolean
 }) {
+  return readAssignmentCache(
+    getAssignmentCacheKey({ classId, currentUserId, canManage }),
+  )
+}
+
+function readAssignmentCache(cacheKey: AssignmentCacheKey) {
+  return assignmentCache.get(cacheKey)?.assignments ?? null
+}
+
+function subscribeClassAssignments(
+  cacheKey: AssignmentCacheKey,
+  listener: (assignments: ClassAssignment[]) => void,
+) {
+  const listeners = assignmentListeners.get(cacheKey) ?? new Set()
+  listeners.add(listener)
+  assignmentListeners.set(cacheKey, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      assignmentListeners.delete(cacheKey)
+    }
+  }
+}
+
+function writeAssignmentCache(
+  cacheKey: AssignmentCacheKey,
+  assignments: ClassAssignment[],
+) {
+  const current = assignmentCache.get(cacheKey)
+  assignmentCache.set(cacheKey, {
+    assignments,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of assignmentListeners.get(cacheKey) ?? []) {
+    listener(assignments)
+  }
+}
+
+function getAssignmentCacheKey({
+  classId,
+  currentUserId,
+  canManage,
+}: {
+  classId: string
+  currentUserId: string | null
+  canManage: boolean
+}) {
+  return `${classId}:${canManage ? "manager" : "student"}:${currentUserId ?? "anonymous"}`
+}
+
+async function fetchClassAssignments(classId: string) {
   const response = await fetch(
     `/api/classes/${encodeURIComponent(classId)}/assignments`,
   )
