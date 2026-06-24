@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server"
+import {
+  extractMaterialContentForAiAgent,
+  generateMaterialStudySummary,
+} from "@/lib/ai/material-extraction"
 import { notificationHref, sendNotification } from "@/lib/api/notifications"
 import {
   deleteMaterialObject,
@@ -6,6 +10,7 @@ import {
   validateMaterialUpload,
 } from "@/lib/api/s3-materials"
 import { requireRouteUser } from "@/lib/api/supabase-route"
+import { createServerClient } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
 
@@ -28,13 +33,20 @@ type MaterialRow = {
   original_filename: string
   mime_type: string
   size_bytes: number
+  ai_summary: string | null
+  ai_summary_used_file_text: boolean | null
   ai_summary_generated_at: string | null
+  ai_extracted_content: string | null
+  ai_extracted_content_used_file_content: boolean | null
+  ai_extracted_content_generated_at: string | null
   created_at: string
   updated_at: string
 }
 
 const MATERIAL_SELECT =
-  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary_generated_at, created_at, updated_at"
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary, ai_summary_used_file_text, ai_summary_generated_at, ai_extracted_content, ai_extracted_content_used_file_content, ai_extracted_content_generated_at, created_at, updated_at"
+const MATERIAL_SELECT_SUMMARY =
+  "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_summary, ai_summary_used_file_text, ai_summary_generated_at, created_at, updated_at"
 
 const MATERIAL_SELECT_LEGACY =
   "id, organization_id, class_id, uploaded_by_user_id, title, description, type, source, chat_message_id, storage_bucket, storage_key, original_filename, mime_type, size_bytes, created_at, updated_at"
@@ -72,7 +84,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { data: classRow, error: classError } = await supabase
     .from("classes")
-    .select("id, organization_id")
+    .select("id, organization_id, name, code")
     .eq("id", classId)
     .eq("is_archived", false)
     .maybeSingle()
@@ -136,7 +148,19 @@ export async function POST(request: Request, context: RouteContext) {
       .select(MATERIAL_SELECT)
       .single()
 
+    let canPersistExtractedContent = true
+    if (isMissingExtractedContentColumnError(materialResult.error)) {
+      canPersistExtractedContent = false
+      materialResult = await supabase
+        .from("class_materials")
+        .insert(materialInsert)
+        .select(MATERIAL_SELECT_SUMMARY)
+        .single()
+    }
+
+    let canPersistSummary = !isMissingSummaryColumnError(materialResult.error)
     if (isMissingSummaryColumnError(materialResult.error)) {
+      canPersistSummary = false
       materialResult = await supabase
         .from("class_materials")
         .insert(materialInsert)
@@ -149,6 +173,28 @@ export async function POST(request: Request, context: RouteContext) {
     if (materialError) {
       await deleteMaterialObject(uploadedObject).catch(() => null)
       throw materialError
+    }
+
+    if (canPersistExtractedContent || canPersistSummary) {
+      try {
+        await cacheUploadedMaterialAiContent({
+          className: classRow.name,
+          classCode: classRow.code,
+          material: materialData as MaterialRow,
+          canPersistExtractedContent,
+          canPersistSummary,
+        })
+      } catch (scanError) {
+        await cleanupFailedMaterialUpload({
+          material: materialData as MaterialRow,
+          uploadedObject,
+        })
+        throw new Error(
+          scanError instanceof Error
+            ? `Could not prepare material AI content: ${scanError.message}`
+            : "Could not prepare material AI content.",
+        )
+      }
     }
 
     await sendNotification({
@@ -185,6 +231,95 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
+async function cacheUploadedMaterialAiContent({
+  className,
+  classCode,
+  material,
+  canPersistExtractedContent,
+  canPersistSummary,
+}: {
+  className: string
+  classCode: string
+  material: MaterialRow
+  canPersistExtractedContent: boolean
+  canPersistSummary: boolean
+}) {
+  const { extractedContent, usedFileContent } =
+    await extractMaterialContentForAiAgent(material)
+  const summary = canPersistSummary
+    ? await generateMaterialStudySummary({
+        className,
+        classCode,
+        material,
+        extractedContent,
+        unavailableReason: extractedContent
+          ? ""
+          : "File content is not available for this material.",
+      })
+    : ""
+  const generatedAt = new Date().toISOString()
+
+  const admin = createServerClient()
+  const updatePayload = {
+    ...(canPersistExtractedContent
+      ? {
+          ai_extracted_content: extractedContent || null,
+          ai_extracted_content_used_file_content: usedFileContent,
+          ai_extracted_content_generated_at: extractedContent
+            ? generatedAt
+            : null,
+        }
+      : {}),
+    ...(canPersistSummary
+      ? {
+          ai_summary: summary || null,
+          ai_summary_used_file_text: usedFileContent,
+          ai_summary_generated_at: summary ? generatedAt : null,
+        }
+      : {}),
+  }
+
+  await admin
+    .from("class_materials")
+    .update(updatePayload)
+    .eq("id", material.id)
+    .eq("class_id", material.class_id)
+}
+
+async function cleanupFailedMaterialUpload({
+  material,
+  uploadedObject,
+}: {
+  material: MaterialRow
+  uploadedObject: { bucket: string; storageKey: string }
+}) {
+  const admin = createServerClient()
+  const cleanupResult = await admin
+    .from("class_materials")
+    .update({
+      deleted_at: new Date().toISOString(),
+      ai_summary: null,
+      ai_summary_used_file_text: false,
+      ai_summary_generated_at: null,
+      ai_extracted_content: null,
+      ai_extracted_content_used_file_content: false,
+      ai_extracted_content_generated_at: null,
+    })
+    .eq("id", material.id)
+    .eq("class_id", material.class_id)
+
+  if (isMissingAiCacheColumnError(cleanupResult.error)) {
+    await admin
+      .from("class_materials")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", material.id)
+      .eq("class_id", material.class_id)
+      .then(() => null)
+  }
+
+  await deleteMaterialObject(uploadedObject).catch(() => null)
+}
+
 function toMaterialResponse(row: MaterialRow) {
   return {
     id: row.id,
@@ -211,6 +346,23 @@ function toMaterialResponse(row: MaterialRow) {
 function isMissingSummaryColumnError(error: { message?: string } | null) {
   return (
     Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("schema cache"))
+  )
+}
+
+function isMissingExtractedContentColumnError(
+  error: { message?: string } | null,
+) {
+  return (
+    Boolean(error?.message?.includes("ai_extracted_content")) ||
+    Boolean(error?.message?.includes("schema cache"))
+  )
+}
+
+function isMissingAiCacheColumnError(error: { message?: string } | null) {
+  return (
+    Boolean(error?.message?.includes("ai_summary")) ||
+    Boolean(error?.message?.includes("ai_extracted_content")) ||
     Boolean(error?.message?.includes("schema cache"))
   )
 }

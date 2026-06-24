@@ -44,7 +44,11 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    const classContext = await loadClassAiContext({ classId, supabase })
+    const classContext = await loadClassAiContext({
+      classId,
+      supabase,
+      ensureMaterialContent: true,
+    })
     const priorMessages = parsePriorMessages(body?.messages)
     const answer = await generateAiText({
       temperature: 0.35,

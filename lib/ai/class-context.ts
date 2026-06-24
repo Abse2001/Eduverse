@@ -1,4 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js"
+import { extractMaterialContentForAiAgent } from "@/lib/ai/material-extraction"
+import { createServerClient } from "@/lib/supabase/server"
 
 type RouteSupabase = SupabaseClient
 
@@ -17,23 +19,24 @@ type ClassMembershipRow = {
 }
 
 type MaterialContextRow = {
+  id: string
   title: string
   description: string
   type: string
+  storage_bucket: string
+  storage_key: string
   original_filename: string
   mime_type: string
+  size_bytes: number
   ai_extracted_content?: string | null
   ai_extracted_content_generated_at?: string | null
-  ai_summary?: string | null
-  ai_summary_generated_at?: string | null
+  ai_extracted_content_used_file_content?: boolean | null
 }
 
 const MATERIAL_CONTEXT_SELECT =
-  "title, description, type, original_filename, mime_type, ai_extracted_content, ai_extracted_content_generated_at, ai_summary, ai_summary_generated_at"
-const MATERIAL_CONTEXT_SUMMARY_SELECT =
-  "title, description, type, original_filename, mime_type, ai_summary, ai_summary_generated_at"
+  "id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes, ai_extracted_content, ai_extracted_content_generated_at, ai_extracted_content_used_file_content"
 const MATERIAL_CONTEXT_SELECT_LEGACY =
-  "title, description, type, original_filename, mime_type"
+  "id, title, description, type, storage_bucket, storage_key, original_filename, mime_type, size_bytes"
 const MATERIAL_CONTENT_CHARACTER_LIMIT = 4000
 const MATERIALS_CONTEXT_CHARACTER_LIMIT = 28000
 
@@ -97,10 +100,13 @@ export async function loadAiClassAccess({
 export async function loadClassAiContext({
   classId,
   supabase,
+  ensureMaterialContent = false,
 }: {
   classId: string
   supabase: RouteSupabase
+  ensureMaterialContent?: boolean
 }) {
+  let canPersistExtractedContent = true
   let [materialsResult, assignmentsResult, messagesResult, examsResult] =
     await Promise.all([
       supabase
@@ -134,16 +140,7 @@ export async function loadClassAiContext({
     ])
 
   if (isMissingExtractedContentColumnError(materialsResult.error)) {
-    materialsResult = await supabase
-      .from("class_materials")
-      .select(MATERIAL_CONTEXT_SUMMARY_SELECT)
-      .eq("class_id", classId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .returns<MaterialContextRow[]>()
-  }
-
-  if (isMissingSummaryColumnError(materialsResult.error)) {
+    canPersistExtractedContent = false
     materialsResult = await supabase
       .from("class_materials")
       .select(MATERIAL_CONTEXT_SELECT_LEGACY)
@@ -158,8 +155,16 @@ export async function loadClassAiContext({
   if (messagesResult.error) throw messagesResult.error
   if (examsResult.error) throw examsResult.error
 
+  const materials =
+    ensureMaterialContent && canPersistExtractedContent
+      ? await ensureClassMaterialsExtractedContent(
+          materialsResult.data ?? [],
+          classId,
+        )
+      : (materialsResult.data ?? [])
+
   return {
-    materials: materialsResult.data ?? [],
+    materials,
     assignments: assignmentsResult.data ?? [],
     exams: examsResult.data ?? [],
     recentMessages: [...(messagesResult.data ?? [])].reverse(),
@@ -229,11 +234,6 @@ function formatMaterialsContext(materials: MaterialContextRow[]) {
       materialLines.push(
         `  Extracted content: ${compactMaterialContent(material.ai_extracted_content)}`,
       )
-    } else if (material.ai_summary) {
-      materialLines.push(
-        `  Extracted content: Not generated yet.`,
-        `  Study summary fallback: ${compactMaterialContent(material.ai_summary)}`,
-      )
     } else {
       materialLines.push("  Extracted content: Not generated yet.")
     }
@@ -265,13 +265,6 @@ function compactMaterialContent(content: string) {
     .slice(0, MATERIAL_CONTENT_CHARACTER_LIMIT)
 }
 
-function isMissingSummaryColumnError(error: { message?: string } | null) {
-  return (
-    Boolean(error?.message?.includes("ai_summary")) ||
-    Boolean(error?.message?.includes("schema cache"))
-  )
-}
-
 function isMissingExtractedContentColumnError(
   error: { message?: string } | null,
 ) {
@@ -279,4 +272,53 @@ function isMissingExtractedContentColumnError(
     Boolean(error?.message?.includes("ai_extracted_content")) ||
     Boolean(error?.message?.includes("schema cache"))
   )
+}
+
+async function ensureClassMaterialsExtractedContent(
+  materials: MaterialContextRow[],
+  classId: string,
+) {
+  const admin = createServerClient()
+  const hydratedMaterials: MaterialContextRow[] = []
+
+  for (const material of materials) {
+    if (material.ai_extracted_content) {
+      hydratedMaterials.push(material)
+      continue
+    }
+
+    try {
+      const { extractedContent, usedFileContent } =
+        await extractMaterialContentForAiAgent(material)
+
+      if (!extractedContent) {
+        hydratedMaterials.push(material)
+        continue
+      }
+
+      const generatedAt = new Date().toISOString()
+      const { error } = await admin
+        .from("class_materials")
+        .update({
+          ai_extracted_content: extractedContent,
+          ai_extracted_content_used_file_content: usedFileContent,
+          ai_extracted_content_generated_at: generatedAt,
+        })
+        .eq("id", material.id)
+        .eq("class_id", classId)
+
+      if (error) throw error
+
+      hydratedMaterials.push({
+        ...material,
+        ai_extracted_content: extractedContent,
+        ai_extracted_content_used_file_content: usedFileContent,
+        ai_extracted_content_generated_at: generatedAt,
+      })
+    } catch {
+      hydratedMaterials.push(material)
+    }
+  }
+
+  return hydratedMaterials
 }
