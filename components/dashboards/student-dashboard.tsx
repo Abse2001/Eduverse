@@ -469,6 +469,18 @@ export function StudentDashboard() {
                       <p className="text-xs text-muted-foreground">
                         {cls.code}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {classRow?.semester ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {classRow.semester}
+                          </Badge>
+                        ) : null}
+                        {classRow?.stage ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            {classRow.stage}
+                          </Badge>
+                        ) : null}
+                      </div>
                       <div className="mt-2 flex items-center gap-2">
                         <Progress value={progress} className="h-1.5 flex-1" />
                         <span className="text-xs text-muted-foreground shrink-0">
@@ -558,6 +570,18 @@ export function StudentDashboard() {
                         <p className="text-xs text-muted-foreground">
                           {classItem.code}
                         </p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {classItem.semester ? (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {classItem.semester}
+                            </Badge>
+                          ) : null}
+                          {classItem.stage ? (
+                            <Badge variant="outline" className="text-[10px]">
+                              {classItem.stage}
+                            </Badge>
+                          ) : null}
+                        </div>
                       </div>
                       <Button
                         variant="outline"
@@ -678,15 +702,30 @@ export function StudentDashboard() {
                     </Metric>
                   </div>
                 </div>
-                <div className="mt-4 grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
-                  {term.classes.map((classItem) => (
-                    <ArchivedStudentClassRow
-                      key={classItem.id}
-                      classItem={classItem}
-                      assignments={
-                        archivedAssignmentsByClass[classItem.id] ?? []
-                      }
-                    />
+                <div className="mt-4 space-y-3 border-t border-border pt-3">
+                  {term.stages.map((stage) => (
+                    <section key={`${term.label}-${stage.label}`}>
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                          {stage.label}
+                        </p>
+                        <Badge variant="outline" className="text-[10px]">
+                          {stage.classes.length}{" "}
+                          {stage.classes.length === 1 ? "class" : "classes"}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {stage.classes.map((classItem) => (
+                          <ArchivedStudentClassRow
+                            key={classItem.id}
+                            classItem={classItem}
+                            assignments={
+                              archivedAssignmentsByClass[classItem.id] ?? []
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
               </CardContent>

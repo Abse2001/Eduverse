@@ -46,6 +46,7 @@ type ClassContext = {
   code: string
   name: string
   semester: string | null
+  stage: string | null
   canManage: boolean
   selectedRole: AppRole | null
   isStudentMember: boolean
@@ -1547,7 +1548,7 @@ async function loadClassContext(input: {
 }) {
   const { data: classRow, error: classError } = await input.authSupabase
     .from("classes")
-    .select("id, organization_id, code, name, semester")
+    .select("id, organization_id, code, name, semester, stage")
     .eq("id", input.classId)
     .eq("is_archived", false)
     .maybeSingle()
@@ -1594,6 +1595,7 @@ async function loadClassContext(input: {
     code: classRow.code,
     name: classRow.name,
     semester: classRow.semester,
+    stage: classRow.stage,
     canManage: Boolean(canManageResult.data),
     selectedRole,
     isStudentMember: Boolean(membership.data),

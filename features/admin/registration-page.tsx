@@ -644,56 +644,67 @@ export function RegistrationPage() {
                       </p>
                     </div>
                     <div className="divide-y">
-                      {term.classes.map((classItem) => {
-                        const previousTerm = getPreviousTermForClass(
-                          classItem.id,
-                        )
-
-                        return (
-                          <div key={classItem.id} className="px-4 py-3">
-                            <label className="flex items-start gap-3">
-                              <Checkbox
-                                checked={Boolean(previousTerm)}
-                                onCheckedChange={(checked) =>
-                                  togglePreviousClass(
-                                    classItem,
-                                    checked === true,
-                                  )
-                                }
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-medium text-foreground">
-                                  {classItem.name}
-                                </span>
-                                <span className="mt-0.5 block text-xs text-muted-foreground">
-                                  {classItem.code} &middot;{" "}
-                                  {classItem.teacher?.display_name ??
-                                    "No teacher"}
-                                </span>
-                              </span>
-                            </label>
-                            {previousTerm ? (
-                              <div className="mt-3 max-w-xs pl-7">
-                                <Label className="text-xs">Grade</Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  step="0.01"
-                                  value={previousTerm.grade}
-                                  onChange={(event) =>
-                                    updatePreviousTerm(previousTerm.id, {
-                                      grade: event.target.value,
-                                    })
-                                  }
-                                  placeholder="0-100"
-                                  required
-                                />
-                              </div>
-                            ) : null}
+                      {term.stages.map((stage) => (
+                        <section key={`${term.label}-${stage.label}`}>
+                          <div className="bg-muted/20 px-4 py-2">
+                            <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                              {stage.label}
+                            </p>
                           </div>
-                        )
-                      })}
+                          <div className="divide-y">
+                            {stage.classes.map((classItem) => {
+                              const previousTerm = getPreviousTermForClass(
+                                classItem.id,
+                              )
+
+                              return (
+                                <div key={classItem.id} className="px-4 py-3">
+                                  <label className="flex items-start gap-3">
+                                    <Checkbox
+                                      checked={Boolean(previousTerm)}
+                                      onCheckedChange={(checked) =>
+                                        togglePreviousClass(
+                                          classItem,
+                                          checked === true,
+                                        )
+                                      }
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-medium text-foreground">
+                                        {classItem.name}
+                                      </span>
+                                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                                        {classItem.code} &middot;{" "}
+                                        {classItem.teacher?.display_name ??
+                                          "No teacher"}
+                                      </span>
+                                    </span>
+                                  </label>
+                                  {previousTerm ? (
+                                    <div className="mt-3 max-w-xs pl-7">
+                                      <Label className="text-xs">Grade</Label>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        value={previousTerm.grade}
+                                        onChange={(event) =>
+                                          updatePreviousTerm(previousTerm.id, {
+                                            grade: event.target.value,
+                                          })
+                                        }
+                                        placeholder="0-100"
+                                        required
+                                      />
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </section>
+                      ))}
                     </div>
                   </div>
                 ))

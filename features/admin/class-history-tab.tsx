@@ -228,53 +228,71 @@ export function ClassHistoryTab() {
                   </div>
 
                   <div className="divide-y divide-border">
-                    {term.classes.map((classItem) => {
-                      const assignments = assignmentsByClass[classItem.id] ?? []
-                      const scores = getClassGradedScores(assignments)
-
-                      return (
-                        <div
-                          key={classItem.id}
-                          className="px-5 py-4 transition-colors hover:bg-muted/50"
-                        >
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,520px)] md:items-center">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                                <BookOpen className="h-4 w-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-foreground">
-                                  {classItem.name}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {classItem.code} &middot;{" "}
-                                  {classItem.teacher?.display_name ??
-                                    "No teacher"}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5">
-                              <Metric label="Score">
-                                {formatScore(getAverageScore(scores))}
-                              </Metric>
-                              <Metric label="Graded">{scores.length}</Metric>
-                              <Metric label="Students">
-                                {classItem.students.length}
-                              </Metric>
-                              <Metric label="Assignments">
-                                {assignments.length}
-                              </Metric>
-                              <Metric label="Room">
-                                <span title={classItem.room ?? "No room"}>
-                                  {classItem.room ?? "No room"}
-                                </span>
-                              </Metric>
-                            </div>
-                          </div>
+                    {term.stages.map((stage) => (
+                      <section key={`${term.label}-${stage.label}`}>
+                        <div className="flex items-center justify-between gap-3 px-5 py-2">
+                          <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                            {stage.label}
+                          </p>
+                          <Badge variant="outline" className="text-[10px]">
+                            {stage.classes.length}{" "}
+                            {stage.classes.length === 1 ? "class" : "classes"}
+                          </Badge>
                         </div>
-                      )
-                    })}
+                        <div className="divide-y divide-border">
+                          {stage.classes.map((classItem) => {
+                            const assignments =
+                              assignmentsByClass[classItem.id] ?? []
+                            const scores = getClassGradedScores(assignments)
+
+                            return (
+                              <div
+                                key={classItem.id}
+                                className="px-5 py-4 transition-colors hover:bg-muted/50"
+                              >
+                                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,520px)] md:items-center">
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                      <BookOpen className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-foreground">
+                                        {classItem.name}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {classItem.code} &middot;{" "}
+                                        {classItem.teacher?.display_name ??
+                                          "No teacher"}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5">
+                                    <Metric label="Score">
+                                      {formatScore(getAverageScore(scores))}
+                                    </Metric>
+                                    <Metric label="Graded">
+                                      {scores.length}
+                                    </Metric>
+                                    <Metric label="Students">
+                                      {classItem.students.length}
+                                    </Metric>
+                                    <Metric label="Assignments">
+                                      {assignments.length}
+                                    </Metric>
+                                    <Metric label="Room">
+                                      <span title={classItem.room ?? "No room"}>
+                                        {classItem.room ?? "No room"}
+                                      </span>
+                                    </Metric>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </section>
               ))}

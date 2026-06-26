@@ -18,6 +18,7 @@ import Link from "next/link"
 import { type FormEvent, useEffect, useState, useTransition } from "react"
 import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -48,7 +49,10 @@ import {
   getAverageScore,
   getClassGradedScores,
 } from "@/features/classes/grade-metrics"
-import { useArchivedClasses } from "@/features/classes/use-archived-classes"
+import {
+  groupArchivedClassesByTerm,
+  useArchivedClasses,
+} from "@/features/classes/use-archived-classes"
 import { useToast } from "@/hooks/use-toast"
 import { getClassesForUser } from "@/lib/education/classes"
 import { useApp } from "@/lib/store"
@@ -65,6 +69,7 @@ type ClassFormState = {
   description: string
   room: string
   semester: string
+  stage: string
 }
 
 const EMPTY_CLASS_FORM: ClassFormState = {
@@ -74,6 +79,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   description: "",
   room: "Online",
   semester: "Current term",
+  stage: "",
 }
 
 const CLASS_COLOR_OPTIONS = [
@@ -104,6 +110,7 @@ export function TeacherDashboard() {
   const { toast } = useToast()
   const classRows = getClassesForUser(organizationClasses, currentUser)
   const archivedClassRows = getClassesForUser(archivedClasses, currentUser)
+  const archivedTerms = groupArchivedClassesByTerm(archivedClassRows)
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")
   const archivedClassIds = archivedClassRows.map((classItem) => classItem.id)
@@ -277,6 +284,7 @@ export function TeacherDashboard() {
       description: classItem.description,
       room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
+      stage: classItem.stage ?? "",
     })
     setIsCreateClassOpen(true)
   }
@@ -297,6 +305,7 @@ export function TeacherDashboard() {
             class_description: classForm.description,
             class_room: classForm.room,
             class_semester: classForm.semester,
+            class_stage: classForm.stage,
           })
         : await supabase.rpc("create_class", {
             target_org_id: activeOrganization.id,
@@ -307,6 +316,7 @@ export function TeacherDashboard() {
             class_description: classForm.description,
             class_room: classForm.room,
             class_semester: classForm.semester,
+            class_stage: classForm.stage,
           })
 
       if (error) {
@@ -423,15 +433,30 @@ export function TeacherDashboard() {
                           {cls.name}
                         </p>
                         {classItem?.organization_visible ? (
-                          <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-[10px]"
+                          >
                             Organization visible
-                          </span>
+                          </Badge>
                         ) : null}
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {cls.code} &middot; {cls.room}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {classItem?.semester ? (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {classItem.semester}
+                        </Badge>
+                      ) : null}
+                      {classItem?.stage ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          {classItem.stage}
+                        </Badge>
+                      ) : null}
+                    </div>
                     <div className="mt-2 flex items-center gap-2">
                       <span className="text-[11px] text-muted-foreground">
                         Completion
@@ -536,48 +561,77 @@ export function TeacherDashboard() {
           <p className="text-xs text-destructive">{archivedAssignmentsError}</p>
         ) : null}
         <div className="grid gap-3">
-          {archivedClassRows.map((classItem) => {
-            const assignments = archivedAssignmentsByClass[classItem.id] ?? []
-            const scores = getClassGradedScores(assignments)
-
-            return (
-              <Card key={classItem.id}>
-                <CardContent className="p-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                          <Archive className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">
-                            {classItem.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {classItem.code} &middot;{" "}
-                            {classItem.semester ?? "Unassigned Term"}
-                          </p>
-                        </div>
+          {archivedTerms.map((term) => (
+            <Card key={term.label}>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        <Archive className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {term.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {term.classes.length} archived{" "}
+                          {term.classes.length === 1 ? "class" : "classes"}
+                        </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 md:min-w-[520px]">
-                      <Metric label="Score">
-                        {formatScore(getAverageScore(scores))}
-                      </Metric>
-                      <Metric label="Graded">{scores.length}</Metric>
-                      <Metric label="Students">
-                        {classItem.students.length}
-                      </Metric>
-                      <Metric label="Assignments">{assignments.length}</Metric>
-                      <Metric label="Room">
-                        {classItem.room ?? "No room"}
-                      </Metric>
-                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
+                    <Metric label="Classes">{term.classes.length}</Metric>
+                    <Metric label="Score">
+                      {formatScore(
+                        getAverageScore(
+                          getClassGradedScores(
+                            term.classes.flatMap(
+                              (classItem) =>
+                                archivedAssignmentsByClass[classItem.id] ?? [],
+                            ),
+                          ),
+                        ),
+                      )}
+                    </Metric>
+                    <Metric label="Students">
+                      {countStudents(term.classes)}
+                    </Metric>
+                    <Metric label="Teachers">
+                      {countTeachers(term.classes)}
+                    </Metric>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-3 border-t border-border pt-3">
+                  {term.stages.map((stage) => (
+                    <section key={`${term.label}-${stage.label}`}>
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                          {stage.label}
+                        </p>
+                        <Badge variant="outline" className="text-[10px]">
+                          {stage.classes.length}{" "}
+                          {stage.classes.length === 1 ? "class" : "classes"}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-2">
+                        {stage.classes.map((classItem) => (
+                          <ArchivedTeacherClassRow
+                            key={classItem.id}
+                            classItem={classItem}
+                            assignments={
+                              archivedAssignmentsByClass[classItem.id] ?? []
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
 
           {archivedClassesStatus === "loading" ? (
             <Card>
@@ -641,7 +695,7 @@ export function TeacherDashboard() {
                 />
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-4">
               <div className="space-y-2">
                 <Label>Color</Label>
                 <Select
@@ -684,6 +738,20 @@ export function TeacherDashboard() {
                     setClassForm((value) => ({
                       ...value,
                       semester: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="teacher-class-stage">Stage</Label>
+                <Input
+                  id="teacher-class-stage"
+                  value={classForm.stage}
+                  placeholder="5th Semester"
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      stage: event.target.value,
                     }))
                   }
                 />
@@ -770,6 +838,63 @@ function Metric({
       <p className="truncate text-sm font-bold text-foreground">{children}</p>
     </div>
   )
+}
+
+function ArchivedTeacherClassRow({
+  classItem,
+  assignments,
+}: {
+  classItem: ReturnType<
+    typeof groupArchivedClassesByTerm
+  >[number]["classes"][number]
+  assignments: ClassAssignment[]
+}) {
+  const scores = getClassGradedScores(assignments)
+
+  return (
+    <div className="grid gap-3 rounded-md bg-muted/40 px-3 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,360px)] md:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium text-foreground">
+          {classItem.name}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {classItem.code} &middot;{" "}
+          {classItem.teacher?.display_name ?? "No teacher"}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric label="Score">{formatScore(getAverageScore(scores))}</Metric>
+        <Metric label="Graded">{scores.length}</Metric>
+        <Metric label="Students">{classItem.students.length}</Metric>
+        <Metric label="Room">{classItem.room ?? "No room"}</Metric>
+      </div>
+    </div>
+  )
+}
+
+function countStudents(
+  classes: ReturnType<typeof groupArchivedClassesByTerm>[number]["classes"],
+) {
+  return new Set(
+    classes.flatMap((classItem) =>
+      classItem.students.map((student) => student.id),
+    ),
+  ).size
+}
+
+function countTeachers(
+  classes: ReturnType<typeof groupArchivedClassesByTerm>[number]["classes"],
+) {
+  return new Set(
+    classes.flatMap((classItem) =>
+      [
+        classItem.teacher_user_id,
+        ...classItem.memberships
+          .filter((membership) => membership.role === "teacher")
+          .map((membership) => membership.user_id),
+      ].filter((userId): userId is string => Boolean(userId)),
+    ),
+  ).size
 }
 
 function getTeacherGradingProgress(assignments: ClassAssignment[]) {

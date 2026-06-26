@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+export { groupClassesByTermAndStage as groupArchivedClassesByTerm } from "@/lib/education/classes"
 import { useApp } from "@/lib/store"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 
@@ -192,18 +193,4 @@ function getArchivedClassesCacheKey(
   userId: string | null,
 ) {
   return `${organizationId}:${userId ?? "anonymous"}`
-}
-
-export function groupArchivedClassesByTerm(classes: OrganizationClass[]) {
-  const termMap = new Map<string, OrganizationClass[]>()
-
-  for (const classItem of classes) {
-    const label = classItem.semester?.trim() || "Unassigned Term"
-    termMap.set(label, [...(termMap.get(label) ?? []), classItem])
-  }
-
-  return Array.from(termMap.entries()).map(([label, termClasses]) => ({
-    label,
-    classes: termClasses,
-  }))
 }

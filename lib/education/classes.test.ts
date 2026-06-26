@@ -165,6 +165,7 @@ function createClass(
     description: "",
     room: null,
     semester: null,
+    stage: null,
     is_archived: false,
     organization_visible: options.organizationVisible ?? false,
     hidden_by_current_user: options.hiddenByCurrentUser ?? false,
