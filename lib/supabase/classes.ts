@@ -33,6 +33,7 @@ export type OrganizationClass = {
   description: string
   room: string | null
   semester: string | null
+  stage: string | null
   is_archived: boolean
   organization_visible: boolean
   hidden_by_current_user: boolean
@@ -61,7 +62,7 @@ export async function loadOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -81,7 +82,7 @@ export async function loadArchivedOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", true)
@@ -102,7 +103,7 @@ export async function loadClass(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
     )
     .eq("id", classId)
     .eq("is_archived", false)

@@ -62,6 +62,35 @@ export function hasClassAccessForRole(
   return false
 }
 
+export function groupClassesByTermAndStage(classes: OrganizationClass[]) {
+  const termMap = new Map<string, Map<string, OrganizationClass[]>>()
+
+  for (const classItem of classes) {
+    const termLabel = classItem.semester?.trim() || "Unassigned Term"
+    const stageLabel = classItem.stage?.trim() || "Unassigned Stage"
+    const stageMap =
+      termMap.get(termLabel) ?? new Map<string, OrganizationClass[]>()
+
+    stageMap.set(stageLabel, [...(stageMap.get(stageLabel) ?? []), classItem])
+    termMap.set(termLabel, stageMap)
+  }
+
+  return Array.from(termMap.entries()).map(([label, stageMap]) => {
+    const stages = Array.from(stageMap.entries()).map(
+      ([stageLabel, stageClasses]) => ({
+        label: stageLabel,
+        classes: stageClasses,
+      }),
+    )
+
+    return {
+      label,
+      stages,
+      classes: stages.flatMap((stage) => stage.classes),
+    }
+  })
+}
+
 function isOrganizationVisibleToUser(
   classItem: OrganizationClass,
   options: { publicOrganizationFeaturesEnabled?: boolean },

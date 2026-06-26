@@ -105,6 +105,7 @@ type ClassFormState = {
   description: string
   room: string
   semester: string
+  stage: string
 }
 
 const CLASS_COLOR_OPTIONS = [
@@ -301,6 +302,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     description: "",
     room: "Online",
     semester: "",
+    stage: "",
   })
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -578,6 +580,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       description: classItem.description,
       room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
+      stage: classItem.stage ?? "",
     })
     setIsClassSettingsDialogOpen(true)
   }
@@ -601,6 +604,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         class_description: classForm.description,
         class_room: classForm.room,
         class_semester: classForm.semester,
+        class_stage: classForm.stage,
       })
 
       if (error) {
@@ -783,6 +787,14 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                 className="border-white/40 bg-transparent text-white hover:bg-transparent"
               >
                 {classItem.semester}
+              </Badge>
+            ) : null}
+            {classItem.stage ? (
+              <Badge
+                variant="outline"
+                className="border-white/40 bg-transparent text-white hover:bg-transparent"
+              >
+                {classItem.stage}
               </Badge>
             ) : null}
             {classItem.room ? (
@@ -1109,7 +1121,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   />
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-4">
                 <div className="space-y-2">
                   <Label>Color</Label>
                   <Select
@@ -1152,6 +1164,20 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                       setClassForm((value) => ({
                         ...value,
                         semester: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="home-class-stage">Stage</Label>
+                  <Input
+                    id="home-class-stage"
+                    value={classForm.stage}
+                    placeholder="5th Semester"
+                    onChange={(event) =>
+                      setClassForm((value) => ({
+                        ...value,
+                        stage: event.target.value,
                       }))
                     }
                   />

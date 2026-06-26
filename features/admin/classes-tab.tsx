@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { getFeatureDisplayLabel } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
+import { groupClassesByTermAndStage } from "@/lib/education/classes"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
 import type {
@@ -61,6 +62,7 @@ type ClassFormState = {
   description: string
   room: string
   semester: string
+  stage: string
   organizationVisible: boolean
 }
 
@@ -77,6 +79,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   description: "",
   room: "Online",
   semester: "Current term",
+  stage: "",
   organizationVisible: false,
 }
 
@@ -203,6 +206,7 @@ export function ClassesTab() {
       description: classItem.description,
       room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
+      stage: classItem.stage ?? "",
       organizationVisible: classItem.organization_visible,
     })
     setClassFeatureValues(
@@ -249,6 +253,7 @@ export function ClassesTab() {
             class_description: classForm.description,
             class_room: classForm.room,
             class_semester: classForm.semester,
+            class_stage: classForm.stage,
           }
         : {
             target_org_id: activeOrganization.id,
@@ -259,6 +264,7 @@ export function ClassesTab() {
             class_description: classForm.description,
             class_room: classForm.room,
             class_semester: classForm.semester,
+            class_stage: classForm.stage,
           }
 
       const { data, error } = await supabase.rpc(rpcName, payload)
@@ -406,78 +412,110 @@ export function ClassesTab() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {classes.map((classItem) => (
-                <div
-                  key={classItem.id}
-                  className="flex flex-col gap-3 px-5 py-3 hover:bg-muted/50 transition-colors lg:flex-row lg:items-center"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0",
-                        CLASS_COLOR_MAP[classItem.color ?? "indigo"] ??
-                          "bg-primary",
-                      )}
-                    >
-                      {classItem.code.slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {classItem.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {classItem.code} &middot;{" "}
-                        {classItem.teacher?.display_name ?? "No teacher"}
-                      </p>
-                    </div>
-                    <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" />
-                        {classItem.students.length} students
-                      </span>
-                      {classItem.room ? <span>{classItem.room}</span> : null}
-                    </div>
-                    {classItem.semester ? (
-                      <Badge variant="secondary" className="text-[10px] ml-2">
-                        {classItem.semester}
-                      </Badge>
-                    ) : null}
-                    {classItem.organization_visible ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        Organization visible
-                      </Badge>
-                    ) : null}
+              {groupClassesByTermAndStage(classes).map((term) => (
+                <section key={term.label}>
+                  <div className="bg-muted/40 px-5 py-3">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {term.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {term.classes.length}{" "}
+                      {term.classes.length === 1 ? "class" : "classes"}
+                    </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 pl-11 lg:pl-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 gap-1 text-xs"
-                      onClick={() => openInviteDialog(classItem)}
-                    >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      Assign member
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 gap-1 text-xs"
-                      onClick={() => openEditDialog(classItem)}
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
-                      onClick={() => archiveClass(classItem)}
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                      Archive
-                    </Button>
+                  <div className="divide-y divide-border">
+                    {term.stages.map((stage) => (
+                      <section key={`${term.label}-${stage.label}`}>
+                        <div className="flex items-center justify-between gap-3 px-5 py-2">
+                          <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                            {stage.label}
+                          </p>
+                          <Badge variant="outline" className="text-[10px]">
+                            {stage.classes.length}{" "}
+                            {stage.classes.length === 1 ? "class" : "classes"}
+                          </Badge>
+                        </div>
+                        <div className="divide-y divide-border">
+                          {stage.classes.map((classItem) => (
+                            <div
+                              key={classItem.id}
+                              className="flex flex-col gap-3 px-5 py-3 transition-colors hover:bg-muted/50 lg:flex-row lg:items-center"
+                            >
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <div
+                                  className={cn(
+                                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
+                                    CLASS_COLOR_MAP[
+                                      classItem.color ?? "indigo"
+                                    ] ?? "bg-primary",
+                                  )}
+                                >
+                                  {classItem.code.slice(0, 2)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-foreground">
+                                    {classItem.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {classItem.code} &middot;{" "}
+                                    {classItem.teacher?.display_name ??
+                                      "No teacher"}
+                                  </p>
+                                </div>
+                                <div className="hidden items-center gap-4 text-xs text-muted-foreground md:flex">
+                                  <span className="flex items-center gap-1">
+                                    <Users className="h-3 w-3" />
+                                    {classItem.students.length} students
+                                  </span>
+                                  {classItem.room ? (
+                                    <span>{classItem.room}</span>
+                                  ) : null}
+                                </div>
+                                {classItem.organization_visible ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                  >
+                                    Organization visible
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 pl-11 lg:pl-0">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs"
+                                  onClick={() => openInviteDialog(classItem)}
+                                >
+                                  <UserPlus className="h-3.5 w-3.5" />
+                                  Assign member
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs"
+                                  onClick={() => openEditDialog(classItem)}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
+                                  onClick={() => archiveClass(classItem)}
+                                >
+                                  <Archive className="h-3.5 w-3.5" />
+                                  Archive
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
-                </div>
+                </section>
               ))}
 
               {classes.length === 0 ? (
@@ -567,7 +605,7 @@ export function ClassesTab() {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-4">
               <div className="space-y-2">
                 <Label>Color</Label>
                 <Select
@@ -617,6 +655,20 @@ export function ClassesTab() {
                     setClassForm((value) => ({
                       ...value,
                       semester: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="class-stage">Stage</Label>
+                <Input
+                  id="class-stage"
+                  value={classForm.stage}
+                  placeholder="5th Semester"
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      stage: event.target.value,
                     }))
                   }
                 />

@@ -12,6 +12,7 @@ type ClassRow = {
   description: string
   room: string | null
   semester: string | null
+  stage: string | null
 }
 
 type ClassMembershipRow = {
@@ -51,7 +52,9 @@ export async function loadAiClassAccess({
 }) {
   const { data: classData, error: classError } = await supabase
     .from("classes")
-    .select("id, organization_id, name, code, description, room, semester")
+    .select(
+      "id, organization_id, name, code, description, room, semester, stage",
+    )
     .eq("id", classId)
     .eq("is_archived", false)
     .maybeSingle()
@@ -203,6 +206,7 @@ export function formatClassContext(input: {
     `Description: ${classRow.description || "No description"}`,
     `Room: ${classRow.room || "No room"}`,
     `Term: ${classRow.semester || "No term"}`,
+    `Stage: ${classRow.stage || "No stage"}`,
     "",
     "Materials:",
     materials || "- None",
