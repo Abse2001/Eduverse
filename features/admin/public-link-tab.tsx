@@ -130,6 +130,8 @@ export function PublicLinkTab() {
   const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
   const isLoading = organizationUsersStatus === "loading"
+  const publicFeaturesEnabled =
+    activeOrganization?.settings.public_features_enabled ?? false
 
   useEffect(() => {
     void refreshOrganizationUsers().catch(() => {})
@@ -445,6 +447,7 @@ export function PublicLinkTab() {
                 variant="outline"
                 className="ml-2 h-7 gap-1 text-xs"
                 onClick={openCreateDialog}
+                disabled={!publicFeaturesEnabled}
               >
                 <PlusCircle className="h-3.5 w-3.5" />
                 Create Link
@@ -453,6 +456,12 @@ export function PublicLinkTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {!publicFeaturesEnabled ? (
+            <div className="border-y bg-muted/30 px-5 py-3 text-sm text-muted-foreground">
+              Public organization features are disabled. Enable them in Settings
+              before creating or enabling public links.
+            </div>
+          ) : null}
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -465,6 +474,7 @@ export function PublicLinkTab() {
                   key={link.id}
                   link={link}
                   busy={busyLinkId === link.id && isPending}
+                  publicFeaturesEnabled={publicFeaturesEnabled}
                   onCopy={copyPublicJoinLink}
                   onUpdate={updateLink}
                   onDeleteRequest={setDeleteLinkCandidate}
@@ -715,12 +725,14 @@ export function PublicLinkTab() {
 function PublicLinkRow({
   link,
   busy,
+  publicFeaturesEnabled,
   onCopy,
   onUpdate,
   onDeleteRequest,
 }: {
   link: OrganizationJoinLinkRow
   busy: boolean
+  publicFeaturesEnabled: boolean
   onCopy: (link: OrganizationJoinLinkRow) => void
   onUpdate: (link: OrganizationJoinLinkRow, updates: LinkUpdate) => void
   onDeleteRequest: (link: OrganizationJoinLinkRow) => void
@@ -771,7 +783,7 @@ function PublicLinkRow({
             size="sm"
             variant={link.enabled ? "outline" : "default"}
             className="h-7 text-xs"
-            disabled={busy}
+            disabled={busy || (!link.enabled && !publicFeaturesEnabled)}
             onClick={() => onUpdate(link, { enabled: !link.enabled })}
           >
             {busy ? (

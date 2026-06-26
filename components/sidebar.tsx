@@ -63,7 +63,10 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const isCollapsed = collapsed || isLocked
 
   const userClasses = activeOrganization
-    ? getClassesForUser(organizationClasses, currentUser)
+    ? getClassesForUser(organizationClasses, currentUser, {
+        publicOrganizationFeaturesEnabled:
+          activeOrganization.settings.public_features_enabled,
+      })
     : []
   const liveClassIds = new Set(
     classLiveSessions.map((session) => session.class_id),

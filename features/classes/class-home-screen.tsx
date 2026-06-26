@@ -5,6 +5,7 @@ import {
   CircleAlert,
   Calendar,
   DoorOpen,
+  Edit3,
   LoaderCircle,
   PlusCircle,
   Radio,
@@ -44,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import {
   type ClassAssignment,
   getAssignmentDerivedStatus,
@@ -61,6 +63,7 @@ import type { User } from "@/lib/mock-data"
 import { useApp } from "@/lib/store"
 import type { ClassProfile, OrganizationClass } from "@/lib/supabase/classes"
 import { createClient } from "@/lib/supabase/client"
+import type { OrganizationSettingsPayload } from "@/lib/supabase/organization-settings"
 import { cn } from "@/lib/utils"
 import { CLASS_HEADER_GRADIENT_MAP } from "@/lib/view-config"
 import { toast } from "@/hooks/use-toast"
@@ -94,6 +97,24 @@ type UpcomingClassDeadline = {
   title: string
   at: string
 }
+
+type ClassFormState = {
+  name: string
+  code: string
+  color: string
+  description: string
+  room: string
+  semester: string
+}
+
+const CLASS_COLOR_OPTIONS = [
+  "indigo",
+  "emerald",
+  "violet",
+  "amber",
+  "rose",
+  "sky",
+]
 
 function flattenClassHomeNavFeatures(
   features: ResolvedClassFeature[],
@@ -262,14 +283,29 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const accessibleCachedClass =
     cachedClass &&
     activeOrganization &&
-    canOpenClass(cachedClass, activeOrganization.id, currentUser)
+    canOpenClass(
+      cachedClass,
+      activeOrganization.id,
+      currentUser,
+      activeOrganization.settings.public_features_enabled,
+    )
       ? cachedClass
       : null
   const [classItem, setClassItem] = useState<OrganizationClass | null>(
     accessibleCachedClass,
   )
+  const [classForm, setClassForm] = useState<ClassFormState>({
+    name: "",
+    code: "",
+    color: "indigo",
+    description: "",
+    room: "Online",
+    semester: "",
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isClassSettingsDialogOpen, setIsClassSettingsDialogOpen] =
+    useState(false)
   const [selectedMemberId, setSelectedMemberId] = useState("")
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -294,6 +330,17 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   )
   const canManageRoster =
     activeOrganizationRole === "org_admin" || currentUser.role === "admin"
+  const canEditClassDetails = Boolean(
+    classItem &&
+      !isViewingAsStudent &&
+      (canManageRoster ||
+        (canCurrentTeacherManageOwnClasses(
+          activeOrganization?.settings,
+          currentUser.id,
+        ) &&
+          (classItem.teacher_user_id === currentUser.id ||
+            hasClassManagerMembership))),
+  )
   const assignmentsApi = useClassAssignments({
     classId,
     currentUserId: currentUser.id,
@@ -405,7 +452,12 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
       if (
         !activeOrganization ||
-        !canOpenClass(nextClass, activeOrganization.id, currentUser)
+        !canOpenClass(
+          nextClass,
+          activeOrganization.id,
+          currentUser,
+          activeOrganization.settings.public_features_enabled,
+        )
       ) {
         setClassItem(null)
         setErrorMessage("This class is not available for your selected role.")
@@ -431,7 +483,12 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     if (cachedClass) {
       if (
         !activeOrganization ||
-        !canOpenClass(cachedClass, activeOrganization.id, currentUser)
+        !canOpenClass(
+          cachedClass,
+          activeOrganization.id,
+          currentUser,
+          activeOrganization.settings.public_features_enabled,
+        )
       ) {
         setClassItem(null)
         setIsLoading(false)
@@ -508,6 +565,52 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       setSuccessMessage(`${selectedEmail} added to this class.`)
       setSelectedMemberId("")
       setInviteRole("student")
+    })
+  }
+
+  function openClassSettingsDialog() {
+    if (!classItem || !canEditClassDetails) return
+
+    setClassForm({
+      name: classItem.name,
+      code: classItem.code,
+      color: classItem.color ?? "indigo",
+      description: classItem.description,
+      room: classItem.room ?? "Online",
+      semester: classItem.semester ?? "",
+    })
+    setIsClassSettingsDialogOpen(true)
+  }
+
+  function submitClassSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!classItem || !canEditClassDetails) return
+
+    setErrorMessage(null)
+    setSuccessMessage(null)
+
+    startTransition(async () => {
+      const { error } = await createClient().rpc("update_class", {
+        target_class_id: classItem.id,
+        class_name: classForm.name,
+        class_code: classForm.code,
+        teacher_email: canManageRoster
+          ? (classItem.teacher?.email ?? "")
+          : currentUser.email,
+        class_color: classForm.color,
+        class_description: classForm.description,
+        class_room: classForm.room,
+        class_semester: classForm.semester,
+      })
+
+      if (error) {
+        setErrorMessage(error.message)
+        return
+      }
+
+      setIsClassSettingsDialogOpen(false)
+      await refreshClass()
+      setSuccessMessage("Class details updated.")
     })
   }
 
@@ -617,6 +720,17 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               />
             </div>
             <div className="flex flex-wrap justify-end gap-2">
+              {canEditClassDetails ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-2 shrink-0 bg-white/20 hover:bg-white/30 text-white border-0"
+                  onClick={openClassSettingsDialog}
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Edit class
+                </Button>
+              ) : null}
               {canManageRoster ? (
                 <Button
                   variant="secondary"
@@ -951,7 +1065,149 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
           </DialogContent>
         </Dialog>
       ) : null}
+
+      {canEditClassDetails ? (
+        <Dialog
+          open={isClassSettingsDialogOpen}
+          onOpenChange={setIsClassSettingsDialogOpen}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit class</DialogTitle>
+              <DialogDescription>
+                Update class details for this workspace.
+              </DialogDescription>
+            </DialogHeader>
+            <form className="space-y-4" onSubmit={submitClassSettings}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="home-class-name">Name</Label>
+                  <Input
+                    id="home-class-name"
+                    value={classForm.name}
+                    onChange={(event) =>
+                      setClassForm((value) => ({
+                        ...value,
+                        name: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="home-class-code">Code</Label>
+                  <Input
+                    id="home-class-code"
+                    value={classForm.code}
+                    onChange={(event) =>
+                      setClassForm((value) => ({
+                        ...value,
+                        code: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Color</Label>
+                  <Select
+                    value={classForm.color}
+                    onValueChange={(color) =>
+                      setClassForm((value) => ({ ...value, color }))
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLASS_COLOR_OPTIONS.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          {color}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="home-class-room">Room</Label>
+                  <Input
+                    id="home-class-room"
+                    value={classForm.room}
+                    onChange={(event) =>
+                      setClassForm((value) => ({
+                        ...value,
+                        room: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="home-class-semester">Term</Label>
+                  <Input
+                    id="home-class-semester"
+                    value={classForm.semester}
+                    onChange={(event) =>
+                      setClassForm((value) => ({
+                        ...value,
+                        semester: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="home-class-description">Description</Label>
+                <Textarea
+                  id="home-class-description"
+                  value={classForm.description}
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      description: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsClassSettingsDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save changes"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
+  )
+}
+
+function canCurrentTeacherManageOwnClasses(
+  settings: OrganizationSettingsPayload | null | undefined,
+  userId: string,
+) {
+  if (!settings) return false
+  if (settings.all_teachers_can_manage_own_classes) return true
+
+  return settings.teacherClassPermissions.some(
+    (permission) =>
+      permission.teacher_user_id === userId &&
+      permission.can_manage_own_classes,
   )
 }
 
@@ -959,9 +1215,12 @@ function canOpenClass(
   classItem: OrganizationClass,
   activeOrganizationId: string,
   currentUser: User,
+  publicOrganizationFeaturesEnabled: boolean,
 ) {
   return (
     classItem.organization_id === activeOrganizationId &&
-    hasClassAccessForRole(classItem, currentUser)
+    hasClassAccessForRole(classItem, currentUser, {
+      publicOrganizationFeaturesEnabled,
+    })
   )
 }

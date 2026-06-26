@@ -8,6 +8,7 @@ import {
   Globe2,
   MailPlus,
   Puzzle,
+  Settings2,
   ShieldCheck,
   Users,
 } from "lucide-react"
@@ -17,6 +18,7 @@ import { ClassHistoryTab } from "@/features/admin/class-history-tab"
 import { ClassesTab } from "@/features/admin/classes-tab"
 import { FeaturesTab } from "@/features/admin/features-tab"
 import { PublicLinkTab } from "@/features/admin/public-link-tab"
+import { SettingsTab } from "@/features/admin/settings-tab"
 import { UsersTab } from "@/features/admin/users-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -26,6 +28,7 @@ const ADMIN_DASHBOARD_TABS = [
   "users",
   "features",
   "public-link",
+  "settings",
 ] as const
 
 type AdminDashboardTab = (typeof ADMIN_DASHBOARD_TABS)[number]
@@ -161,6 +164,10 @@ export function AdminDashboard() {
             <Globe2 className="w-3.5 h-3.5" />
             Public Link
           </TabsTrigger>
+          <TabsTrigger value="settings" className="text-xs gap-1.5">
+            <Settings2 className="w-3.5 h-3.5" />
+            Settings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="classes" className="mt-4">
@@ -181,6 +188,10 @@ export function AdminDashboard() {
 
         <TabsContent value="public-link" className="mt-4">
           <PublicLinkTab />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-4">
+          <SettingsTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -4,8 +4,10 @@ import {
   Archive,
   BookOpen,
   FileText,
+  LoaderCircle,
   MessageSquare,
   PlusCircle,
+  Edit3,
   School,
   TrendingUp,
   Upload,
@@ -13,11 +15,29 @@ import {
   Video,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { type FormEvent, useEffect, useState, useTransition } from "react"
 import { StatCard } from "@/components/shared/stat-card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import {
   type ClassAssignment,
   loadClassAssignments,
@@ -29,16 +49,59 @@ import {
   getClassGradedScores,
 } from "@/features/classes/grade-metrics"
 import { useArchivedClasses } from "@/features/classes/use-archived-classes"
+import { useToast } from "@/hooks/use-toast"
 import { getClassesForUser } from "@/lib/education/classes"
 import { useApp } from "@/lib/store"
-import { toLegacyClass } from "@/lib/supabase/classes"
+import { createClient } from "@/lib/supabase/client"
+import { type OrganizationClass, toLegacyClass } from "@/lib/supabase/classes"
+import type { OrganizationSettingsPayload } from "@/lib/supabase/organization-settings"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
+type ClassFormState = {
+  name: string
+  code: string
+  color: string
+  description: string
+  room: string
+  semester: string
+}
+
+const EMPTY_CLASS_FORM: ClassFormState = {
+  name: "",
+  code: "",
+  color: "indigo",
+  description: "",
+  room: "Online",
+  semester: "Current term",
+}
+
+const CLASS_COLOR_OPTIONS = [
+  "indigo",
+  "emerald",
+  "violet",
+  "amber",
+  "rose",
+  "sky",
+]
+
 export function TeacherDashboard() {
-  const { authUser, currentUser, organizationClasses } = useApp()
+  const {
+    authUser,
+    activeOrganization,
+    currentUser,
+    organizationClasses,
+    refreshOrganizationClasses,
+  } = useApp()
   const { archivedClasses, archivedClassesStatus, archivedClassesError } =
     useArchivedClasses()
+  const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
+  const [isCreateClassOpen, setIsCreateClassOpen] = useState(false)
+  const [editingClass, setEditingClass] = useState<OrganizationClass | null>(
+    null,
+  )
+  const [isPending, startTransition] = useTransition()
+  const { toast } = useToast()
   const classRows = getClassesForUser(organizationClasses, currentUser)
   const archivedClassRows = getClassesForUser(archivedClasses, currentUser)
   const classIds = classRows.map((classItem) => classItem.id)
@@ -75,6 +138,14 @@ export function TeacherDashboard() {
         0,
       ),
     0,
+  )
+  const canCreateClasses = canCurrentTeacherCreateClasses(
+    activeOrganization?.settings,
+    authUser?.id ?? currentUser.id,
+  )
+  const canManageOwnClasses = canCurrentTeacherManageOwnClasses(
+    activeOrganization?.settings,
+    authUser?.id ?? currentUser.id,
   )
 
   useEffect(() => {
@@ -191,6 +262,70 @@ export function TeacherDashboard() {
     }
   }, [archivedClassIdKey, authUser?.id, currentUser.id])
 
+  function openCreateClassDialog() {
+    setEditingClass(null)
+    setClassForm(EMPTY_CLASS_FORM)
+    setIsCreateClassOpen(true)
+  }
+
+  function openEditClassDialog(classItem: OrganizationClass) {
+    setEditingClass(classItem)
+    setClassForm({
+      name: classItem.name,
+      code: classItem.code,
+      color: classItem.color ?? "indigo",
+      description: classItem.description,
+      room: classItem.room ?? "Online",
+      semester: classItem.semester ?? "",
+    })
+    setIsCreateClassOpen(true)
+  }
+
+  function submitClass(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activeOrganization) return
+
+    startTransition(async () => {
+      const supabase = createClient()
+      const { error } = editingClass
+        ? await supabase.rpc("update_class", {
+            target_class_id: editingClass.id,
+            class_name: classForm.name,
+            class_code: classForm.code,
+            teacher_email: currentUser.email,
+            class_color: classForm.color,
+            class_description: classForm.description,
+            class_room: classForm.room,
+            class_semester: classForm.semester,
+          })
+        : await supabase.rpc("create_class", {
+            target_org_id: activeOrganization.id,
+            class_name: classForm.name,
+            class_code: classForm.code,
+            teacher_email: currentUser.email,
+            class_color: classForm.color,
+            class_description: classForm.description,
+            class_room: classForm.room,
+            class_semester: classForm.semester,
+          })
+
+      if (error) {
+        toast({
+          title: editingClass ? "Class update failed" : "Class creation failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
+      setClassForm(EMPTY_CLASS_FORM)
+      setEditingClass(null)
+      setIsCreateClassOpen(false)
+      await refreshOrganizationClasses({ force: true })
+      toast({ title: editingClass ? "Class updated" : "Class created" })
+    })
+  }
+
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-4">
@@ -202,11 +337,23 @@ export function TeacherDashboard() {
             {currentUser.institution} &middot; Current term
           </p>
         </div>
-        <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
-          <School className="h-4 w-4 text-emerald-500" />
-          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            Teacher
-          </span>
+        <div className="flex items-center gap-2">
+          {canCreateClasses ? (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={openCreateClassDialog}
+            >
+              <PlusCircle className="h-4 w-4" />
+              Create Class
+            </Button>
+          ) : null}
+          <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
+            <School className="h-4 w-4 text-emerald-500" />
+            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              Teacher
+            </span>
+          </div>
         </div>
       </div>
 
@@ -244,7 +391,8 @@ export function TeacherDashboard() {
         ) : null}
 
         {myClasses.map((cls) => {
-          const students = classRowById.get(cls.id)?.students ?? []
+          const classItem = classRowById.get(cls.id)
+          const students = classItem?.students ?? []
           const assignments = assignmentsByClass[cls.id] ?? []
           const submittedAssignments = assignments.reduce(
             (sum, assignment) =>
@@ -274,7 +422,7 @@ export function TeacherDashboard() {
                         <p className="truncate text-sm font-semibold text-foreground">
                           {cls.name}
                         </p>
-                        {classRowById.get(cls.id)?.organization_visible ? (
+                        {classItem?.organization_visible ? (
                           <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">
                             Organization visible
                           </span>
@@ -330,6 +478,16 @@ export function TeacherDashboard() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                  {canManageOwnClasses && classItem ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs gap-1.5"
+                      onClick={() => openEditClassDialog(classItem)}
+                    >
+                      <Edit3 className="w-3 h-3" /> Edit Class
+                    </Button>
+                  ) : null}
                   <Link href={`/classes/${cls.id}/chat`}>
                     <Button
                       variant="outline"
@@ -439,7 +597,163 @@ export function TeacherDashboard() {
           ) : null}
         </div>
       </div>
+
+      <Dialog open={isCreateClassOpen} onOpenChange={setIsCreateClassOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingClass ? "Edit class" : "Create class"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingClass
+                ? "Update the class details your organization allows teachers to manage."
+                : "This class will be assigned to you."}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={submitClass}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="teacher-class-name">Name</Label>
+                <Input
+                  id="teacher-class-name"
+                  value={classForm.name}
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      name: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="teacher-class-code">Code</Label>
+                <Input
+                  id="teacher-class-code"
+                  value={classForm.code}
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      code: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Color</Label>
+                <Select
+                  value={classForm.color}
+                  onValueChange={(color) =>
+                    setClassForm((value) => ({ ...value, color }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CLASS_COLOR_OPTIONS.map((color) => (
+                      <SelectItem key={color} value={color}>
+                        {color}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="teacher-class-room">Room</Label>
+                <Input
+                  id="teacher-class-room"
+                  value={classForm.room}
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      room: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="teacher-class-semester">Term</Label>
+                <Input
+                  id="teacher-class-semester"
+                  value={classForm.semester}
+                  onChange={(event) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      semester: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="teacher-class-description">Description</Label>
+              <Textarea
+                id="teacher-class-description"
+                value={classForm.description}
+                onChange={(event) =>
+                  setClassForm((value) => ({
+                    ...value,
+                    description: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateClassOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : editingClass ? (
+                  "Save changes"
+                ) : (
+                  "Create class"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function canCurrentTeacherCreateClasses(
+  settings: OrganizationSettingsPayload | null | undefined,
+  userId: string,
+) {
+  if (!settings) return false
+  if (settings.all_teachers_can_create_classes) return true
+
+  return settings.teacherClassPermissions.some(
+    (permission) =>
+      permission.teacher_user_id === userId && permission.can_create_classes,
+  )
+}
+
+function canCurrentTeacherManageOwnClasses(
+  settings: OrganizationSettingsPayload | null | undefined,
+  userId: string,
+) {
+  if (!settings) return false
+  if (settings.all_teachers_can_manage_own_classes) return true
+
+  return settings.teacherClassPermissions.some(
+    (permission) =>
+      permission.teacher_user_id === userId &&
+      permission.can_manage_own_classes,
   )
 }
 

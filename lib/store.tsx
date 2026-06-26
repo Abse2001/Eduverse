@@ -27,6 +27,7 @@ import {
   type FeatureSetting,
   type OrganizationExtension,
 } from "@/lib/supabase/features"
+import type { OrganizationSettingsPayload } from "@/lib/supabase/organization-settings"
 
 const FALLBACK_USER = USERS[0]
 
@@ -150,6 +151,10 @@ interface AppContextValue {
   upsertOrganizationExtension: (
     organizationId: string,
     extension: OrganizationExtension,
+  ) => void
+  updateOrganizationSettings: (
+    organizationId: string,
+    settings: OrganizationSettingsPayload,
   ) => void
   refreshCurrentUser: () => Promise<void>
   setDefaultOrganization: (organizationId: string) => Promise<void>
@@ -418,6 +423,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ),
         }
       }),
+    )
+  }
+
+  function updateOrganizationSettings(
+    organizationId: string,
+    settings: OrganizationSettingsPayload,
+  ) {
+    setOrganizations((currentOrganizations) =>
+      currentOrganizations.map((organization) =>
+        organization.id === organizationId
+          ? { ...organization, settings }
+          : organization,
+      ),
     )
   }
 
@@ -752,6 +770,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshClassLiveSessions,
         updateOrganizationFeatureSetting,
         upsertOrganizationExtension,
+        updateOrganizationSettings,
         refreshCurrentUser,
         setDefaultOrganization,
         setActiveOrganizationRole,

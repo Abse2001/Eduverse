@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server"
+import {
+  filterClassesForContext,
+  loadClassAccessContext,
+} from "@/lib/api/class-access"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 import { loadOrganizationClasses } from "@/lib/supabase/classes"
 
@@ -22,5 +26,13 @@ export async function GET(request: Request, context: RouteContext) {
     supabase,
     user.id,
   )
-  return NextResponse.json({ classes })
+  const accessContext = await loadClassAccessContext(
+    supabase,
+    organizationId,
+    user.id,
+  )
+
+  return NextResponse.json({
+    classes: filterClassesForContext(classes, accessContext),
+  })
 }

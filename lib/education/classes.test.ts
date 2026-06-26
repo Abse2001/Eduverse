@@ -130,6 +130,20 @@ describe("getClassesForUser", () => {
       ),
     ).toEqual(["class-7"])
   })
+
+  test("ignores organization-visible classes when public organization features are disabled", () => {
+    expect(
+      getClassesForUser(classes, baseUser, {
+        publicOrganizationFeaturesEnabled: false,
+      }).map((classItem) => classItem.id),
+    ).toEqual(["class-1", "class-8"])
+
+    expect(
+      getHiddenClassesForUser(classes, baseUser, {
+        publicOrganizationFeaturesEnabled: false,
+      }).map((classItem) => classItem.id),
+    ).toEqual([])
+  })
 })
 
 function createClass(

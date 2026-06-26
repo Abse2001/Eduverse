@@ -119,6 +119,8 @@ export function ClassesTab() {
   const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
   const isLoading = organizationClassesStatus === "loading"
+  const publicFeaturesEnabled =
+    activeOrganization?.settings.public_features_enabled ?? false
   const classFeatureRows = useMemo(
     () =>
       buildClassFeatureRows(
@@ -636,6 +638,9 @@ export function ClassesTab() {
             <label className="flex items-start gap-3 rounded-lg border p-4">
               <Switch
                 checked={classForm.organizationVisible}
+                disabled={
+                  !publicFeaturesEnabled && !classForm.organizationVisible
+                }
                 onCheckedChange={(checked) =>
                   setClassForm((value) => ({
                     ...value,
@@ -649,8 +654,9 @@ export function ClassesTab() {
                   Visible to students in the organization
                 </span>
                 <span className="mt-1 block text-xs text-muted-foreground">
-                  Students can see this class even if they are not assigned to
-                  it. Each student can hide it from their own dashboard.
+                  {publicFeaturesEnabled
+                    ? "Students can see this class even if they are not assigned to it. Each student can hide it from their own dashboard."
+                    : "Enable public organization features in Settings before making classes visible to the organization."}
                 </span>
               </span>
             </label>

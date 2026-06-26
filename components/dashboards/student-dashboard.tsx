@@ -71,6 +71,7 @@ const studentExamDashboardCache = new Map<
 
 export function StudentDashboard() {
   const {
+    activeOrganization,
     authUser,
     classLiveSessions,
     currentUser,
@@ -80,12 +81,25 @@ export function StudentDashboard() {
   const { archivedClasses, archivedClassesStatus, archivedClassesError } =
     useArchivedClasses()
   const { toast } = useToast()
-  const classRows = getClassesForUser(organizationClasses, currentUser)
-  const archivedClassRows = getClassesForUser(archivedClasses, currentUser)
+  const classAccessOptions = {
+    publicOrganizationFeaturesEnabled:
+      activeOrganization?.settings.public_features_enabled ?? false,
+  }
+  const classRows = getClassesForUser(
+    organizationClasses,
+    currentUser,
+    classAccessOptions,
+  )
+  const archivedClassRows = getClassesForUser(
+    archivedClasses,
+    currentUser,
+    classAccessOptions,
+  )
   const archivedTerms = groupArchivedClassesByTerm(archivedClassRows)
   const hiddenClassRows = getHiddenClassesForUser(
     organizationClasses,
     currentUser,
+    classAccessOptions,
   )
   const classIds = classRows.map((classItem) => classItem.id)
   const classIdKey = classIds.join("|")

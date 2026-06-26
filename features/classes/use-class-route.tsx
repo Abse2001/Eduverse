@@ -25,7 +25,12 @@ export function useClassRoute(classId: string) {
   const accessibleCachedClass =
     cachedClass &&
     activeOrganization &&
-    canOpenClass(cachedClass, activeOrganization.id, currentUser)
+    canOpenClass(
+      cachedClass,
+      activeOrganization.id,
+      currentUser,
+      activeOrganization.settings.public_features_enabled,
+    )
       ? cachedClass
       : null
   const [cls, setCls] = useState<Class | null>(() =>
@@ -51,7 +56,14 @@ export function useClassRoute(classId: string) {
     }
 
     if (cachedClass) {
-      if (!canOpenClass(cachedClass, activeOrganization.id, currentUser)) {
+      if (
+        !canOpenClass(
+          cachedClass,
+          activeOrganization.id,
+          currentUser,
+          activeOrganization.settings.public_features_enabled,
+        )
+      ) {
         setCls(null)
         setClassRow(null)
         setIsLoading(false)
@@ -91,7 +103,14 @@ export function useClassRoute(classId: string) {
       })
       .then((classRow) => {
         if (cancelled) return
-        if (!canOpenClass(classRow, activeOrganization.id, currentUser)) {
+        if (
+          !canOpenClass(
+            classRow,
+            activeOrganization.id,
+            currentUser,
+            activeOrganization.settings.public_features_enabled,
+          )
+        ) {
           setCls(null)
           setClassRow(null)
           setErrorMessage("This class is not available for your selected role.")
@@ -119,6 +138,7 @@ export function useClassRoute(classId: string) {
     }
   }, [
     activeOrganization?.id,
+    activeOrganization?.settings.public_features_enabled,
     classId,
     currentUser,
     organizationClasses,
@@ -132,10 +152,13 @@ function canOpenClass(
   classRow: OrganizationClass,
   activeOrganizationId: string,
   currentUser: User,
+  publicOrganizationFeaturesEnabled: boolean,
 ) {
   return (
     classRow.organization_id === activeOrganizationId &&
-    hasClassAccessForRole(classRow, currentUser)
+    hasClassAccessForRole(classRow, currentUser, {
+      publicOrganizationFeaturesEnabled,
+    })
   )
 }
 

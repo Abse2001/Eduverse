@@ -30,6 +30,33 @@ export async function GET(_request: Request, context: RouteContext) {
       )
     }
 
+    const { data: publicFeaturesEnabled, error: settingsError } =
+      await supabase.rpc("is_public_org_features_enabled", {
+        target_org_id: joinLink.organization_id,
+      })
+
+    const isSettingsHelperMissing =
+      typeof settingsError === "object" &&
+      settingsError !== null &&
+      "code" in settingsError &&
+      ["42883", "42P01"].includes(
+        (settingsError as { code?: string }).code ?? "",
+      )
+
+    if (settingsError && !isSettingsHelperMissing) {
+      return NextResponse.json(
+        { error: settingsError.message },
+        { status: 400 },
+      )
+    }
+
+    if (!isSettingsHelperMissing && !publicFeaturesEnabled) {
+      return NextResponse.json(
+        { error: "Join link not found or disabled" },
+        { status: 404 },
+      )
+    }
+
     if (
       joinLink.expires_at &&
       new Date(joinLink.expires_at).getTime() < Date.now()

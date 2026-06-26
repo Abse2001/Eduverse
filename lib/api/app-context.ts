@@ -16,6 +16,7 @@ import {
   loadOrganizationExtensions,
   loadOrganizationFeatureSettings,
 } from "@/lib/supabase/features"
+import { loadOrganizationSettings } from "@/lib/supabase/organization-settings"
 import type {
   ClassLiveSessionRow,
   OrganizationInviteRow,
@@ -109,6 +110,7 @@ export async function loadCurrentUserPayload(
     }))
   let featureSettingsByOrganization = new Map()
   let extensionsByOrganization = new Map()
+  let settingsByOrganization = new Map()
   let rolesByMembership = new Map<string, OrganizationMembershipRoleRecord[]>()
 
   if (organizationIds.length > 0) {
@@ -116,6 +118,7 @@ export async function loadCurrentUserPayload(
       organizationResult,
       organizationFeatureSettings,
       organizationExtensions,
+      organizationSettings,
       membershipRolesResult,
     ] = await Promise.all([
       supabase
@@ -124,6 +127,7 @@ export async function loadCurrentUserPayload(
         .in("id", organizationIds),
       loadOrganizationFeatureSettings(organizationIds, supabase),
       loadOrganizationExtensions(organizationIds, supabase),
+      loadOrganizationSettings(organizationIds, supabase),
       membershipIds.length > 0
         ? supabase
             .from("organization_membership_roles")
@@ -138,6 +142,7 @@ export async function loadCurrentUserPayload(
 
     featureSettingsByOrganization = organizationFeatureSettings
     extensionsByOrganization = organizationExtensions
+    settingsByOrganization = organizationSettings
     if (!membershipRoleError) {
       rolesByMembership = groupMembershipRoles(
         (membershipRoleData ?? []) as Array<
@@ -176,6 +181,7 @@ export async function loadCurrentUserPayload(
     membershipsWithOrganizations,
     featureSettingsByOrganization,
     extensionsByOrganization,
+    settingsByOrganization,
   )
   const activeOrganization =
     organizations.find((organization) => organization.isDefault) ?? null

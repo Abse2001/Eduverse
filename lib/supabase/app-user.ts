@@ -3,6 +3,7 @@ import type {
   FeatureSetting,
   OrganizationExtension,
 } from "@/lib/supabase/features"
+import type { OrganizationSettingsPayload } from "@/lib/supabase/organization-settings"
 
 export type OrganizationUserRole = "org_admin" | "teacher" | "student"
 
@@ -45,6 +46,7 @@ export type AppOrganization = {
   isDefault: boolean
   featureSettings: FeatureSetting[]
   extensions: OrganizationExtension[]
+  settings: OrganizationSettingsPayload
 }
 
 const ROLE_PRIORITY: OrganizationUserRole[] = [
@@ -70,6 +72,7 @@ export function toOrganizations(
   memberships: OrganizationMembershipRecord[],
   featureSettingsByOrganization = new Map<string, FeatureSetting[]>(),
   extensionsByOrganization = new Map<string, OrganizationExtension[]>(),
+  settingsByOrganization = new Map<string, OrganizationSettingsPayload>(),
 ): AppOrganization[] {
   return memberships
     .filter(
@@ -120,6 +123,13 @@ export function toOrganizations(
           featureSettingsByOrganization.get(membership.organization_id) ?? [],
         extensions:
           extensionsByOrganization.get(membership.organization_id) ?? [],
+        settings: settingsByOrganization.get(membership.organization_id) ?? {
+          organization_id: membership.organization_id,
+          public_features_enabled: false,
+          all_teachers_can_create_classes: false,
+          all_teachers_can_manage_own_classes: false,
+          teacherClassPermissions: [],
+        },
       }
     })
 }

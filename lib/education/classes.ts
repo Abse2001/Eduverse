@@ -4,39 +4,52 @@ import type { OrganizationClass } from "@/lib/supabase/classes"
 export function getClassesForUser(
   classes: OrganizationClass[],
   user: User,
+  options: { publicOrganizationFeaturesEnabled?: boolean } = {},
 ): OrganizationClass[] {
-  return getAccessibleClassesForUser(classes, user).filter(
+  return getAccessibleClassesForUser(classes, user, options).filter(
     (classItem) =>
-      !classItem.hidden_by_current_user || !classItem.organization_visible,
+      !classItem.hidden_by_current_user ||
+      !isOrganizationVisibleToUser(classItem, options),
   )
 }
 
 export function getHiddenClassesForUser(
   classes: OrganizationClass[],
   user: User,
+  options: { publicOrganizationFeaturesEnabled?: boolean } = {},
 ): OrganizationClass[] {
-  return getAccessibleClassesForUser(classes, user).filter(
+  return getAccessibleClassesForUser(classes, user, options).filter(
     (classItem) =>
-      classItem.hidden_by_current_user && classItem.organization_visible,
+      classItem.hidden_by_current_user &&
+      isOrganizationVisibleToUser(classItem, options),
   )
 }
 
 export function getAccessibleClassesForUser(
   classes: OrganizationClass[],
   user: User,
+  options: { publicOrganizationFeaturesEnabled?: boolean } = {},
 ): OrganizationClass[] {
   if (user.role === "admin") return classes
 
-  return classes.filter((classItem) => hasClassAccessForRole(classItem, user))
+  return classes.filter((classItem) =>
+    hasClassAccessForRole(classItem, user, options),
+  )
 }
 
 export function hasClassAccessForRole(
   classItem: OrganizationClass,
   user: User,
+  options: { publicOrganizationFeaturesEnabled?: boolean } = {},
 ) {
   if (user.role === "admin") return true
 
-  if (user.role === "student" && classItem.organization_visible) return true
+  if (
+    user.role === "student" &&
+    isOrganizationVisibleToUser(classItem, options)
+  ) {
+    return true
+  }
 
   if (user.role === "teacher" && isClassTeacher(classItem, user.id)) {
     return true
@@ -47,6 +60,16 @@ export function hasClassAccessForRole(
   }
 
   return false
+}
+
+function isOrganizationVisibleToUser(
+  classItem: OrganizationClass,
+  options: { publicOrganizationFeaturesEnabled?: boolean },
+) {
+  return (
+    classItem.organization_visible &&
+    (options.publicOrganizationFeaturesEnabled ?? true)
+  )
 }
 
 function isClassTeacher(classItem: OrganizationClass, userId: string) {

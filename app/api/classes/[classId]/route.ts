@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server"
+import {
+  canViewClassForContext,
+  loadClassAccessContext,
+} from "@/lib/api/class-access"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 import { loadClass } from "@/lib/supabase/classes"
 
@@ -18,5 +22,18 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const classRow = await loadClass(classId, supabase, user.id)
+  const accessContext = await loadClassAccessContext(
+    supabase,
+    classRow.organization_id,
+    user.id,
+  )
+
+  if (!canViewClassForContext(classRow, accessContext)) {
+    return NextResponse.json(
+      { error: "Class not found or unavailable" },
+      { status: 404 },
+    )
+  }
+
   return NextResponse.json({ class: classRow })
 }
