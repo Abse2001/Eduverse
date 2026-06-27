@@ -78,7 +78,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   color: "indigo",
   description: "",
   room: "Online",
-  semester: "Current term",
+  semester: "",
   stage: "",
 }
 
@@ -154,6 +154,36 @@ export function TeacherDashboard() {
     activeOrganization?.settings,
     authUser?.id ?? currentUser.id,
   )
+
+  useEffect(() => {
+    if (!assignmentsError) return
+
+    toast({
+      title: "Could not load assignment metrics",
+      description: assignmentsError,
+      variant: "destructive",
+    })
+  }, [assignmentsError, toast])
+
+  useEffect(() => {
+    if (!archivedClassesError) return
+
+    toast({
+      title: "Could not load past terms",
+      description: archivedClassesError,
+      variant: "destructive",
+    })
+  }, [archivedClassesError, toast])
+
+  useEffect(() => {
+    if (!archivedAssignmentsError) return
+
+    toast({
+      title: "Could not load past term gradebook",
+      description: archivedAssignmentsError,
+      variant: "destructive",
+    })
+  }, [archivedAssignmentsError, toast])
 
   useEffect(() => {
     let cancelled = false
@@ -396,9 +426,6 @@ export function TeacherDashboard() {
 
       <div className="space-y-3">
         <h2 className="font-semibold text-foreground">Your Classes</h2>
-        {assignmentsError ? (
-          <p className="text-xs text-destructive">{assignmentsError}</p>
-        ) : null}
 
         {myClasses.map((cls) => {
           const classItem = classRowById.get(cls.id)
@@ -554,12 +581,6 @@ export function TeacherDashboard() {
 
       <div className="space-y-3">
         <h2 className="font-semibold text-foreground">Past Terms</h2>
-        {archivedClassesError ? (
-          <p className="text-xs text-destructive">{archivedClassesError}</p>
-        ) : null}
-        {archivedAssignmentsError ? (
-          <p className="text-xs text-destructive">{archivedAssignmentsError}</p>
-        ) : null}
         <div className="grid gap-3">
           {archivedTerms.map((term) => (
             <Card key={term.label}>
@@ -734,12 +755,14 @@ export function TeacherDashboard() {
                 <Input
                   id="teacher-class-semester"
                   value={classForm.semester}
+                  placeholder="Current term"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,
                       semester: event.target.value,
                     }))
                   }
+                  required
                 />
               </div>
               <div className="space-y-2">
@@ -754,6 +777,7 @@ export function TeacherDashboard() {
                       stage: event.target.value,
                     }))
                   }
+                  required
                 />
               </div>
             </div>

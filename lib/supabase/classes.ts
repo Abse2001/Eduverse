@@ -35,6 +35,10 @@ export type OrganizationClass = {
   semester: string | null
   stage: string | null
   is_archived: boolean
+  ended_at: string | null
+  ended_by_user_id: string | null
+  archived_edited_at: string | null
+  archived_edited_by_user_id: string | null
   organization_visible: boolean
   results_visible_to_students: boolean
   teacher_can_toggle_results_visibility: boolean
@@ -64,7 +68,7 @@ export async function loadOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, ended_at, ended_by_user_id, archived_edited_at, archived_edited_by_user_id, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -84,11 +88,11 @@ export async function loadArchivedOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, ended_at, ended_by_user_id, archived_edited_at, archived_edited_by_user_id, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", true)
-    .order("semester", { ascending: false, nullsFirst: false })
+    .order("ended_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
 
   if (classError) throw classError
@@ -105,7 +109,7 @@ export async function loadClass(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, ended_at, ended_by_user_id, archived_edited_at, archived_edited_by_user_id, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("id", classId)
     .eq("is_archived", false)

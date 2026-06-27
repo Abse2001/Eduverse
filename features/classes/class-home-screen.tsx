@@ -22,7 +22,6 @@ import {
   useTransition,
 } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -316,7 +315,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   const [selectedMemberId, setSelectedMemberId] = useState("")
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const currentClassMemberships = classItem?.memberships.filter(
@@ -553,7 +551,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     if (!selectedEmail) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -572,13 +569,19 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       await refreshClass()
 
       if (data?.result === "membership") {
-        setSuccessMessage(`${selectedEmail} added to this class.`)
+        toast({
+          title: "Member assigned",
+          description: `${selectedEmail} added to this class.`,
+        })
         setSelectedMemberId("")
         setInviteRole("student")
         return
       }
 
-      setSuccessMessage(`${selectedEmail} added to this class.`)
+      toast({
+        title: "Member assigned",
+        description: `${selectedEmail} added to this class.`,
+      })
       setSelectedMemberId("")
       setInviteRole("student")
     })
@@ -607,7 +610,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     if (!classItem || !canEditClassSettings) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -650,7 +652,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
       setIsClassSettingsDialogOpen(false)
       await refreshClass()
-      setSuccessMessage("Class details updated.")
+      toast({ title: "Class details updated" })
     })
   }
 
@@ -661,7 +663,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     if (!confirmed) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const { error } = await createClient().rpc("remove_class_student", {
@@ -675,7 +676,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       }
 
       await refreshClass()
-      setSuccessMessage("Student removed from class.")
+      toast({ title: "Student removed from class" })
     })
   }
 
@@ -686,7 +687,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     if (!confirmed) return
 
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const { error } = await createClient().rpc("remove_class_teacher", {
@@ -699,7 +699,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       }
 
       await refreshClass()
-      setSuccessMessage("Teacher removed from class.")
+      toast({ title: "Teacher removed from class" })
     })
   }
 
@@ -731,13 +731,6 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   return (
     <>
       <div className="p-6 space-y-5 max-w-6xl mx-auto">
-        {successMessage ? (
-          <Alert>
-            <AlertTitle>Updated</AlertTitle>
-            <AlertDescription>{successMessage}</AlertDescription>
-          </Alert>
-        ) : null}
-
         <div
           className={cn(
             "rounded-2xl p-6 text-white bg-gradient-to-br",
