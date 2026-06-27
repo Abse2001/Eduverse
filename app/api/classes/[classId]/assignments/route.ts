@@ -97,7 +97,6 @@ export async function GET(request: Request, context: RouteContext) {
       { status: 500 },
     )
   }
-
   let assignmentQuery = supabase
     .from("class_assignments")
     .select(

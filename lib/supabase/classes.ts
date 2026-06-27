@@ -36,6 +36,8 @@ export type OrganizationClass = {
   stage: string | null
   is_archived: boolean
   organization_visible: boolean
+  results_visible_to_students: boolean
+  teacher_can_toggle_results_visibility: boolean
   hidden_by_current_user: boolean
   memberships: ClassMembership[]
   teacher: ClassProfile | null
@@ -62,7 +64,7 @@ export async function loadOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", false)
@@ -82,7 +84,7 @@ export async function loadArchivedOrganizationClasses(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("organization_id", organizationId)
     .eq("is_archived", true)
@@ -103,7 +105,7 @@ export async function loadClass(
   const { data: classData, error: classError } = await supabase
     .from("classes")
     .select(
-      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible",
+      "id, organization_id, name, code, teacher_user_id, color, description, room, semester, stage, is_archived, organization_visible, results_visible_to_students, teacher_can_toggle_results_visibility",
     )
     .eq("id", classId)
     .eq("is_archived", false)

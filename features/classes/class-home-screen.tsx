@@ -45,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import {
   type ClassAssignment,
@@ -106,6 +107,8 @@ type ClassFormState = {
   room: string
   semester: string
   stage: string
+  resultsVisibleToStudents: boolean
+  teacherCanToggleResultsVisibility: boolean
 }
 
 const CLASS_COLOR_OPTIONS = [
@@ -303,6 +306,8 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
     room: "Online",
     semester: "",
     stage: "",
+    resultsVisibleToStudents: false,
+    teacherCanToggleResultsVisibility: false,
   })
   const [isLoading, setIsLoading] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -343,6 +348,15 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
           (classItem.teacher_user_id === currentUser.id ||
             hasClassManagerMembership))),
   )
+  const canManageResultsVisibility = Boolean(
+    classItem &&
+      !isViewingAsStudent &&
+      (canManageRoster ||
+        (classItem.teacher_can_toggle_results_visibility &&
+          (classItem.teacher_user_id === currentUser.id ||
+            hasClassManagerMembership))),
+  )
+  const canEditClassSettings = canEditClassDetails || canManageResultsVisibility
   const assignmentsApi = useClassAssignments({
     classId,
     currentUserId: currentUser.id,
@@ -571,7 +585,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   }
 
   function openClassSettingsDialog() {
-    if (!classItem || !canEditClassDetails) return
+    if (!classItem || !canEditClassSettings) return
 
     setClassForm({
       name: classItem.name,
@@ -581,35 +595,57 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
       room: classItem.room ?? "Online",
       semester: classItem.semester ?? "",
       stage: classItem.stage ?? "",
+      resultsVisibleToStudents: classItem.results_visible_to_students,
+      teacherCanToggleResultsVisibility:
+        classItem.teacher_can_toggle_results_visibility,
     })
     setIsClassSettingsDialogOpen(true)
   }
 
   function submitClassSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!classItem || !canEditClassDetails) return
+    if (!classItem || !canEditClassSettings) return
 
     setErrorMessage(null)
     setSuccessMessage(null)
 
     startTransition(async () => {
-      const { error } = await createClient().rpc("update_class", {
-        target_class_id: classItem.id,
-        class_name: classForm.name,
-        class_code: classForm.code,
-        teacher_email: canManageRoster
-          ? (classItem.teacher?.email ?? "")
-          : currentUser.email,
-        class_color: classForm.color,
-        class_description: classForm.description,
-        class_room: classForm.room,
-        class_semester: classForm.semester,
-        class_stage: classForm.stage,
-      })
+      const supabase = createClient()
 
-      if (error) {
-        setErrorMessage(error.message)
-        return
+      if (canEditClassDetails) {
+        const { error } = await supabase.rpc("update_class", {
+          target_class_id: classItem.id,
+          class_name: classForm.name,
+          class_code: classForm.code,
+          teacher_email: canManageRoster
+            ? (classItem.teacher?.email ?? "")
+            : currentUser.email,
+          class_color: classForm.color,
+          class_description: classForm.description,
+          class_room: classForm.room,
+          class_semester: classForm.semester,
+          class_stage: classForm.stage,
+        })
+
+        if (error) {
+          setErrorMessage(error.message)
+          return
+        }
+      }
+
+      if (canManageResultsVisibility) {
+        const { error } = await supabase.rpc("set_class_results_visibility", {
+          target_class_id: classItem.id,
+          visible_to_students: classForm.resultsVisibleToStudents,
+          teacher_can_toggle: canManageRoster
+            ? classForm.teacherCanToggleResultsVisibility
+            : classItem.teacher_can_toggle_results_visibility,
+        })
+
+        if (error) {
+          setErrorMessage(error.message)
+          return
+        }
       }
 
       setIsClassSettingsDialogOpen(false)
@@ -724,7 +760,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               />
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              {canEditClassDetails ? (
+              {canEditClassSettings ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -732,7 +768,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   onClick={openClassSettingsDialog}
                 >
                   <Edit3 className="w-4 h-4" />
-                  Edit class
+                  Class settings
                 </Button>
               ) : null}
               {canManageRoster ? (
@@ -1078,124 +1114,183 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
         </Dialog>
       ) : null}
 
-      {canEditClassDetails ? (
+      {canEditClassSettings ? (
         <Dialog
           open={isClassSettingsDialogOpen}
           onOpenChange={setIsClassSettingsDialogOpen}
         >
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Edit class</DialogTitle>
+              <DialogTitle>Class settings</DialogTitle>
               <DialogDescription>
                 Update class details for this workspace.
               </DialogDescription>
             </DialogHeader>
             <form className="space-y-4" onSubmit={submitClassSettings}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="home-class-name">Name</Label>
-                  <Input
-                    id="home-class-name"
-                    value={classForm.name}
-                    onChange={(event) =>
-                      setClassForm((value) => ({
-                        ...value,
-                        name: event.target.value,
-                      }))
-                    }
-                    required
-                  />
+              {canEditClassDetails ? (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="home-class-name">Name</Label>
+                      <Input
+                        id="home-class-name"
+                        value={classForm.name}
+                        onChange={(event) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            name: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="home-class-code">Code</Label>
+                      <Input
+                        id="home-class-code"
+                        value={classForm.code}
+                        onChange={(event) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            code: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-4">
+                    <div className="space-y-2">
+                      <Label>Color</Label>
+                      <Select
+                        value={classForm.color}
+                        onValueChange={(color) =>
+                          setClassForm((value) => ({ ...value, color }))
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CLASS_COLOR_OPTIONS.map((color) => (
+                            <SelectItem key={color} value={color}>
+                              {color}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="home-class-room">Room</Label>
+                      <Input
+                        id="home-class-room"
+                        value={classForm.room}
+                        onChange={(event) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            room: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="home-class-semester">Term</Label>
+                      <Input
+                        id="home-class-semester"
+                        value={classForm.semester}
+                        onChange={(event) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            semester: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="home-class-stage">Stage</Label>
+                      <Input
+                        id="home-class-stage"
+                        value={classForm.stage}
+                        placeholder="5th Semester"
+                        onChange={(event) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            stage: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="home-class-description">Description</Label>
+                    <Textarea
+                      id="home-class-description"
+                      value={classForm.description}
+                      onChange={(event) =>
+                        setClassForm((value) => ({
+                          ...value,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </>
+              ) : null}
+              {canManageResultsVisibility ? (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div>
+                    <Label>Results visibility</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Students see only their own results unless class-wide
+                      results are shown.
+                    </p>
+                  </div>
+                  <label className="flex items-start gap-3">
+                    <Switch
+                      checked={classForm.resultsVisibleToStudents}
+                      onCheckedChange={(checked) =>
+                        setClassForm((value) => ({
+                          ...value,
+                          resultsVisibleToStudents: checked,
+                        }))
+                      }
+                      aria-label="Show all student results to students"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        Show class results to students
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        Students can view the same student list that admins and
+                        teachers see on the Results page.
+                      </span>
+                    </span>
+                  </label>
+                  {canManageRoster ? (
+                    <label className="flex items-start gap-3">
+                      <Switch
+                        checked={classForm.teacherCanToggleResultsVisibility}
+                        onCheckedChange={(checked) =>
+                          setClassForm((value) => ({
+                            ...value,
+                            teacherCanToggleResultsVisibility: checked,
+                          }))
+                        }
+                        aria-label="Allow teachers to change results visibility"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-foreground">
+                          Allow teachers to change this setting
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Teachers can decide whether students see class-wide
+                          results for this class.
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="home-class-code">Code</Label>
-                  <Input
-                    id="home-class-code"
-                    value={classForm.code}
-                    onChange={(event) =>
-                      setClassForm((value) => ({
-                        ...value,
-                        code: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-4">
-                <div className="space-y-2">
-                  <Label>Color</Label>
-                  <Select
-                    value={classForm.color}
-                    onValueChange={(color) =>
-                      setClassForm((value) => ({ ...value, color }))
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CLASS_COLOR_OPTIONS.map((color) => (
-                        <SelectItem key={color} value={color}>
-                          {color}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="home-class-room">Room</Label>
-                  <Input
-                    id="home-class-room"
-                    value={classForm.room}
-                    onChange={(event) =>
-                      setClassForm((value) => ({
-                        ...value,
-                        room: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="home-class-semester">Term</Label>
-                  <Input
-                    id="home-class-semester"
-                    value={classForm.semester}
-                    onChange={(event) =>
-                      setClassForm((value) => ({
-                        ...value,
-                        semester: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="home-class-stage">Stage</Label>
-                  <Input
-                    id="home-class-stage"
-                    value={classForm.stage}
-                    placeholder="5th Semester"
-                    onChange={(event) =>
-                      setClassForm((value) => ({
-                        ...value,
-                        stage: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="home-class-description">Description</Label>
-                <Textarea
-                  id="home-class-description"
-                  value={classForm.description}
-                  onChange={(event) =>
-                    setClassForm((value) => ({
-                      ...value,
-                      description: event.target.value,
-                    }))
-                  }
-                />
-              </div>
+              ) : null}
               <DialogFooter>
                 <Button
                   type="button"

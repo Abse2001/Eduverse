@@ -64,6 +64,8 @@ type ClassFormState = {
   semester: string
   stage: string
   organizationVisible: boolean
+  resultsVisibleToStudents: boolean
+  teacherCanToggleResultsVisibility: boolean
 }
 
 type FeatureValueMap = Record<string, boolean>
@@ -81,6 +83,8 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   semester: "Current term",
   stage: "",
   organizationVisible: false,
+  resultsVisibleToStudents: false,
+  teacherCanToggleResultsVisibility: false,
 }
 
 function getActiveOrganizationRoles(member: {
@@ -208,6 +212,9 @@ export function ClassesTab() {
       semester: classItem.semester ?? "",
       stage: classItem.stage ?? "",
       organizationVisible: classItem.organization_visible,
+      resultsVisibleToStudents: classItem.results_visible_to_students,
+      teacherCanToggleResultsVisibility:
+        classItem.teacher_can_toggle_results_visibility,
     })
     setClassFeatureValues(
       getInitialClassFeatureValues(
@@ -287,6 +294,18 @@ export function ClassesTab() {
 
         if (visibilityError) {
           showClassError(visibilityError)
+          return
+        }
+
+        const resultsVisibilityError = await saveClassResultsVisibility({
+          classId: savedClassId,
+          resultsVisibleToStudents: classForm.resultsVisibleToStudents,
+          teacherCanToggleResultsVisibility:
+            classForm.teacherCanToggleResultsVisibility,
+        })
+
+        if (resultsVisibilityError) {
+          showClassError(resultsVisibilityError)
           return
         }
 
@@ -712,6 +731,57 @@ export function ClassesTab() {
                 </span>
               </span>
             </label>
+            <div className="space-y-3 rounded-lg border p-4">
+              <div>
+                <Label>Results visibility</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Students see only their own results unless class-wide results
+                  are shown.
+                </p>
+              </div>
+              <label className="flex items-start gap-3">
+                <Switch
+                  checked={classForm.resultsVisibleToStudents}
+                  onCheckedChange={(checked) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      resultsVisibleToStudents: checked,
+                    }))
+                  }
+                  aria-label="Show all student results to students"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    Show class results to students
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Students can view the same student list that admins and
+                    teachers see on the Results page.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <Switch
+                  checked={classForm.teacherCanToggleResultsVisibility}
+                  onCheckedChange={(checked) =>
+                    setClassForm((value) => ({
+                      ...value,
+                      teacherCanToggleResultsVisibility: checked,
+                    }))
+                  }
+                  aria-label="Allow teachers to change results visibility"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    Allow teachers to change this setting
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Disabled by default for new classes. Admins can always
+                    change results visibility.
+                  </span>
+                </span>
+              </label>
+            </div>
             {classFeatureRows.length > 0 ? (
               <div className="space-y-3 rounded-lg border p-4">
                 <div>
@@ -998,6 +1068,24 @@ async function saveClassOrganizationVisibility(
       visible_to_organization: organizationVisible,
     },
   )
+
+  return error?.message ?? null
+}
+
+async function saveClassResultsVisibility({
+  classId,
+  resultsVisibleToStudents,
+  teacherCanToggleResultsVisibility,
+}: {
+  classId: string
+  resultsVisibleToStudents: boolean
+  teacherCanToggleResultsVisibility: boolean
+}) {
+  const { error } = await createClient().rpc("set_class_results_visibility", {
+    target_class_id: classId,
+    visible_to_students: resultsVisibleToStudents,
+    teacher_can_toggle: teacherCanToggleResultsVisibility,
+  })
 
   return error?.message ?? null
 }

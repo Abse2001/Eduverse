@@ -5,15 +5,13 @@ import {
   ArrowRight,
   BarChart3,
   BookOpenCheck,
-  CheckCircle2,
   ClipboardList,
   FileText,
   GraduationCap,
-  ListChecks,
   SearchX,
   ShieldCheck,
-  Timer,
   Trophy,
+  Users,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
@@ -28,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -39,6 +38,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   type ClassAssignment,
+  type ClassAssignmentSubmission,
   useClassAssignments,
 } from "@/features/assignments/use-class-assignments"
 import {
@@ -50,11 +50,13 @@ import { ExamResults } from "@/features/exam/exam-results"
 import { useClassExam } from "@/features/exam/use-class-exam"
 import { toast } from "@/hooks/use-toast"
 import type {
-  ManagerExamSummaryDto,
+  ManagerExamDetailDto,
+  ManagerAttemptSummaryDto,
   ReleasedExamResultDto,
 } from "@/lib/exams/types"
 import { resolveClassFeatures } from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
+import type { ClassProfile } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 
 type StudentAssignmentResult = {
@@ -66,24 +68,61 @@ type StudentAssignmentResult = {
   feedback: string
 }
 
-type ManagerAssignmentResultSummary = {
-  id: string
-  title: string
-  dueAt: string
-  maxScore: number
-  gradedCount: number
-  submittedCount: number
-  pendingCount: number
-  averageScore: number | null
-}
-
 type ResultRecord =
   | (StudentAssignmentResult & { kind: "assignment"; date: string })
   | (ReleasedExamResultDto & { kind: "exam"; date: string })
 
+type StudentResultsSummary = {
+  profile: ClassProfile
+  assignmentResults: StudentAssignmentResult[]
+  examResults: ReleasedExamResultDto[]
+  records: ResultRecord[]
+  average: number | null
+}
+
+type SharedStudentSummary = {
+  id: string
+  displayName: string
+  email: string
+  assignmentCount: number
+  examCount: number
+  resultCount: number
+  average: number | null
+}
+
+type SharedResultsSummaryData = {
+  students: SharedStudentSummary[]
+}
+
+type SharedSummaryCacheEntry = {
+  data: SharedResultsSummaryData | null
+  request: Promise<SharedResultsSummaryData> | null
+}
+
+type ManagerExamDetailCacheEntry = {
+  data: ManagerExamDetailDto | null
+  request: Promise<ManagerExamDetailDto> | null
+}
+
+const sharedSummaryCache = new Map<string, SharedSummaryCacheEntry>()
+const sharedSummaryListeners = new Map<
+  string,
+  Set<(data: SharedResultsSummaryData) => void>
+>()
+const managerExamDetailCache = new Map<string, ManagerExamDetailCacheEntry>()
+const managerExamDetailListeners = new Map<
+  string,
+  Set<(data: ManagerExamDetailDto) => void>
+>()
+
 export function ClassResultsScreen({ classId }: { classId: string }) {
-  const { authUser, currentUser, activeOrganization, featureDefinitions } =
-    useApp()
+  const {
+    authUser,
+    currentUser,
+    activeOrganization,
+    featureDefinitions,
+    refreshOrganizationClasses,
+  } = useApp()
   const { cls, classRow, isLoading, errorMessage, isFeatureDisabled } =
     useClassFeatureRoute(classId, "leaderboard")
 
@@ -116,6 +155,37 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
   })
   const [selectedExamResult, setSelectedExamResult] =
     useState<ReleasedExamResultDto | null>(null)
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
+    null,
+  )
+  const [sharedSummaryData, setSharedSummaryData] =
+    useState<SharedResultsSummaryData | null>(null)
+  const [sharedSummaryError, setSharedSummaryError] = useState<string | null>(
+    null,
+  )
+  const [sharedSummaryLoading, setSharedSummaryLoading] = useState(false)
+  const [examDetailsById, setExamDetailsById] = useState<
+    Map<string, ManagerExamDetailDto>
+  >(new Map())
+  const [examDetailsLoading, setExamDetailsLoading] = useState(false)
+  const [examDetailsError, setExamDetailsError] = useState<string | null>(null)
+  const [isSavingResultsVisibility, setIsSavingResultsVisibility] =
+    useState(false)
+
+  const resultsVisibleToStudents = Boolean(
+    classRow?.results_visible_to_students,
+  )
+  const summaryViewerId = authUser?.id ?? currentUser.id ?? "anonymous"
+  const sharedSummaryCacheKey = getSharedSummaryCacheKey(
+    classId,
+    summaryViewerId,
+  )
+  const canControlResultsVisibility = Boolean(
+    canManage &&
+      (currentUser.role === "admin" ||
+        classRow?.teacher_can_toggle_results_visibility),
+  )
+  const canViewSharedSummary = !canManage && resultsVisibleToStudents
 
   const studentAssignmentResults = useMemo(
     () =>
@@ -129,13 +199,259 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
         : [],
     [canManage, examApi.data],
   )
-  const managerAssignmentSummaries = useMemo(
-    () =>
-      canManage ? getManagerAssignmentResults(assignmentsApi.assignments) : [],
-    [assignmentsApi.assignments, canManage],
-  )
   const managerExamSummaries =
     canManage && examApi.data?.canManage ? examApi.data.manager.exams : []
+  const rosterExamSummaries = managerExamSummaries
+  const rosterExamIdsKey = rosterExamSummaries
+    .map((exam) => exam.id)
+    .sort()
+    .join("|")
+  const managerExamDetailCachePrefix = getManagerExamDetailCachePrefix({
+    classId,
+    userId: summaryViewerId,
+  })
+  const rosterExamResults = useMemo(
+    () =>
+      getRosterExamResults({
+        details: Array.from(examDetailsById.values()),
+      }),
+    [examDetailsById],
+  )
+  const rosterStudentSummaries = useMemo(
+    () =>
+      classRow
+        ? getRosterStudentSummaries({
+            students: classRow.students,
+            assignments: assignmentsApi.assignments,
+            examResults: rosterExamResults,
+          })
+        : [],
+    [assignmentsApi.assignments, classRow, rosterExamResults],
+  )
+  const selectedStudent =
+    rosterStudentSummaries.find(
+      (student) => student.profile.id === selectedStudentId,
+    ) ??
+    rosterStudentSummaries[0] ??
+    null
+  const selectedStudentExamTitle = selectedExamResult
+    ? (selectedStudent?.profile.display_name ?? null)
+    : null
+  const pageError =
+    assignmentsApi.errorMessage ??
+    examApi.errorMessage ??
+    sharedSummaryError ??
+    examDetailsError
+
+  useEffect(() => {
+    if (!pageError) return
+
+    toast({
+      title: "Could not load results",
+      description: pageError,
+      variant: "destructive",
+    })
+  }, [pageError])
+
+  useEffect(() => {
+    if (!canManage || rosterStudentSummaries.length === 0) return
+    if (
+      selectedStudentId &&
+      rosterStudentSummaries.some(
+        (student) => student.profile.id === selectedStudentId,
+      )
+    ) {
+      return
+    }
+
+    setSelectedStudentId(rosterStudentSummaries[0]?.profile.id ?? null)
+  }, [canManage, rosterStudentSummaries, selectedStudentId])
+
+  useEffect(() => {
+    if (!canViewSharedSummary) {
+      setSharedSummaryData(null)
+      setSharedSummaryError(null)
+      setSharedSummaryLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const cachedSummary = readSharedSummaryCache(sharedSummaryCacheKey)
+    if (cachedSummary) {
+      setSharedSummaryData(cachedSummary)
+      setSharedSummaryLoading(false)
+    } else {
+      setSharedSummaryData(null)
+      setSharedSummaryLoading(true)
+    }
+    setSharedSummaryError(null)
+
+    const unsubscribe = subscribeSharedSummaryCache(
+      sharedSummaryCacheKey,
+      (nextSummary) => {
+        if (cancelled) return
+        setSharedSummaryData(nextSummary)
+        setSharedSummaryLoading(false)
+        setSharedSummaryError(null)
+      },
+    )
+
+    loadSharedClassSummary({
+      classId,
+      cacheKey: sharedSummaryCacheKey,
+      force: true,
+    })
+      .then((nextSummary) => {
+        if (!cancelled) setSharedSummaryData(nextSummary)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          if (!cachedSummary) setSharedSummaryData(null)
+          setSharedSummaryError(
+            error instanceof Error
+              ? error.message
+              : "Could not load class result summary.",
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSharedSummaryLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [canViewSharedSummary, classId, sharedSummaryCacheKey])
+
+  useEffect(() => {
+    if (!canManage || !examFeatureEnabled) {
+      setExamDetailsById(new Map())
+      setExamDetailsError(null)
+      setExamDetailsLoading(false)
+      return
+    }
+
+    const examIds = rosterExamIdsKey ? rosterExamIdsKey.split("|") : []
+    if (examIds.length === 0) {
+      setExamDetailsById(new Map())
+      setExamDetailsError(null)
+      setExamDetailsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const cachedDetails = readManagerExamDetailCaches({
+      cachePrefix: managerExamDetailCachePrefix,
+      examIds,
+    })
+    if (cachedDetails.length > 0) {
+      setExamDetailsById(
+        new Map(cachedDetails.map((detail) => [detail.exam.id, detail])),
+      )
+      setExamDetailsLoading(false)
+    } else {
+      setExamDetailsById(new Map())
+      setExamDetailsLoading(true)
+    }
+    setExamDetailsError(null)
+
+    const unsubscribes = examIds.map((examId) =>
+      subscribeManagerExamDetailCache(
+        getManagerExamDetailCacheKey({
+          cachePrefix: managerExamDetailCachePrefix,
+          examId,
+        }),
+        (detail) => {
+          if (cancelled) return
+          setExamDetailsById((current) => {
+            const next = new Map(current)
+            next.set(detail.exam.id, detail)
+            return next
+          })
+          setExamDetailsError(null)
+        },
+      ),
+    )
+
+    loadManagerExamDetails({
+      classId,
+      cachePrefix: managerExamDetailCachePrefix,
+      examIds,
+      force: true,
+    })
+      .then((details) => {
+        if (cancelled) return
+        setExamDetailsById(
+          new Map(details.map((detail) => [detail.exam.id, detail])),
+        )
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          if (cachedDetails.length === 0) setExamDetailsById(new Map())
+          setExamDetailsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load exam results.",
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setExamDetailsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      for (const unsubscribe of unsubscribes) unsubscribe()
+    }
+  }, [
+    canManage,
+    classId,
+    examFeatureEnabled,
+    managerExamDetailCachePrefix,
+    rosterExamIdsKey,
+  ])
+
+  async function updateResultsVisibility(visible: boolean) {
+    if (!classRow || !canControlResultsVisibility) return
+
+    setIsSavingResultsVisibility(true)
+    try {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(classRow.id)}/results/visibility`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visibleToStudents: visible }),
+        },
+      )
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string
+      } | null
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ?? "Could not update results visibility.",
+        )
+      }
+
+      await refreshOrganizationClasses({ force: true })
+      toast({
+        title: visible ? "Class results shown" : "Class results hidden",
+      })
+    } catch (error) {
+      toast({
+        title: "Could not update results visibility",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not update results visibility.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSavingResultsVisibility(false)
+    }
+  }
 
   if (!cls) {
     return (
@@ -149,39 +465,45 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
     )
   }
 
-  const pageError = assignmentsApi.errorMessage ?? examApi.errorMessage
-
-  useEffect(() => {
-    if (!pageError) return
-
-    toast({
-      title: "Could not load results",
-      description: pageError,
-      variant: "destructive",
-    })
-  }, [pageError])
-
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
       <ClassPageHeader title={cls.name} code={cls.code} section="Results" />
 
       {canManage ? (
-        <TeacherResultsView
-          assignmentsLoading={assignmentsApi.isLoading}
-          examFeatureEnabled={examFeatureEnabled}
-          examsLoading={examApi.isLoading && !examApi.data}
-          assignmentSummaries={managerAssignmentSummaries}
-          examSummaries={managerExamSummaries}
+        <RosterResultsView
+          canManage={canManage}
+          canControlVisibility={canControlResultsVisibility}
+          resultsVisibleToStudents={resultsVisibleToStudents}
+          isSavingVisibility={isSavingResultsVisibility}
+          isLoading={
+            assignmentsApi.isLoading ||
+            (examFeatureEnabled &&
+              (canManage ? examApi.isLoading && !examApi.data : false)) ||
+            examDetailsLoading
+          }
+          students={rosterStudentSummaries}
+          selectedStudent={selectedStudent}
+          onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
+          onSelectExam={setSelectedExamResult}
+          onToggleVisibility={updateResultsVisibility}
         />
       ) : (
-        <StudentResultsView
-          assignmentsLoading={assignmentsApi.isLoading}
-          examFeatureEnabled={examFeatureEnabled}
-          examsLoading={examApi.isLoading && !examApi.data}
-          assignmentResults={studentAssignmentResults}
-          examResults={studentExamResults}
-          onSelectExam={setSelectedExamResult}
-        />
+        <div className="space-y-6">
+          <StudentResultsView
+            assignmentsLoading={assignmentsApi.isLoading}
+            examFeatureEnabled={examFeatureEnabled}
+            examsLoading={examApi.isLoading && !examApi.data}
+            assignmentResults={studentAssignmentResults}
+            examResults={studentExamResults}
+            onSelectExam={setSelectedExamResult}
+          />
+          {resultsVisibleToStudents ? (
+            <SharedClassSummaryCard
+              isLoading={sharedSummaryLoading}
+              students={sharedSummaryData?.students ?? []}
+            />
+          ) : null}
+        </div>
       )}
 
       <Dialog
@@ -196,7 +518,9 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
               <DialogHeader>
                 <DialogTitle>{selectedExamResult.title}</DialogTitle>
                 <DialogDescription>
-                  Released exam details, including per-question grading.
+                  {selectedStudentExamTitle
+                    ? `${selectedStudentExamTitle}'s exam details, including per-question grading.`
+                    : "Exam details, including per-question grading."}
                 </DialogDescription>
               </DialogHeader>
               <ExamResults result={selectedExamResult} />
@@ -208,262 +532,289 @@ export function ClassResultsScreen({ classId }: { classId: string }) {
   )
 }
 
-function TeacherResultsView({
-  assignmentsLoading,
-  examFeatureEnabled,
-  examsLoading,
-  assignmentSummaries,
-  examSummaries,
+function RosterResultsView({
+  canManage,
+  canControlVisibility,
+  resultsVisibleToStudents,
+  isSavingVisibility,
+  isLoading,
+  students,
+  selectedStudent,
+  onSelectStudent,
+  onSelectExam,
+  onToggleVisibility,
 }: {
-  assignmentsLoading: boolean
-  examFeatureEnabled: boolean
-  examsLoading: boolean
-  assignmentSummaries: ManagerAssignmentResultSummary[]
-  examSummaries: ManagerExamSummaryDto[]
+  canManage: boolean
+  canControlVisibility: boolean
+  resultsVisibleToStudents: boolean
+  isSavingVisibility: boolean
+  isLoading: boolean
+  students: StudentResultsSummary[]
+  selectedStudent: StudentResultsSummary | null
+  onSelectStudent: (studentId: string) => void
+  onSelectExam: (result: ReleasedExamResultDto) => void
+  onToggleVisibility: (visible: boolean) => void
 }) {
-  const gradedAssignmentsCount = assignmentSummaries.reduce(
-    (total, assignment) => total + assignment.gradedCount,
+  const classAverage = getRosterAverage(students)
+  const gradedAssignments = students.reduce(
+    (total, student) => total + student.assignmentResults.length,
     0,
   )
-  const pendingAssignmentCount = assignmentSummaries.reduce(
-    (total, assignment) => total + assignment.pendingCount,
-    0,
-  )
-  const submittedAssignmentsCount = assignmentSummaries.reduce(
-    (total, assignment) => total + assignment.submittedCount,
-    0,
-  )
-  const releasedExamResultsCount = examSummaries.reduce(
-    (total, exam) => total + exam.attemptCounts.released,
-    0,
-  )
-  const gradedExamResultsCount = examSummaries.reduce(
-    (total, exam) => total + exam.attemptCounts.graded,
-    0,
-  )
-  const submittedExamResultsCount = examSummaries.reduce(
-    (total, exam) => total + exam.attemptCounts.submitted,
+  const releasedExams = students.reduce(
+    (total, student) => total + student.examResults.length,
     0,
   )
 
   return (
     <div className="space-y-6">
+      {canManage && canControlVisibility ? (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+            <Switch
+              checked={resultsVisibleToStudents}
+              disabled={isSavingVisibility}
+              onCheckedChange={onToggleVisibility}
+              aria-label="Show class results to students"
+            />
+            <span className="text-sm font-medium text-foreground">
+              Show class results to students
+            </span>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              {isSavingVisibility ? <Spinner /> : null}
+            </span>
+            <Badge variant={resultsVisibleToStudents ? "default" : "secondary"}>
+              {resultsVisibleToStudents ? "On" : "Off"}
+            </Badge>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          icon={CheckCircle2}
-          label="Assignment grades"
-          value={gradedAssignmentsCount}
-          detail={`${submittedAssignmentsCount} submitted`}
+          icon={Users}
+          label="Students"
+          value={students.length}
+          detail="In this class"
         />
         <MetricCard
-          icon={Timer}
-          label="Needs grading"
-          value={pendingAssignmentCount}
-          detail="Assignment submissions"
-          tone={pendingAssignmentCount > 0 ? "warning" : "default"}
+          icon={Trophy}
+          label="Class average"
+          value={classAverage === null ? "-" : `${classAverage}%`}
+          detail="Across visible results"
+        />
+        <MetricCard
+          icon={FileText}
+          label="Assignment grades"
+          value={gradedAssignments}
+          detail="Graded submissions"
         />
         <MetricCard
           icon={ClipboardList}
-          label="Released exams"
-          value={releasedExamResultsCount}
-          detail={`${gradedExamResultsCount} graded attempts`}
-        />
-        <MetricCard
-          icon={ListChecks}
-          label="Exam submissions"
-          value={submittedExamResultsCount}
-          detail="Awaiting grading or release"
+          label="Exam results"
+          value={releasedExams}
+          detail="Scored attempts"
         />
       </div>
 
-      <Tabs defaultValue="assignments" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2 sm:w-fit">
-          <TabsTrigger value="assignments" className="gap-2">
-            <FileText className="h-4 w-4" />
-            Assignments
-          </TabsTrigger>
-          <TabsTrigger value="exams" className="gap-2">
-            <ClipboardList className="h-4 w-4" />
-            Exams
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="assignments">
-          <Card>
-            <CardHeader className="border-b">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                Assignment Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {assignmentsLoading ? (
-                <LoadingPanel label="Loading assignment results..." />
-              ) : assignmentSummaries.length === 0 ? (
-                <EmptyPanel
-                  icon={SearchX}
-                  title="No assignment results"
-                  description="Published assignments with graded submissions will appear here."
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Assignment</TableHead>
-                      <TableHead>Due</TableHead>
-                      <TableHead className="text-right">Average</TableHead>
-                      <TableHead className="text-right">Graded</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              Students
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <LoadingPanel label="Loading student results..." />
+            ) : students.length === 0 ? (
+              <EmptyPanel
+                icon={SearchX}
+                title="No student results"
+                description="Students will appear here once they are added to this class."
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead className="text-right">Average</TableHead>
+                    <TableHead className="text-right">Assignments</TableHead>
+                    <TableHead className="text-right">Exams</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {students.map((student) => (
+                    <TableRow
+                      key={student.profile.id}
+                      className={cn(
+                        "cursor-pointer",
+                        selectedStudent?.profile.id === student.profile.id &&
+                          "bg-muted/60",
+                      )}
+                      onClick={() => onSelectStudent(student.profile.id)}
+                    >
+                      <TableCell className="min-w-56">
+                        <div className="space-y-1">
+                          <p className="font-medium text-foreground">
+                            {student.profile.display_name || "Unnamed student"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {student.profile.email}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {student.average === null ? "-" : `${student.average}%`}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {student.assignmentResults.length}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {student.examResults.length}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {assignmentSummaries.map((assignment) => {
-                      const completion = percentage(
-                        assignment.gradedCount,
-                        assignment.submittedCount,
-                      )
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
-                      return (
-                        <TableRow key={assignment.id}>
-                          <TableCell className="min-w-64">
-                            <div className="space-y-1">
-                              <p className="font-medium text-foreground">
-                                {assignment.title}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {assignment.maxScore} points
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatDateTime(assignment.dueAt)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {assignment.averageScore === null
-                              ? "No grades"
-                              : `${assignment.averageScore}%`}
-                          </TableCell>
-                          <TableCell className="min-w-40">
-                            <div className="space-y-1 text-right">
-                              <span className="font-medium">
-                                {assignment.gradedCount}/
-                                {assignment.submittedCount}
-                              </span>
-                              <Progress
-                                value={completion}
-                                className="ml-auto h-1.5 max-w-28"
-                              />
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <StatusBadge
-                              value={assignment.pendingCount}
-                              label="pending"
-                              active={assignment.pendingCount > 0}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="exams">
-          <Card>
-            <CardHeader className="border-b">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ClipboardList className="h-5 w-5 text-muted-foreground" />
-                Exam Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {examFeatureEnabled && examsLoading ? (
-                <LoadingPanel label="Loading exam results..." />
-              ) : !examFeatureEnabled ? (
-                <EmptyPanel
-                  icon={ClipboardList}
-                  title="Exam results are disabled"
-                  description="Enable exams for this class to review released results here."
-                />
-              ) : examSummaries.length === 0 ? (
-                <EmptyPanel
-                  icon={SearchX}
-                  title="No exam results"
-                  description="Exam attempts will appear after students submit and results are released."
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Exam</TableHead>
-                      <TableHead>Start</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Submitted</TableHead>
-                      <TableHead className="text-right">Graded</TableHead>
-                      <TableHead className="text-right">Released</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {examSummaries.map((exam) => {
-                      const released = percentage(
-                        exam.attemptCounts.released,
-                        exam.attemptCounts.submitted +
-                          exam.attemptCounts.graded +
-                          exam.attemptCounts.released,
-                      )
-
-                      return (
-                        <TableRow key={exam.id}>
-                          <TableCell className="min-w-64">
-                            <div className="space-y-1">
-                              <p className="font-medium text-foreground">
-                                {exam.title}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {exam.totalPoints} points
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {exam.startAt ? formatDateTime(exam.startAt) : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {formatExamStatus(exam.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {exam.attemptCounts.submitted}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {exam.attemptCounts.graded}
-                          </TableCell>
-                          <TableCell className="min-w-40 text-right">
-                            <div className="space-y-1">
-                              <span className="font-medium">
-                                {exam.attemptCounts.released}
-                              </span>
-                              <Progress
-                                value={released}
-                                className="ml-auto h-1.5 max-w-28"
-                              />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        <Card className="h-fit">
+          <CardHeader className="border-b">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-5 w-5 text-muted-foreground" />
+              Student Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            {!selectedStudent ? (
+              <EmptyPanel
+                icon={SearchX}
+                title="Select a student"
+                description="Choose a student to review their detailed results."
+              />
+            ) : (
+              <>
+                <div>
+                  <p className="text-lg font-semibold text-foreground">
+                    {selectedStudent.profile.display_name || "Unnamed student"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedStudent.profile.email}
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                  <ScoreBreakdownRow
+                    label="Overall"
+                    count={selectedStudent.records.length}
+                    average={selectedStudent.average}
+                  />
+                  <ScoreBreakdownRow
+                    label="Assignments"
+                    count={selectedStudent.assignmentResults.length}
+                    average={getAssignmentAverage(
+                      selectedStudent.assignmentResults,
+                    )}
+                  />
+                  <ScoreBreakdownRow
+                    label="Exams"
+                    count={selectedStudent.examResults.length}
+                    average={getExamAverage(selectedStudent.examResults)}
+                  />
+                </div>
+                <div className="space-y-3">
+                  {selectedStudent.records.length === 0 ? (
+                    <EmptyPanel
+                      icon={SearchX}
+                      title="No results yet"
+                      description="Graded assignments and released exams will appear here."
+                    />
+                  ) : (
+                    selectedStudent.records.map((record) => (
+                      <StudentResultRow
+                        key={`${record.kind}-${record.kind === "exam" ? record.attemptId : record.id}`}
+                        record={record}
+                        onSelectExam={onSelectExam}
+                      />
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
+  )
+}
+
+function SharedClassSummaryCard({
+  isLoading,
+  students,
+}: {
+  isLoading: boolean
+  students: SharedStudentSummary[]
+}) {
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="h-5 w-5 text-muted-foreground" />
+          Class Summary
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <LoadingPanel label="Loading class summary..." />
+        ) : students.length === 0 ? (
+          <EmptyPanel
+            icon={SearchX}
+            title="No class results"
+            description="Classmate grade summaries will appear here after results are released."
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead className="text-right">Average</TableHead>
+                <TableHead className="text-right">Assignments</TableHead>
+                <TableHead className="text-right">Exams</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {students.map((student) => (
+                <TableRow key={student.id}>
+                  <TableCell className="min-w-56">
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">
+                        {student.displayName || "Unnamed student"}
+                      </p>
+                      {student.email ? (
+                        <p className="text-xs text-muted-foreground">
+                          {student.email}
+                        </p>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {student.average === null ? "-" : `${student.average}%`}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {student.assignmentCount}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {student.examCount}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -923,37 +1274,191 @@ function getStudentAssignmentResults(assignments: ClassAssignment[]) {
     )
 }
 
-function getManagerAssignmentResults(assignments: ClassAssignment[]) {
-  return assignments
-    .map((assignment) => {
-      const submittedCount = assignment.submissions.length
-      const gradedSubmissions = assignment.submissions.filter(
-        (submission) => submission.gradedAt && submission.score !== null,
+function getRosterStudentSummaries({
+  students,
+  assignments,
+  examResults,
+}: {
+  students: ClassProfile[]
+  assignments: ClassAssignment[]
+  examResults: Array<ReleasedExamResultDto & { studentUserId: string }>
+}) {
+  return students
+    .map((student) => {
+      const assignmentResults = getStudentAssignmentResultsForUser(
+        assignments,
+        student.id,
       )
-      const gradedCount = gradedSubmissions.length
-      const averageScore =
-        gradedSubmissions.length === 0
-          ? null
-          : Math.round(
-              gradedSubmissions.reduce(
-                (sum, submission) =>
-                  sum + percentage(submission.score ?? 0, assignment.maxScore),
-                0,
-              ) / gradedSubmissions.length,
-            )
+      const studentExamResults = examResults
+        .filter((result) => result.studentUserId === student.id)
+        .sort(compareExamResultsByDate)
+      const records = getStudentResultRecords(
+        assignmentResults,
+        studentExamResults,
+      )
 
       return {
-        id: assignment.id,
-        title: assignment.title,
-        dueAt: assignment.dueAt,
-        maxScore: assignment.maxScore,
-        gradedCount,
-        submittedCount,
-        pendingCount: Math.max(submittedCount - gradedCount, 0),
-        averageScore,
-      } satisfies ManagerAssignmentResultSummary
+        profile: student,
+        assignmentResults,
+        examResults: studentExamResults,
+        records,
+        average: getStudentAverage(records),
+      } satisfies StudentResultsSummary
     })
-    .sort((left, right) => Date.parse(right.dueAt) - Date.parse(left.dueAt))
+    .sort((left, right) =>
+      (left.profile.display_name || left.profile.email).localeCompare(
+        right.profile.display_name || right.profile.email,
+      ),
+    )
+}
+
+function getStudentAssignmentResultsForUser(
+  assignments: ClassAssignment[],
+  studentUserId: string,
+) {
+  return assignments
+    .flatMap((assignment) => {
+      const submission = assignment.submissions.find(
+        (candidate) => candidate.studentUserId === studentUserId,
+      )
+      if (!submission?.gradedAt || submission.score === null) return []
+
+      return [
+        toStudentAssignmentResult(assignment, submission),
+      ] satisfies StudentAssignmentResult[]
+    })
+    .sort(
+      (left, right) => Date.parse(right.gradedAt) - Date.parse(left.gradedAt),
+    )
+}
+
+function toStudentAssignmentResult(
+  assignment: ClassAssignment,
+  submission: ClassAssignmentSubmission,
+) {
+  return {
+    id: assignment.id,
+    title: assignment.title,
+    score: submission.score ?? 0,
+    maxScore: assignment.maxScore,
+    gradedAt: submission.gradedAt ?? submission.submittedAt,
+    feedback: submission.feedback,
+  } satisfies StudentAssignmentResult
+}
+
+function getRosterExamResults({
+  details,
+}: {
+  details: ManagerExamDetailDto[]
+}) {
+  return details.flatMap((detail) =>
+    detail.attempts
+      .filter(
+        (attempt) =>
+          attempt.totalScore !== null &&
+          (attempt.resultsReleasedAt || attempt.status === "graded"),
+      )
+      .map((attempt) => ({
+        ...toReleasedExamResult(detail, attempt),
+        studentUserId: attempt.studentUserId,
+      })),
+  )
+}
+
+function toReleasedExamResult(
+  detail: ManagerExamDetailDto,
+  attempt: ManagerAttemptSummaryDto,
+) {
+  return {
+    attemptId: attempt.id,
+    examId: detail.exam.id,
+    title: detail.exam.title,
+    status: attempt.status,
+    totalScore: attempt.totalScore,
+    totalPoints: detail.exam.totalPoints,
+    submittedAt: attempt.submittedAt,
+    releasedAt: attempt.resultsReleasedAt,
+    gradedAt: attempt.resultsReleasedAt,
+    isReleased: Boolean(attempt.resultsReleasedAt),
+    needsManualReview: attempt.needsManualReview,
+    integrityStatus: attempt.integrityStatus,
+    questions: detail.questions.map((question) => {
+      const answer = attempt.answers.find(
+        (candidate) => candidate.questionId === question.id,
+      )
+      const score = answer?.teacherScore ?? answer?.autoScore ?? null
+      const selected = normalizeAnswerValue(answer?.answer ?? null)
+      const correct = normalizeAnswerValue(question.correctAnswer)
+
+      return {
+        id: question.id,
+        position: question.position,
+        prompt: question.prompt,
+        type: question.type,
+        points: question.points,
+        score,
+        status: getQuestionResultStatus(score, question.points, selected),
+        selectedOptionIndex: typeof selected === "number" ? selected : null,
+        selectedTextAnswer: typeof selected === "string" ? selected : null,
+        correctOptionIndex: typeof correct === "number" ? correct : null,
+        correctTextAnswer: typeof correct === "string" ? correct : null,
+      }
+    }),
+  } satisfies ReleasedExamResultDto
+}
+
+function normalizeAnswerValue(value: unknown) {
+  if (typeof value === "number") return value
+  if (typeof value === "string") return value
+  if (!value || typeof value !== "object") return null
+
+  const record = value as Record<string, unknown>
+  if (typeof record.selectedOptionIndex === "number") {
+    return record.selectedOptionIndex
+  }
+  if (typeof record.optionIndex === "number") return record.optionIndex
+  if (typeof record.answer === "number" || typeof record.answer === "string") {
+    return record.answer
+  }
+  if (typeof record.text === "string") return record.text
+
+  return null
+}
+
+function getQuestionResultStatus(
+  score: number | null,
+  points: number,
+  selected: number | string | null,
+) {
+  if (selected === null || selected === "") return "unanswered"
+  if (score === null) return "reviewed"
+  if (score >= points) return "correct"
+  if (score <= 0) return "incorrect"
+  return "reviewed"
+}
+
+function compareExamResultsByDate(
+  left: ReleasedExamResultDto,
+  right: ReleasedExamResultDto,
+) {
+  const leftDate =
+    left.releasedAt ?? left.submittedAt ?? new Date(0).toISOString()
+  const rightDate =
+    right.releasedAt ?? right.submittedAt ?? new Date(0).toISOString()
+
+  return Date.parse(rightDate) - Date.parse(leftDate)
+}
+
+function getRosterAverage(students: StudentResultsSummary[]) {
+  const averages = students
+    .map((student) => student.average)
+    .filter((average): average is number => average !== null)
+
+  if (averages.length === 0) return null
+
+  return Math.round(
+    averages.reduce((total, average) => total + average, 0) / averages.length,
+  )
 }
 
 function getStudentExamResults(page: {
@@ -1065,12 +1570,6 @@ function formatDateTime(value: string) {
   return format(new Date(value), "MMM d, h:mm a")
 }
 
-function formatExamStatus(status: string) {
-  if (status === "live") return "Live"
-  if (status === "ended") return "Ended"
-  return "Upcoming"
-}
-
 function formatAttemptStatus(status: ReleasedExamResultDto["status"]) {
   if (status === "graded") return "Graded"
   if (status === "voided") return "Voided"
@@ -1085,4 +1584,237 @@ function formatIntegrityStatus(
   if (status === "voided") return "Voided"
   if (status === "reported") return "Reported"
   return "Clear"
+}
+
+async function loadManagerExamDetails({
+  classId,
+  cachePrefix,
+  examIds,
+  force = false,
+}: {
+  classId: string
+  cachePrefix: string
+  examIds: string[]
+  force?: boolean
+}) {
+  return Promise.all(
+    examIds.map((examId) =>
+      loadManagerExamDetail({
+        classId,
+        cacheKey: getManagerExamDetailCacheKey({ cachePrefix, examId }),
+        examId,
+        force,
+      }),
+    ),
+  )
+}
+
+async function loadManagerExamDetail({
+  classId,
+  cacheKey,
+  examId,
+  force = false,
+}: {
+  classId: string
+  cacheKey: string
+  examId: string
+  force?: boolean
+}) {
+  const cached = managerExamDetailCache.get(cacheKey)
+
+  if (!force && cached?.data) return cached.data
+  if (cached?.request) return cached.request
+
+  const request = fetchManagerExamDetail(classId, examId)
+    .then((detail) => {
+      writeManagerExamDetailCache(cacheKey, detail)
+      return detail
+    })
+    .finally(() => {
+      const latestCached = managerExamDetailCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  managerExamDetailCache.set(cacheKey, {
+    data: cached?.data ?? null,
+    request,
+  })
+
+  return request
+}
+
+function readManagerExamDetailCaches({
+  cachePrefix,
+  examIds,
+}: {
+  cachePrefix: string
+  examIds: string[]
+}) {
+  return examIds.flatMap((examId) => {
+    const detail =
+      managerExamDetailCache.get(
+        getManagerExamDetailCacheKey({ cachePrefix, examId }),
+      )?.data ?? null
+
+    return detail ? [detail] : []
+  })
+}
+
+function subscribeManagerExamDetailCache(
+  cacheKey: string,
+  listener: (data: ManagerExamDetailDto) => void,
+) {
+  const listeners = managerExamDetailListeners.get(cacheKey) ?? new Set()
+  listeners.add(listener)
+  managerExamDetailListeners.set(cacheKey, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      managerExamDetailListeners.delete(cacheKey)
+    }
+  }
+}
+
+function writeManagerExamDetailCache(
+  cacheKey: string,
+  data: ManagerExamDetailDto,
+) {
+  const current = managerExamDetailCache.get(cacheKey)
+  managerExamDetailCache.set(cacheKey, {
+    data,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of managerExamDetailListeners.get(cacheKey) ?? []) {
+    listener(data)
+  }
+}
+
+function getManagerExamDetailCachePrefix({
+  classId,
+  userId,
+}: {
+  classId: string
+  userId: string
+}) {
+  return `${classId}:manager-exam-detail:${userId}`
+}
+
+function getManagerExamDetailCacheKey({
+  cachePrefix,
+  examId,
+}: {
+  cachePrefix: string
+  examId: string
+}) {
+  return `${cachePrefix}:${examId}`
+}
+
+async function fetchManagerExamDetail(classId: string, examId: string) {
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(
+      classId,
+    )}/exams?detailExamId=${encodeURIComponent(examId)}`,
+  )
+  const payload = (await response.json().catch(() => null)) as {
+    exam?: ManagerExamDetailDto
+    error?: string
+  } | null
+
+  if (!response.ok || !payload?.exam) {
+    throw new Error(payload?.error ?? "Could not load exam results.")
+  }
+
+  return payload.exam
+}
+
+async function loadSharedClassSummary({
+  classId,
+  cacheKey,
+  force = false,
+}: {
+  classId: string
+  cacheKey: string
+  force?: boolean
+}) {
+  const cached = sharedSummaryCache.get(cacheKey)
+
+  if (!force && cached?.data) return cached.data
+  if (cached?.request) return cached.request
+
+  const request = fetchSharedClassSummary(classId)
+    .then((summary) => {
+      writeSharedSummaryCache(cacheKey, summary)
+      return summary
+    })
+    .finally(() => {
+      const latestCached = sharedSummaryCache.get(cacheKey)
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  sharedSummaryCache.set(cacheKey, {
+    data: cached?.data ?? null,
+    request,
+  })
+
+  return request
+}
+
+function readSharedSummaryCache(cacheKey: string) {
+  return sharedSummaryCache.get(cacheKey)?.data ?? null
+}
+
+function subscribeSharedSummaryCache(
+  cacheKey: string,
+  listener: (data: SharedResultsSummaryData) => void,
+) {
+  const listeners = sharedSummaryListeners.get(cacheKey) ?? new Set()
+  listeners.add(listener)
+  sharedSummaryListeners.set(cacheKey, listeners)
+
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      sharedSummaryListeners.delete(cacheKey)
+    }
+  }
+}
+
+function writeSharedSummaryCache(
+  cacheKey: string,
+  data: SharedResultsSummaryData,
+) {
+  const current = sharedSummaryCache.get(cacheKey)
+  sharedSummaryCache.set(cacheKey, {
+    data,
+    request: current?.request ?? null,
+  })
+
+  for (const listener of sharedSummaryListeners.get(cacheKey) ?? []) {
+    listener(data)
+  }
+}
+
+function getSharedSummaryCacheKey(classId: string, userId: string) {
+  return `${classId}:shared-summary:${userId}`
+}
+
+async function fetchSharedClassSummary(classId: string) {
+  const response = await fetch(
+    `/api/classes/${encodeURIComponent(classId)}/results/summary`,
+  )
+  const payload = (await response.json().catch(() => null)) as
+    | (SharedResultsSummaryData & { error?: string })
+    | null
+
+  if (!response.ok || !payload?.students) {
+    throw new Error(payload?.error ?? "Could not load class result summary.")
+  }
+
+  return { students: payload.students } satisfies SharedResultsSummaryData
 }

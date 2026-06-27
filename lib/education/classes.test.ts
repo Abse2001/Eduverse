@@ -168,6 +168,8 @@ function createClass(
     stage: null,
     is_archived: false,
     organization_visible: options.organizationVisible ?? false,
+    results_visible_to_students: false,
+    teacher_can_toggle_results_visibility: false,
     hidden_by_current_user: options.hiddenByCurrentUser ?? false,
     memberships,
     teacher: null,
