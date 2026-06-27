@@ -79,7 +79,9 @@ function AuthPageContent() {
   function getPasswordResetRedirectTo() {
     if (typeof window === "undefined") return undefined
 
-    return `${window.location.origin}/auth?mode=reset-password`
+    const callbackUrl = new URL("/auth/callback", window.location.origin)
+    callbackUrl.searchParams.set("next", "/auth?mode=reset-password")
+    return callbackUrl.toString()
   }
 
   useEffect(() => {
@@ -114,6 +116,21 @@ function AuthPageContent() {
 
     if (searchParams.get("mode") === "reset-password") {
       setMode("reset-password")
+    }
+
+    const authError = searchParams.get("error")
+    const authErrorDescription = searchParams.get("error_description")
+
+    if (authError === "recovery_link_failed") {
+      setMode("sign-in")
+      setFeedback(null)
+      toast({
+        title: "Password reset link failed",
+        description:
+          authErrorDescription ??
+          "Request a new password reset email and open it in the same browser.",
+        variant: "destructive",
+      })
     }
 
     const reason = searchParams.get("reason")

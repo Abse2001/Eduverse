@@ -25,7 +25,9 @@ export default function PasswordChangePage() {
   function getPasswordResetRedirectTo() {
     if (typeof window === "undefined") return undefined
 
-    return `${window.location.origin}/auth?mode=reset-password`
+    const callbackUrl = new URL("/auth/callback", window.location.origin)
+    callbackUrl.searchParams.set("next", "/auth?mode=reset-password")
+    return callbackUrl.toString()
   }
 
   useEffect(() => {
