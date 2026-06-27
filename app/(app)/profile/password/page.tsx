@@ -22,6 +22,12 @@ export default function PasswordChangePage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isPending, startTransition] = useTransition()
 
+  function getPasswordResetRedirectTo() {
+    if (typeof window === "undefined") return undefined
+
+    return `${window.location.origin}/auth?mode=reset-password`
+  }
+
   useEffect(() => {
     const supabase = createClient()
     let cancelled = false
@@ -140,6 +146,39 @@ export default function PasswordChangePage() {
     })
   }
 
+  function sendPasswordResetEmail() {
+    if (!email) {
+      toast({
+        title: "Password reset failed",
+        description: "Sign in again before requesting a reset link.",
+        variant: "destructive",
+      })
+      router.replace("/auth?next=/profile/password")
+      return
+    }
+
+    startTransition(async () => {
+      const supabase = createClient()
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: getPasswordResetRedirectTo(),
+      })
+
+      if (error) {
+        toast({
+          title: "Password reset failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
+      toast({
+        title: "Check your inbox",
+        description: `Password reset link sent to ${email}.`,
+      })
+    })
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <Button asChild variant="ghost" className="px-0">
@@ -213,10 +252,20 @@ export default function PasswordChangePage() {
 
               <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground sm:flex-row sm:items-start">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-primary sm:mt-0.5" />
-                <p>
-                  Use at least 6 characters. For best protection, choose
-                  something unique to Eduverse.
-                </p>
+                <div className="space-y-2">
+                  <p>
+                    Use at least 6 characters. For best protection, choose
+                    something unique to Eduverse.
+                  </p>
+                  <button
+                    className="font-medium text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isPending}
+                    onClick={sendPasswordResetEmail}
+                    type="button"
+                  >
+                    Forgot your current password? Send a reset link.
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">

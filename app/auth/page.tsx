@@ -8,13 +8,17 @@ import {
   useState,
   useTransition,
 } from "react"
-import type { User as SupabaseAuthUser } from "@supabase/supabase-js"
+import type {
+  AuthChangeEvent,
+  AuthError,
+  User as SupabaseAuthUser,
+} from "@supabase/supabase-js"
 import { GraduationCap, LoaderCircle } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 
-type AuthMode = "sign-in" | "sign-up"
+type AuthMode = "sign-in" | "sign-up" | "reset-password"
 
 export default function AuthPage() {
   return (
@@ -27,14 +31,25 @@ export default function AuthPage() {
 function AuthPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isPasswordRecoveryRoute =
+    searchParams.get("mode") === "reset-password" ||
+    searchParams.get("type") === "recovery" ||
+    searchParams.has("code")
   const initialMode =
-    searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in"
+    searchParams.get("mode") === "sign-up"
+      ? "sign-up"
+      : isPasswordRecoveryRoute
+        ? "reset-password"
+        : "sign-in"
   const [mode, setMode] = useState<AuthMode>(initialMode)
   const [signInEmail, setSignInEmail] = useState("")
   const [signInPassword, setSignInPassword] = useState("")
   const [displayName, setDisplayName] = useState("")
   const [signUpEmail, setSignUpEmail] = useState("")
   const [signUpPassword, setSignUpPassword] = useState("")
+  const [recoveryPassword, setRecoveryPassword] = useState("")
+  const [recoveryPasswordConfirmation, setRecoveryPasswordConfirmation] =
+    useState("")
   const [feedback, setFeedback] = useState<string | null>(null)
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(
     null,
@@ -61,6 +76,12 @@ function AuthPageContent() {
     return `${window.location.origin}${getNextPath()}`
   }
 
+  function getPasswordResetRedirectTo() {
+    if (typeof window === "undefined") return undefined
+
+    return `${window.location.origin}/auth?mode=reset-password`
+  }
+
   useEffect(() => {
     const supabase = createClient()
     let cancelled = false
@@ -70,7 +91,7 @@ function AuthPageContent() {
       .then(({ data }: { data: { user: SupabaseAuthUser | null } }) => {
         if (cancelled) return
 
-        if (data.user) {
+        if (data.user && !isPasswordRecoveryRoute) {
           router.replace(getNextPath())
           return
         }
@@ -84,11 +105,15 @@ function AuthPageContent() {
     return () => {
       cancelled = true
     }
-  }, [router])
+  }, [isPasswordRecoveryRoute, router])
 
   useEffect(() => {
     if (searchParams.get("mode") === "sign-up") {
       setMode("sign-up")
+    }
+
+    if (searchParams.get("mode") === "reset-password") {
+      setMode("reset-password")
     }
 
     const reason = searchParams.get("reason")
@@ -113,6 +138,60 @@ function AuthPageContent() {
           : "After auth, you will return to the invitation.",
     })
   }, [searchParams, toast])
+
+  useEffect(() => {
+    const hashParams =
+      typeof window === "undefined"
+        ? new URLSearchParams()
+        : new URLSearchParams(window.location.hash.replace(/^#/, ""))
+    const isHashRecovery = hashParams.get("type") === "recovery"
+    const authCode = searchParams.get("code")
+
+    if (!isPasswordRecoveryRoute && !isHashRecovery) return
+
+    setMode("reset-password")
+    setFeedback("Choose a new password to finish account recovery.")
+
+    if (!authCode) return
+
+    const supabase = createClient()
+    let cancelled = false
+
+    supabase.auth
+      .exchangeCodeForSession(authCode)
+      .then(({ error }: { error: AuthError | null }) => {
+        if (cancelled) return
+
+        if (error) {
+          toast({
+            title: "Password reset link failed",
+            description: error.message,
+            variant: "destructive",
+          })
+          return
+        }
+
+        window.history.replaceState(null, "", "/auth?mode=reset-password")
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isPasswordRecoveryRoute, searchParams, toast])
+
+  useEffect(() => {
+    const supabase = createClient()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("reset-password")
+        setFeedback("Choose a new password to finish account recovery.")
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   function submitSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -211,6 +290,108 @@ function AuthPageContent() {
 
       setConfirmationEmail(submittedEmail)
       setFeedback(`Confirmation email sent to ${submittedEmail}.`)
+    })
+  }
+
+  function sendPasswordResetEmail() {
+    setFeedback(null)
+    setConfirmationEmail(null)
+
+    const submittedEmail = signInEmail.trim()
+
+    if (!submittedEmail) {
+      toast({
+        title: "Password reset failed",
+        description: "Enter your email first, then request a reset link.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    startTransition(async () => {
+      const supabase = createClient()
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        submittedEmail,
+        {
+          redirectTo: getPasswordResetRedirectTo(),
+        },
+      )
+
+      if (error) {
+        toast({
+          title: "Password reset failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
+      toast({
+        title: "Check your inbox",
+        description: `Password reset link sent to ${submittedEmail}.`,
+      })
+      setFeedback(`Password reset link sent to ${submittedEmail}.`)
+    })
+  }
+
+  function submitRecoveredPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFeedback(null)
+    setConfirmationEmail(null)
+
+    if (!recoveryPassword || !recoveryPasswordConfirmation) {
+      toast({
+        title: "Password reset failed",
+        description: "Enter and confirm your new password.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (recoveryPassword.length < 6) {
+      toast({
+        title: "Password reset failed",
+        description: "Password must be at least 6 characters.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (recoveryPassword !== recoveryPasswordConfirmation) {
+      toast({
+        title: "Password reset failed",
+        description: "Password and confirmation do not match.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    startTransition(async () => {
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({
+        password: recoveryPassword,
+      })
+
+      if (error) {
+        toast({
+          title: "Password reset failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
+      setRecoveryPassword("")
+      setRecoveryPasswordConfirmation("")
+      toast({
+        title: "Password updated",
+        description: "Sign in with your new password.",
+      })
+      setMode("sign-in")
+      setFeedback("Password updated. Sign in with your new password.")
+      await supabase.auth.signOut()
+      router.replace("/auth")
+      router.refresh()
     })
   }
 
@@ -327,7 +508,9 @@ function AuthPageContent() {
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {mode === "sign-in"
                   ? "Enter your credentials to open the organization hub."
-                  : "Create an auth user. Your profile row is created by the database trigger."}
+                  : mode === "reset-password"
+                    ? "Set a new password after opening the reset link from your email."
+                    : "Create an auth user. Your profile row is created by the database trigger."}
               </p>
             </div>
 
@@ -363,11 +546,59 @@ function AuthPageContent() {
                   type="password"
                   value={signInPassword}
                 />
+                <div className="flex justify-end">
+                  <button
+                    className="text-sm font-bold text-sky-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isPending}
+                    onClick={sendPasswordResetEmail}
+                    type="button"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <SubmitButton
                   isPending={isPending}
                   pendingText="Signing in..."
                   text="Sign in"
                 />
+              </form>
+            ) : mode === "reset-password" ? (
+              <form
+                className="space-y-4"
+                noValidate
+                onSubmit={submitRecoveredPassword}
+              >
+                <AuthField
+                  autoComplete="new-password"
+                  label="New password"
+                  minLength={6}
+                  onChange={setRecoveryPassword}
+                  type="password"
+                  value={recoveryPassword}
+                />
+                <AuthField
+                  autoComplete="new-password"
+                  label="Confirm new password"
+                  minLength={6}
+                  onChange={setRecoveryPasswordConfirmation}
+                  type="password"
+                  value={recoveryPasswordConfirmation}
+                />
+                <SubmitButton
+                  isPending={isPending}
+                  pendingText="Updating password..."
+                  text="Update password"
+                />
+                <button
+                  className="w-full text-center text-sm font-bold text-slate-500 underline-offset-4 hover:text-slate-950 hover:underline"
+                  onClick={() => {
+                    setMode("sign-in")
+                    setFeedback(null)
+                  }}
+                  type="button"
+                >
+                  Back to sign in
+                </button>
               </form>
             ) : (
               <form className="space-y-4" noValidate onSubmit={submitSignUp}>
