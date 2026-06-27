@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   type ClassAssignment,
   getAssignmentDerivedStatus,
@@ -216,6 +217,46 @@ export function StudentDashboard() {
       })
     }
   }
+
+  useEffect(() => {
+    if (!assignmentsError) return
+
+    toast({
+      title: "Could not load assignments",
+      description: assignmentsError,
+      variant: "destructive",
+    })
+  }, [assignmentsError, toast])
+
+  useEffect(() => {
+    if (!examsError) return
+
+    toast({
+      title: "Could not load exams",
+      description: examsError,
+      variant: "destructive",
+    })
+  }, [examsError, toast])
+
+  useEffect(() => {
+    if (!archivedClassesError) return
+
+    toast({
+      title: "Could not load past terms",
+      description: archivedClassesError,
+      variant: "destructive",
+    })
+  }, [archivedClassesError, toast])
+
+  useEffect(() => {
+    if (!archivedAssignmentsError) return
+
+    toast({
+      title: "Could not load past term grades",
+      description: archivedAssignmentsError,
+      variant: "destructive",
+    })
+  }, [archivedAssignmentsError, toast])
 
   useEffect(() => {
     let cancelled = false
@@ -423,181 +464,292 @@ export function StudentDashboard() {
 
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-3">
-          <h2 className="font-semibold text-foreground">My Classes</h2>
-          {assignmentsError ? (
-            <p className="text-xs text-destructive">{assignmentsError}</p>
-          ) : null}
-          {examsError ? (
-            <p className="text-xs text-destructive">{examsError}</p>
-          ) : null}
+          <Tabs defaultValue="current" className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold text-foreground">My Classes</h2>
+              <TabsList className="h-8">
+                <TabsTrigger value="current" className="text-xs">
+                  Current Classes
+                </TabsTrigger>
+                <TabsTrigger value="past" className="text-xs">
+                  Past Terms
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-          {myClasses.map((cls) => {
-            const classRow = classRowById.get(cls.id)
-            const assignments = assignmentsByClass[cls.id] ?? []
-            const progress = getStudentAssignmentProgress(assignments)
-            const isLive = liveClassIds.has(cls.id)
+            <TabsContent value="current" className="mt-0 space-y-3">
+              {myClasses.map((cls) => {
+                const classRow = classRowById.get(cls.id)
+                const assignments = assignmentsByClass[cls.id] ?? []
+                const progress = getStudentAssignmentProgress(assignments)
+                const isLive = liveClassIds.has(cls.id)
 
-            return (
-              <Card key={cls.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={cn(
-                        "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
-                        CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
-                      )}
-                    >
-                      {cls.code.slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-sm text-foreground truncate">
-                          {cls.name}
-                        </p>
+                return (
+                  <Card
+                    key={cls.id}
+                    className="hover:shadow-md transition-shadow"
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <div
+                          className={cn(
+                            "w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0",
+                            CLASS_COLOR_MAP[cls.color] ?? "bg-primary",
+                          )}
+                        >
+                          {cls.code.slice(0, 2)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-sm text-foreground truncate">
+                              {cls.name}
+                            </p>
+                            {classRow?.organization_visible ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                Organization visible
+                              </Badge>
+                            ) : null}
+                            {isLive ? (
+                              <Badge className="shrink-0 border-0 bg-emerald-100 text-[10px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                Live now
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {cls.code}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {classRow?.semester ? (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                {classRow.semester}
+                              </Badge>
+                            ) : null}
+                            {classRow?.stage ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                {classRow.stage}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <Progress
+                              value={progress}
+                              className="h-1.5 flex-1"
+                            />
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {progress}%
+                            </span>
+                          </div>
+                        </div>
                         {classRow?.organization_visible ? (
-                          <Badge variant="outline" className="text-[10px]">
-                            Organization visible
-                          </Badge>
-                        ) : null}
-                        {isLive ? (
-                          <Badge className="shrink-0 border-0 bg-emerald-100 text-[10px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            Live now
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {cls.code}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {classRow?.semester ? (
-                          <Badge variant="secondary" className="text-[10px]">
-                            {classRow.semester}
-                          </Badge>
-                        ) : null}
-                        {classRow?.stage ? (
-                          <Badge variant="outline" className="text-[10px]">
-                            {classRow.stage}
-                          </Badge>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 shrink-0 gap-1 text-xs text-muted-foreground"
+                            onClick={() => void setClassHidden(cls.id, true)}
+                          >
+                            <EyeOff className="h-3.5 w-3.5" />
+                            Hide
+                          </Button>
                         ) : null}
                       </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Progress value={progress} className="h-1.5 flex-1" />
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {progress}%
-                        </span>
+                      <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                        <Link href={`/classes/${cls.id}/session`}>
+                          <Button
+                            size="sm"
+                            variant={isLive ? "default" : "outline"}
+                            className="w-full text-xs gap-1.5"
+                          >
+                            <Radio className="w-3 h-3" />{" "}
+                            {isLive ? "Join Live" : "Session"}
+                          </Button>
+                        </Link>
+                        <Link href={`/classes/${cls.id}/home`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs gap-1.5"
+                          >
+                            <BookOpen className="w-3 h-3" /> Class Home
+                          </Button>
+                        </Link>
+                        <Link href={`/classes/${cls.id}/chat`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs gap-1.5"
+                          >
+                            <MessageSquare className="w-3 h-3" /> Chat
+                          </Button>
+                        </Link>
+                        <Link href={`/classes/${cls.id}/materials`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs gap-1.5"
+                          >
+                            <FileText className="w-3 h-3" /> Materials
+                          </Button>
+                        </Link>
                       </div>
-                    </div>
-                    {classRow?.organization_visible ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 shrink-0 gap-1 text-xs text-muted-foreground"
-                        onClick={() => void setClassHidden(cls.id, true)}
-                      >
-                        <EyeOff className="h-3.5 w-3.5" />
-                        Hide
-                      </Button>
-                    ) : null}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
-                    <Link href={`/classes/${cls.id}/session`}>
-                      <Button
-                        size="sm"
-                        variant={isLive ? "default" : "outline"}
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <Radio className="w-3 h-3" />{" "}
-                        {isLive ? "Join Live" : "Session"}
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/home`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <BookOpen className="w-3 h-3" /> Class Home
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/chat`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <MessageSquare className="w-3 h-3" /> Chat
-                      </Button>
-                    </Link>
-                    <Link href={`/classes/${cls.id}/materials`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs gap-1.5"
-                      >
-                        <FileText className="w-3 h-3" /> Materials
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                    </CardContent>
+                  </Card>
+                )
+              })}
 
-          {hiddenClassRows.length > 0 ? (
-            <div className="pt-2">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Hidden classes
-              </h3>
-              <div className="grid gap-2">
-                {hiddenClassRows.map((classItem) => (
-                  <Card key={classItem.id}>
-                    <CardContent className="flex items-center gap-3 p-3">
-                      <div
-                        className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
-                          CLASS_COLOR_MAP[classItem.color ?? "indigo"] ??
-                            "bg-primary",
-                        )}
-                      >
-                        {classItem.code.slice(0, 2)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {classItem.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {classItem.code}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {classItem.semester ? (
-                            <Badge variant="secondary" className="text-[10px]">
-                              {classItem.semester}
-                            </Badge>
-                          ) : null}
-                          {classItem.stage ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              {classItem.stage}
-                            </Badge>
-                          ) : null}
+              {hiddenClassRows.length > 0 ? (
+                <div className="pt-2">
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Hidden classes
+                  </h3>
+                  <div className="grid gap-2">
+                    {hiddenClassRows.map((classItem) => (
+                      <Card key={classItem.id}>
+                        <CardContent className="flex items-center gap-3 p-3">
+                          <div
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
+                              CLASS_COLOR_MAP[classItem.color ?? "indigo"] ??
+                                "bg-primary",
+                            )}
+                          >
+                            {classItem.code.slice(0, 2)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {classItem.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {classItem.code}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {classItem.semester ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px]"
+                                >
+                                  {classItem.semester}
+                                </Badge>
+                              ) : null}
+                              {classItem.stage ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px]"
+                                >
+                                  {classItem.stage}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1 text-xs"
+                            onClick={() =>
+                              void setClassHidden(classItem.id, false)
+                            }
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Show
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </TabsContent>
+
+            <TabsContent value="past" className="mt-0 space-y-3">
+              <div className="grid gap-3">
+                {archivedTerms.map((term) => (
+                  <Card key={term.label}>
+                    <CardContent className="p-4">
+                      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                              <Archive className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm text-foreground truncate">
+                                {term.label}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Archived term
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
+                          <Metric label="Classes">{term.classes.length}</Metric>
+                          <Metric label="Score">
+                            {formatScore(getTermScore(term.classes))}
+                          </Metric>
+                          <Metric label="Teachers">
+                            {countTeachers(term.classes)}
+                          </Metric>
+                          <Metric label="Students">
+                            {countStudents(term.classes)}
+                          </Metric>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 gap-1 text-xs"
-                        onClick={() => void setClassHidden(classItem.id, false)}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        Show
-                      </Button>
+                      <div className="mt-4 space-y-3 border-t border-border pt-3">
+                        {term.stages.map((stage) => (
+                          <section key={`${term.label}-${stage.label}`}>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                                {stage.label}
+                              </p>
+                              <Badge variant="outline" className="text-[10px]">
+                                {stage.classes.length}{" "}
+                                {stage.classes.length === 1
+                                  ? "class"
+                                  : "classes"}
+                              </Badge>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {stage.classes.map((classItem) => (
+                                <ArchivedStudentClassRow
+                                  key={classItem.id}
+                                  classItem={classItem}
+                                  assignments={
+                                    archivedAssignmentsByClass[classItem.id] ??
+                                    []
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
+
+                {archivedClassesStatus === "loading" ? (
+                  <Card>
+                    <CardContent className="p-4 text-sm text-muted-foreground">
+                      Loading past terms...
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {archivedClassesStatus === "ready" &&
+                archivedTerms.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-4 text-sm text-muted-foreground">
+                      No archived classes yet.
+                    </CardContent>
+                  </Card>
+                ) : null}
               </div>
-            </div>
-          ) : null}
+            </TabsContent>
+          </Tabs>
         </div>
 
         <div className="space-y-3">
@@ -658,95 +810,6 @@ export function StudentDashboard() {
               )
             })
           )}
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="font-semibold text-foreground">Past Terms</h2>
-        {archivedClassesError ? (
-          <p className="text-xs text-destructive">{archivedClassesError}</p>
-        ) : null}
-        {archivedAssignmentsError ? (
-          <p className="text-xs text-destructive">{archivedAssignmentsError}</p>
-        ) : null}
-        <div className="grid gap-3">
-          {archivedTerms.map((term) => (
-            <Card key={term.label}>
-              <CardContent className="p-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                        <Archive className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm text-foreground truncate">
-                          {term.label}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Archived term
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:min-w-[420px]">
-                    <Metric label="Classes">{term.classes.length}</Metric>
-                    <Metric label="Score">
-                      {formatScore(getTermScore(term.classes))}
-                    </Metric>
-                    <Metric label="Teachers">
-                      {countTeachers(term.classes)}
-                    </Metric>
-                    <Metric label="Students">
-                      {countStudents(term.classes)}
-                    </Metric>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-3 border-t border-border pt-3">
-                  {term.stages.map((stage) => (
-                    <section key={`${term.label}-${stage.label}`}>
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <p className="truncate text-xs font-medium uppercase tracking-normal text-muted-foreground">
-                          {stage.label}
-                        </p>
-                        <Badge variant="outline" className="text-[10px]">
-                          {stage.classes.length}{" "}
-                          {stage.classes.length === 1 ? "class" : "classes"}
-                        </Badge>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {stage.classes.map((classItem) => (
-                          <ArchivedStudentClassRow
-                            key={classItem.id}
-                            classItem={classItem}
-                            assignments={
-                              archivedAssignmentsByClass[classItem.id] ?? []
-                            }
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          {archivedClassesStatus === "loading" ? (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                Loading past terms...
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {archivedClassesStatus === "ready" && archivedTerms.length === 0 ? (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                No archived classes yet.
-              </CardContent>
-            </Card>
-          ) : null}
         </div>
       </div>
     </div>

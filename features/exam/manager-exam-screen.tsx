@@ -16,7 +16,6 @@ import {
 } from "lucide-react"
 import { type FormEvent, useEffect, useState } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -173,7 +172,6 @@ export function ManagerExamScreen({
   const [detailError, setDetailError] = useState<string | null>(null)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [isDetailRefreshing, setIsDetailRefreshing] = useState(false)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
     null,
   )
@@ -395,7 +393,6 @@ export function ManagerExamScreen({
     try {
       setFormError(null)
       setInvalidFormField(null)
-      setSuccessMessage(null)
       const payload = toExamPayload(form, {
         editingPasscodeProtected,
       })
@@ -439,12 +436,11 @@ export function ManagerExamScreen({
     try {
       setDetailError(null)
       await publishExam(examId)
-      setSuccessMessage("Exam published successfully.")
+      toast({ title: "Exam published successfully" })
       if (detailExamId === examId) {
         await refreshDetail(examId)
       }
     } catch (error) {
-      setSuccessMessage(null)
       setDetailError(
         error instanceof Error ? error.message : "Could not publish exam.",
       )
@@ -462,7 +458,6 @@ export function ManagerExamScreen({
     }
 
     try {
-      setSuccessMessage(null)
       await deleteExam(examId)
       if (detailExamId === examId) {
         setDetailExamId(null)
@@ -495,7 +490,6 @@ export function ManagerExamScreen({
       }))
 
     try {
-      setSuccessMessage(null)
       await gradeAttempt(detail.exam.id, selectedAttempt.id, { answers })
       await refreshDetail(detail.exam.id)
     } catch (error) {
@@ -509,7 +503,6 @@ export function ManagerExamScreen({
     if (!detail || !selectedAttempt) return
 
     try {
-      setSuccessMessage(null)
       await updateIntegrity(detail.exam.id, selectedAttempt.id, {
         action,
       })
@@ -527,7 +520,6 @@ export function ManagerExamScreen({
     if (!detail || !selectedAttempt) return
 
     try {
-      setSuccessMessage(null)
       await grantRetake(detail.exam.id, selectedAttempt.id)
       await refreshDetail(detail.exam.id)
     } catch (error) {
@@ -642,13 +634,6 @@ export function ManagerExamScreen({
           </div>
         }
       />
-
-      {successMessage && (
-        <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100">
-          <CheckCircle2 className="h-4 w-4 !text-emerald-600 dark:!text-emerald-300" />
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
-      )}
 
       {exams.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">

@@ -17,12 +17,12 @@ import {
   PlusCircle,
   Trash2,
 } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ToastAction } from "@/components/ui/toast"
 import {
   Select,
   SelectContent,
@@ -88,8 +88,6 @@ export function RegistrationPage() {
     ExistingPreviousTerm[]
   >([])
   const [previousTerms, setPreviousTerms] = useState<PreviousTermForm[]>([])
-  const [resultMessage, setResultMessage] = useState<string | null>(null)
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
   const isEditMode = searchParams.get("mode") === "edit"
@@ -130,6 +128,16 @@ export function RegistrationPage() {
         .filter((term) => term.classes.length > 0),
     [archivedTerms, existingPreviousTermClassIds],
   )
+
+  useEffect(() => {
+    if (!archivedClassesError) return
+
+    toast({
+      title: "Could not load past terms",
+      description: archivedClassesError,
+      variant: "destructive",
+    })
+  }, [archivedClassesError, toast])
 
   async function loadRegistrationDetails(
     organizationId: string,
@@ -179,6 +187,21 @@ export function RegistrationPage() {
     return true
   }
 
+  async function copyConfirmationLink(inviteUrl: string) {
+    const copied = await copyTextToClipboard(inviteUrl)
+
+    if (copied) {
+      toast({ title: "Confirmation link copied" })
+      return
+    }
+
+    toast({
+      title: "Could not copy confirmation link",
+      description: inviteUrl,
+      variant: "destructive",
+    })
+  }
+
   useEffect(() => {
     if (!activeOrganization || !isEditMode || !email.trim()) return
 
@@ -195,8 +218,6 @@ export function RegistrationPage() {
     event.preventDefault()
     if (!activeOrganization) return
 
-    setResultMessage(null)
-    setInviteLink(null)
     const previousTermsPayload =
       effectiveRole === "student"
         ? [
@@ -264,8 +285,32 @@ export function RegistrationPage() {
         )
       }
 
-      setInviteLink(payload.inviteUrl ?? null)
-      setResultMessage(getResultMessage(payload, Boolean(classId), isEditMode))
+      const resultMessage = getResultMessage(
+        payload,
+        Boolean(classId),
+        isEditMode,
+      )
+      const inviteCopySucceeded = payload.inviteUrl
+        ? await copyTextToClipboard(payload.inviteUrl)
+        : false
+
+      toast({
+        title: isEditMode ? "User updated" : "Registration updated",
+        description: payload.inviteUrl
+          ? inviteCopySucceeded
+            ? `${resultMessage} Confirmation link copied to clipboard.`
+            : `${resultMessage} Confirmation link is ready.`
+          : resultMessage,
+        action:
+          payload.inviteUrl && !inviteCopySucceeded ? (
+            <ToastAction
+              altText="Copy confirmation link"
+              onClick={() => void copyConfirmationLink(payload.inviteUrl!)}
+            >
+              Copy
+            </ToastAction>
+          ) : undefined,
+      })
     })
   }
 
@@ -352,33 +397,6 @@ export function RegistrationPage() {
             : "Invite a new organization member and attach existing archived terms when a student has prior history in this workspace."}
         </p>
       </div>
-
-      {resultMessage ? (
-        <Alert>
-          <AlertTitle>
-            {isEditMode ? "User updated" : "Registration updated"}
-          </AlertTitle>
-          <AlertDescription>
-            <div className="space-y-2">
-              <p>{resultMessage}</p>
-              {inviteLink ? (
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input readOnly value={inviteLink} />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void navigator.clipboard.writeText(inviteLink)
-                    }
-                  >
-                    Copy link
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       <form className="space-y-5" onSubmit={submitRegistration}>
         <Card>
@@ -496,12 +514,6 @@ export function RegistrationPage() {
               <p className="rounded-lg border p-4 text-sm text-muted-foreground">
                 Previous terms can be attached to students.
               </p>
-            ) : null}
-            {effectiveRole === "student" && archivedClassesError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Could not load past terms</AlertTitle>
-                <AlertDescription>{archivedClassesError}</AlertDescription>
-              </Alert>
             ) : null}
             {effectiveRole === "student" &&
             archivedClassesStatus === "ready" &&
@@ -742,6 +754,15 @@ export function RegistrationPage() {
       </form>
     </div>
   )
+}
+
+async function copyTextToClipboard(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function normalizeRole(value: string | null): OrganizationUserRole {

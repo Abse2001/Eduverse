@@ -5,6 +5,7 @@ import {
   Edit3,
   LoaderCircle,
   PlusCircle,
+  ShieldAlert,
   UserPlus,
   Users,
 } from "lucide-react"
@@ -16,7 +17,16 @@ import {
   useTransition,
 } from "react"
 import Link from "next/link"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -70,6 +80,29 @@ type ClassFormState = {
 
 type FeatureValueMap = Record<string, boolean>
 type ExtensionValueMap = Record<string, boolean>
+type EndClassesScope = "all" | "term" | "stage" | "term_stage"
+type PendingEndAction =
+  | {
+      kind: "class"
+      title: string
+      description: string
+      detail: string
+      successMessage: string
+      payload: { target_class_id: string }
+    }
+  | {
+      kind: "bulk"
+      title: string
+      description: string
+      detail: string
+      successMessage: string
+      payload: {
+        target_org_id: string
+        target_scope: EndClassesScope
+        target_term?: string
+        target_stage?: string
+      }
+    }
 
 const NO_TEACHER_VALUE = "none"
 
@@ -80,7 +113,7 @@ const EMPTY_CLASS_FORM: ClassFormState = {
   color: "indigo",
   description: "",
   room: "Online",
-  semester: "Current term",
+  semester: "",
   stage: "",
   organizationVisible: false,
   resultsVisibleToStudents: false,
@@ -107,6 +140,7 @@ export function ClassesTab() {
     organizationClassesError,
     organizationMembers,
     refreshOrganizationClasses,
+    refreshClassLiveSessions,
   } = useApp()
   const [classForm, setClassForm] = useState<ClassFormState>(EMPTY_CLASS_FORM)
   const [classFeatureValues, setClassFeatureValues] = useState<FeatureValueMap>(
@@ -122,7 +156,8 @@ export function ClassesTab() {
   const [inviteRole, setInviteRole] = useState<"student" | "teacher">("student")
   const [isClassDialogOpen, setIsClassDialogOpen] = useState(false)
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [pendingEndAction, setPendingEndAction] =
+    useState<PendingEndAction | null>(null)
   const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
   const isLoading = organizationClassesStatus === "loading"
@@ -155,6 +190,10 @@ export function ClassesTab() {
         getActiveOrganizationRoles(member).includes("teacher"),
       ),
     [organizationMembers],
+  )
+  const groupedClasses = useMemo(
+    () => groupClassesByTermAndStage(classes),
+    [classes],
   )
 
   useEffect(() => {
@@ -196,7 +235,6 @@ export function ClassesTab() {
     setClassExtensionValues(
       getInitialClassExtensionValues(activeOrganization?.extensions ?? [], []),
     )
-    setSuccessMessage(null)
     setIsClassDialogOpen(true)
   }
 
@@ -229,7 +267,6 @@ export function ClassesTab() {
         classItem.extensionSettings,
       ),
     )
-    setSuccessMessage(null)
     setIsClassDialogOpen(true)
   }
 
@@ -237,15 +274,12 @@ export function ClassesTab() {
     setInviteClass(classItem)
     setSelectedMemberId("")
     setInviteRole("student")
-    setSuccessMessage(null)
     setIsInviteDialogOpen(true)
   }
 
   function submitClass(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!activeOrganization) return
-
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -341,27 +375,81 @@ export function ClassesTab() {
     })
   }
 
-  function archiveClass(classItem: OrganizationClass) {
-    const confirmed = window.confirm(
-      `Archive ${classItem.name}? It will move to Past Terms and disappear from active class lists.`,
-    )
+  function openEndClassDialog(classItem: OrganizationClass) {
+    setPendingEndAction({
+      kind: "class",
+      title: `End ${classItem.name}?`,
+      description:
+        "This class will move to Past Terms, active sessions will close, and students will no longer use it as an active class.",
+      detail:
+        "Scores, submissions, exams, materials, and history stay preserved for admins and teachers.",
+      successMessage: `${classItem.name} ended.`,
+      payload: { target_class_id: classItem.id },
+    })
+  }
 
-    if (!confirmed) return
+  function openEndBulkDialog({
+    classes: targetClasses,
+    scope,
+    term,
+    stage,
+  }: {
+    classes: OrganizationClass[]
+    scope: EndClassesScope
+    term?: string
+    stage?: string
+  }) {
+    if (!activeOrganization || targetClasses.length === 0) return
 
-    setSuccessMessage(null)
+    const classCountLabel = `${targetClasses.length} ${
+      targetClasses.length === 1 ? "class" : "classes"
+    }`
+    const scopeLabel =
+      scope === "all"
+        ? "all active classes"
+        : scope === "term"
+          ? `term ${term}`
+          : scope === "stage"
+            ? `stage ${stage}`
+            : `${term}, ${stage}`
+
+    setPendingEndAction({
+      kind: "bulk",
+      title: `End ${classCountLabel}?`,
+      description: `This will end ${scopeLabel} and move the matching active classes to Past Terms.`,
+      detail:
+        "Active sessions will close immediately. Scores, submissions, exams, materials, and history stay preserved.",
+      successMessage: `${classCountLabel} ended.`,
+      payload: {
+        target_org_id: activeOrganization.id,
+        target_scope: scope,
+        ...(term ? { target_term: term } : {}),
+        ...(stage ? { target_stage: stage } : {}),
+      },
+    })
+  }
+
+  function executePendingEndAction() {
+    if (!pendingEndAction) return
+
+    const action = pendingEndAction
 
     startTransition(async () => {
-      const { error } = await createClient().rpc("archive_class", {
-        target_class_id: classItem.id,
-      })
+      const rpcName = action.kind === "class" ? "end_class" : "end_classes"
+      const { error } = await createClient().rpc(rpcName, action.payload)
 
       if (error) {
         showClassError(error.message)
         return
       }
 
+      setPendingEndAction(null)
       await loadClasses()
-      setSuccessMessage("Class archived.")
+      await refreshClassLiveSessions({ force: true }).catch(() => {})
+      toast({
+        title: "Classes ended",
+        description: action.successMessage,
+      })
     })
   }
 
@@ -373,8 +461,6 @@ export function ClassesTab() {
     )
     const selectedEmail = selectedMember?.profile?.email
     if (!selectedEmail) return
-
-    setSuccessMessage(null)
 
     startTransition(async () => {
       const supabase = createClient()
@@ -393,7 +479,10 @@ export function ClassesTab() {
       setInviteClass(null)
       setSelectedMemberId("")
       await loadClasses()
-      setSuccessMessage(`${selectedEmail} added to ${inviteClass.name}.`)
+      toast({
+        title: "Member assigned",
+        description: `${selectedEmail} added to ${inviteClass.name}.`,
+      })
     })
   }
 
@@ -403,27 +492,36 @@ export function ClassesTab() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-sm">All Classes</CardTitle>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-xs h-7"
-              onClick={openCreateDialog}
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              Add Class
-            </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {classes.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={() =>
+                    openEndBulkDialog({
+                      classes,
+                      scope: "all",
+                    })
+                  }
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  End all
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs h-7"
+                onClick={openCreateDialog}
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                Add Class
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {successMessage ? (
-            <div className="p-4">
-              <Alert>
-                <AlertTitle>Updated</AlertTitle>
-                <AlertDescription>{successMessage}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -431,16 +529,35 @@ export function ClassesTab() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {groupClassesByTermAndStage(classes).map((term) => (
+              {groupedClasses.map((term) => (
                 <section key={term.label}>
-                  <div className="bg-muted/40 px-5 py-3">
-                    <p className="truncate text-sm font-semibold text-foreground">
-                      {term.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {term.classes.length}{" "}
-                      {term.classes.length === 1 ? "class" : "classes"}
-                    </p>
+                  <div className="flex items-center justify-between gap-3 bg-muted/40 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {term.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {term.classes.length}{" "}
+                        {term.classes.length === 1 ? "class" : "classes"}
+                      </p>
+                    </div>
+                    {getTermValue(term.classes) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
+                        onClick={() =>
+                          openEndBulkDialog({
+                            classes: term.classes,
+                            scope: "term",
+                            term: getTermValue(term.classes) ?? undefined,
+                          })
+                        }
+                      >
+                        <Archive className="h-3.5 w-3.5" />
+                        End term
+                      </Button>
+                    ) : null}
                   </div>
                   <div className="divide-y divide-border">
                     {term.stages.map((stage) => (
@@ -453,6 +570,27 @@ export function ClassesTab() {
                             {stage.classes.length}{" "}
                             {stage.classes.length === 1 ? "class" : "classes"}
                           </Badge>
+                          {getTermValue(stage.classes) &&
+                          getStageValue(stage.classes) ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
+                              onClick={() =>
+                                openEndBulkDialog({
+                                  classes: stage.classes,
+                                  scope: "term_stage",
+                                  term:
+                                    getTermValue(stage.classes) ?? undefined,
+                                  stage:
+                                    getStageValue(stage.classes) ?? undefined,
+                                })
+                              }
+                            >
+                              <Archive className="h-3.5 w-3.5" />
+                              End stage
+                            </Button>
+                          ) : null}
                         </div>
                         <div className="divide-y divide-border">
                           {stage.classes.map((classItem) => (
@@ -522,10 +660,10 @@ export function ClassesTab() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
-                                  onClick={() => archiveClass(classItem)}
+                                  onClick={() => openEndClassDialog(classItem)}
                                 >
                                   <Archive className="h-3.5 w-3.5" />
-                                  Archive
+                                  End
                                 </Button>
                               </div>
                             </div>
@@ -670,12 +808,14 @@ export function ClassesTab() {
                 <Input
                   id="class-semester"
                   value={classForm.semester}
+                  placeholder="Current term"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,
                       semester: event.target.value,
                     }))
                   }
+                  required
                 />
               </div>
               <div className="space-y-2">
@@ -690,6 +830,7 @@ export function ClassesTab() {
                       stage: event.target.value,
                     }))
                   }
+                  required
                 />
               </div>
             </div>
@@ -943,8 +1084,64 @@ export function ClassesTab() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={pendingEndAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingEndAction(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 text-destructive">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <AlertDialogTitle>
+                {pendingEndAction?.title ?? "End classes?"}
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">{pendingEndAction?.description}</span>
+              <span className="block font-medium text-foreground">
+                {pendingEndAction?.detail}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60"
+              disabled={isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                executePendingEndAction()
+              }}
+            >
+              {isPending ? (
+                <>
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Ending...
+                </>
+              ) : (
+                "End"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
+}
+
+function getTermValue(classes: OrganizationClass[]) {
+  return classes
+    .find((classItem) => classItem.semester?.trim())
+    ?.semester?.trim()
+}
+
+function getStageValue(classes: OrganizationClass[]) {
+  return classes.find((classItem) => classItem.stage?.trim())?.stage?.trim()
 }
 
 type ClassFeatureRow = FeatureDefinition & {

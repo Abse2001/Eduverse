@@ -11,7 +11,6 @@ import {
   RotateCcw,
   Search,
 } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,6 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ToastAction } from "@/components/ui/toast"
 import {
   Select,
   SelectContent,
@@ -79,6 +79,15 @@ function getInviteLink(token: string) {
   return `${window.location.origin}/invite/${token}`
 }
 
+async function copyTextToClipboard(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function getActiveMemberRoles(member: OrganizationMemberRow): OrgRole[] {
   const activeRoles = member.roles
     .filter((roleRecord) => roleRecord.status === "active")
@@ -110,8 +119,6 @@ export function UsersTab() {
   } = useApp()
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<RoleFilter>("all")
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [lastInviteLink, setLastInviteLink] = useState<string | null>(null)
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null)
   const [roleMember, setRoleMember] = useState<OrganizationMemberRow | null>(
     null,
@@ -221,8 +228,6 @@ export function UsersTab() {
 
     setRoleMember(member)
     setRoleToAdd(nextRole)
-    setSuccessMessage(null)
-    setLastInviteLink(null)
   }
 
   function submitAddRole(event: FormEvent<HTMLFormElement>) {
@@ -249,8 +254,6 @@ export function UsersTab() {
   }
 
   function revokeInvite(invite: OrganizationInviteRow) {
-    setSuccessMessage(null)
-    setLastInviteLink(null)
     setBusyInviteId(invite.id)
 
     startInvite(async () => {
@@ -274,8 +277,6 @@ export function UsersTab() {
   function inviteAgain(invite: OrganizationInviteRow) {
     if (!activeOrganization) return
 
-    setSuccessMessage(null)
-    setLastInviteLink(null)
     setBusyInviteId(invite.id)
 
     startInvite(async () => {
@@ -296,41 +297,69 @@ export function UsersTab() {
         return
       }
 
-      showInviteResult(data)
+      await showInviteResult(data)
       setBusyInviteId(null)
     })
   }
 
-  function showInviteResult(
+  async function showInviteResult(
     data: Awaited<ReturnType<typeof sendOrganizationInvite>>,
   ) {
-    setLastInviteLink(data.inviteUrl ?? null)
+    const inviteCopySucceeded = data.inviteUrl
+      ? await copyTextToClipboard(data.inviteUrl)
+      : false
 
     if (data.emailStatus === "sent") {
-      setSuccessMessage(null)
       showInfo("Confirmation email sent")
       return
     }
 
     if (data.emailStatus === "not_configured") {
-      setSuccessMessage("Invite created. Copy the confirmation link below.")
-      showError(
-        "Gmail is not configured",
-        "Set Gmail OAuth env vars to send invite emails automatically.",
-      )
+      toast({
+        title: "Gmail is not configured",
+        description: data.inviteUrl
+          ? inviteCopySucceeded
+            ? "Set Gmail OAuth env vars to send invite emails automatically. The confirmation link was copied to your clipboard."
+            : "Set Gmail OAuth env vars to send invite emails automatically. Confirmation link is ready."
+          : "Set Gmail OAuth env vars to send invite emails automatically.",
+        variant: "destructive",
+        action:
+          data.inviteUrl && !inviteCopySucceeded
+            ? getInviteToastAction(data.inviteUrl)
+            : undefined,
+      })
       return
     }
 
     if (data.emailStatus === "failed") {
-      setSuccessMessage("Invite created. Copy the confirmation link below.")
-      showError(
-        "Gmail failed to send",
-        data.emailError ?? "The invite email could not be sent.",
-      )
+      toast({
+        title: "Gmail failed to send",
+        description: data.inviteUrl
+          ? inviteCopySucceeded
+            ? `${data.emailError ?? "The invite email could not be sent."} The confirmation link was copied to your clipboard.`
+            : `${data.emailError ?? "The invite email could not be sent."} Confirmation link is ready.`
+          : (data.emailError ?? "The invite email could not be sent."),
+        variant: "destructive",
+        action:
+          data.inviteUrl && !inviteCopySucceeded
+            ? getInviteToastAction(data.inviteUrl)
+            : undefined,
+      })
       return
     }
 
-    setSuccessMessage("Invite created. Copy the confirmation link below.")
+    toast({
+      title: "Invite created",
+      description: data.inviteUrl
+        ? inviteCopySucceeded
+          ? "Confirmation link copied to clipboard."
+          : "Confirmation link is ready."
+        : "Confirmation link is ready.",
+      action:
+        data.inviteUrl && !inviteCopySucceeded
+          ? getInviteToastAction(data.inviteUrl)
+          : undefined,
+    })
   }
 
   function copyInviteLink(invite: OrganizationInviteRow) {
@@ -338,9 +367,29 @@ export function UsersTab() {
 
     if (!inviteLink) return
 
-    void navigator.clipboard.writeText(inviteLink)
-    setLastInviteLink(inviteLink)
-    showInfo("Invite link copied")
+    void copyInviteUrl(inviteLink)
+  }
+
+  function getInviteToastAction(inviteUrl: string) {
+    return (
+      <ToastAction
+        altText="Copy confirmation link"
+        onClick={() => void copyInviteUrl(inviteUrl)}
+      >
+        Copy
+      </ToastAction>
+    )
+  }
+
+  async function copyInviteUrl(inviteUrl: string) {
+    const copied = await copyTextToClipboard(inviteUrl)
+
+    if (copied) {
+      showInfo("Invite link copied")
+      return
+    }
+
+    showError("Could not copy invite link", inviteUrl)
   }
 
   const visibleMembers = members.filter((member: OrganizationMemberRow) => {
@@ -418,33 +467,6 @@ export function UsersTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {successMessage ? (
-            <div className="p-4">
-              <Alert>
-                <AlertTitle>Manual invite link</AlertTitle>
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p>{successMessage}</p>
-                    {lastInviteLink ? (
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Input readOnly value={lastInviteLink} />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() =>
-                            void navigator.clipboard.writeText(lastInviteLink)
-                          }
-                        >
-                          Copy link
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-muted-foreground">
               <LoaderCircle className="h-4 w-4 animate-spin" />
