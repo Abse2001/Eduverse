@@ -5,7 +5,7 @@ import { AppProvider } from "@/lib/store"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "EduFlow — Learning Management System",
+  title: "Eduverse — Learning Management System",
   description:
     "A modern LMS for schools, bootcamps, and private institutions. Featuring live sessions, class chat, exams, an IDE, and student dashboards.",
   generator: "v0.app",

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export type OrganizationSettings = {
   organization_id: string
   public_features_enabled: boolean
+  public_features_locked_disabled: boolean
   all_teachers_can_create_classes: boolean
   all_teachers_can_manage_own_classes: boolean
 }
@@ -23,6 +24,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: Omit<
   "organization_id"
 > = {
   public_features_enabled: false,
+  public_features_locked_disabled: false,
   all_teachers_can_create_classes: false,
   all_teachers_can_manage_own_classes: false,
   teacherClassPermissions: [],
@@ -49,7 +51,7 @@ export async function loadOrganizationSettings(
   const { data: settingsData, error: settingsError } = await supabase
     .from("organization_settings")
     .select(
-      "organization_id, public_features_enabled, all_teachers_can_create_classes, all_teachers_can_manage_own_classes",
+      "organization_id, public_features_enabled, public_features_locked_disabled, all_teachers_can_create_classes, all_teachers_can_manage_own_classes",
     )
     .in("organization_id", organizationIds)
 

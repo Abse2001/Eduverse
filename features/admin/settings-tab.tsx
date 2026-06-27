@@ -76,6 +76,8 @@ export function SettingsTab() {
   const [permissionDraft, setPermissionDraft] = useState<PermissionDraft>({})
   const [isPending, startTransition] = useTransition()
   const { toast } = useToast()
+  const isPublicAccessLocked =
+    settings?.public_features_locked_disabled === true
   const teacherMembers = useMemo(
     () =>
       organizationMembers.filter(
@@ -209,18 +211,26 @@ export function SettingsTab() {
         <CardContent className="space-y-5">
           <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <div className="space-y-1">
-              <Label className="text-sm font-medium">
-                Public organization features
-              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Label className="text-sm font-medium">
+                  Public organization features
+                </Label>
+                {isPublicAccessLocked ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    Locked off
+                  </Badge>
+                ) : null}
+              </div>
               <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
-                Allows public join links and organization-visible classes for
-                this organization.
+                {isPublicAccessLocked
+                  ? "Disabled at organization creation and cannot be enabled."
+                  : "Allows public join links and organization-visible classes for this organization."}
               </p>
             </div>
             <Switch
               checked={publicFeaturesEnabled}
               onCheckedChange={setPublicFeaturesEnabled}
-              disabled={isPending}
+              disabled={isPending || isPublicAccessLocked}
               aria-label="Toggle public organization features"
             />
           </div>

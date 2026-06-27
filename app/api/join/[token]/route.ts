@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRouteUser } from "@/lib/api/supabase-route"
+import { loadEnabledOrganizationFeatureSummaries } from "@/lib/features/organization-feature-summary"
 import { createServerClient } from "@/lib/supabase/server"
 
 type RouteContext = {
@@ -77,6 +78,10 @@ export async function GET(_request: Request, context: RouteContext) {
     const organization = Array.isArray(joinLink.organizations)
       ? joinLink.organizations[0]
       : joinLink.organizations
+    const features = await loadEnabledOrganizationFeatureSummaries(
+      supabase,
+      joinLink.organization_id,
+    ).catch(() => [])
 
     return NextResponse.json({
       organizationId: joinLink.organization_id,
@@ -85,6 +90,7 @@ export async function GET(_request: Request, context: RouteContext) {
       purpose: joinLink.purpose,
       role: joinLink.default_role,
       approvalRequired: joinLink.approval_required,
+      features,
     })
   } catch (error) {
     return NextResponse.json(

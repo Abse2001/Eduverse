@@ -15,8 +15,19 @@ import type {
 } from "@supabase/supabase-js"
 import { GraduationCap, LoaderCircle } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
+import { cn } from "@/lib/utils"
 
 type AuthMode = "sign-in" | "sign-up" | "reset-password"
 
@@ -445,104 +456,80 @@ function AuthPageContent() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-slate-950 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(14,165,233,0.45),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(34,197,94,0.28),transparent_24%),linear-gradient(135deg,#020617_0%,#0f172a_48%,#082f49_100%)]" />
-      <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-slate-950 to-transparent" />
-
-      <div className="relative mx-auto grid min-h-screen max-w-6xl gap-10 px-6 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-        <section className="space-y-8">
-          <div className="inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-sky-100 shadow-2xl backdrop-blur">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-sky-400 text-slate-950">
-              <GraduationCap className="h-5 w-5" />
-            </span>
-            Eduverse
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto grid min-h-screen max-w-5xl items-center gap-8 px-6 py-8 lg:grid-cols-[0.9fr_1fr]">
+        <section className="space-y-5">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <GraduationCap className="h-5 w-5" />
           </div>
-
-          <div className="max-w-2xl space-y-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.32em] text-sky-200">
-              Learning workspace
-            </p>
-            <h1 className="text-5xl font-black leading-[0.95] tracking-tight text-white sm:text-7xl">
-              Start with your organizations.
+          <div className="max-w-md space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              Eduverse
             </h1>
-            <p className="max-w-xl text-lg leading-8 text-slate-300">
-              Sign in first, then choose which organization to enter. Your role
-              changes per organization, so admins, teachers, and students each
-              get the right workspace.
+            <p className="text-sm leading-6 text-muted-foreground">
+              Sign in to access your organizations, classes, and learning
+              workspace.
             </p>
-          </div>
-
-          <div className="grid max-w-2xl gap-3 sm:grid-cols-3">
-            {[
-              ["Auth", "Supabase email and password."],
-              ["Org hub", "Create or enter an organization."],
-              ["Workspace", "Dashboard opens after org selection."],
-            ].map(([title, description]) => (
-              <div
-                key={title}
-                className="rounded-3xl border border-white/10 bg-white/[0.08] p-4 shadow-2xl backdrop-blur"
-              >
-                <p className="text-sm font-bold text-white">{title}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {description}
-                </p>
-              </div>
-            ))}
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-white/15 bg-white/[0.09] p-2 shadow-2xl shadow-black/40 backdrop-blur-xl">
-          <div className="rounded-[1.5rem] bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
-            <div className="mb-7 flex rounded-full bg-slate-100 p-1 text-sm font-semibold">
+        <Card className="min-h-[31rem] w-full max-w-md justify-self-center">
+          <CardHeader>
+            <div className="mb-2 flex rounded-lg bg-muted p-1 text-sm font-medium">
               <button
-                className={`flex-1 rounded-full px-4 py-2.5 transition ${
+                className={cn(
+                  "flex-1 rounded-md px-3 py-2 transition",
                   mode === "sign-in"
-                    ? "bg-slate-950 text-white shadow"
-                    : "text-slate-500 hover:text-slate-950"
-                }`}
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
                 onClick={() => setMode("sign-in")}
                 type="button"
               >
                 Sign in
               </button>
               <button
-                className={`flex-1 rounded-full px-4 py-2.5 transition ${
+                className={cn(
+                  "flex-1 rounded-md px-3 py-2 transition",
                   mode === "sign-up"
-                    ? "bg-slate-950 text-white shadow"
-                    : "text-slate-500 hover:text-slate-950"
-                }`}
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
                 onClick={() => setMode("sign-up")}
                 type="button"
               >
                 Sign up
               </button>
             </div>
-
-            <div className="mb-6">
-              <h2 className="text-2xl font-black tracking-tight">
-                {mode === "sign-in" ? "Welcome back" : "Create your account"}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                {mode === "sign-in"
-                  ? "Enter your credentials to open the organization hub."
-                  : mode === "reset-password"
-                    ? "Set a new password after opening the reset link from your email."
-                    : "Create an auth user. Your profile row is created by the database trigger."}
-              </p>
-            </div>
-
+            <CardTitle>
+              {mode === "sign-in"
+                ? "Welcome back"
+                : mode === "reset-password"
+                  ? "Reset password"
+                  : "Create your account"}
+            </CardTitle>
+            <CardDescription>
+              {mode === "sign-in"
+                ? "Enter your credentials to continue."
+                : mode === "reset-password"
+                  ? "Choose a new password to finish recovery."
+                  : "Set up your account to continue."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-h-[20rem]">
             {feedback ? (
-              <div className="mb-4 space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              <div className="mb-4 space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
                 <p>{feedback}</p>
                 {confirmationEmail ? (
-                  <button
-                    className="text-sm font-bold text-emerald-800 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  <Button
+                    className="h-auto p-0 text-emerald-800 dark:text-emerald-300"
                     disabled={isPending}
+                    variant="link"
                     onClick={resendConfirmationEmail}
                     type="button"
                   >
                     Resend confirmation email
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             ) : null}
@@ -564,14 +551,15 @@ function AuthPageContent() {
                   value={signInPassword}
                 />
                 <div className="flex justify-end">
-                  <button
-                    className="text-sm font-bold text-sky-600 underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  <Button
+                    className="h-auto p-0"
                     disabled={isPending}
                     onClick={sendPasswordResetEmail}
                     type="button"
+                    variant="link"
                   >
                     Forgot password?
-                  </button>
+                  </Button>
                 </div>
                 <SubmitButton
                   isPending={isPending}
@@ -606,16 +594,17 @@ function AuthPageContent() {
                   pendingText="Updating password..."
                   text="Update password"
                 />
-                <button
-                  className="w-full text-center text-sm font-bold text-slate-500 underline-offset-4 hover:text-slate-950 hover:underline"
+                <Button
+                  className="w-full"
                   onClick={() => {
                     setMode("sign-in")
                     setFeedback(null)
                   }}
                   type="button"
+                  variant="ghost"
                 >
                   Back to sign in
-                </button>
+                </Button>
               </form>
             ) : (
               <form className="space-y-4" noValidate onSubmit={submitSignUp}>
@@ -648,8 +637,8 @@ function AuthPageContent() {
                 />
               </form>
             )}
-          </div>
-        </section>
+          </CardContent>
+        </Card>
       </div>
     </main>
   )
@@ -657,8 +646,8 @@ function AuthPageContent() {
 
 function AuthLoading({ message }: { message: string }) {
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 text-white">
-      <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm shadow-2xl backdrop-blur">
+    <main className="grid min-h-screen place-items-center bg-background text-foreground">
+      <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm">
         <LoaderCircle className="h-4 w-4 animate-spin" />
         {message}
       </div>
@@ -682,18 +671,17 @@ function AuthField({
   value: string
 }) {
   return (
-    <label className="block space-y-2">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <input
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Input
         autoComplete={autoComplete}
-        className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-950 outline-none transition focus:border-sky-400 focus:bg-white focus:ring-4 focus:ring-sky-100"
         minLength={minLength}
         onChange={(event) => onChange(event.target.value)}
         required
         type={type}
         value={value}
       />
-    </label>
+    </div>
   )
 }
 
@@ -707,11 +695,7 @@ function SubmitButton({
   text: string
 }) {
   return (
-    <button
-      className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-5 text-base font-black text-white shadow-lg shadow-sky-500/25 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
-      disabled={isPending}
-      type="submit"
-    >
+    <Button className="mt-2 w-full" disabled={isPending} type="submit">
       {isPending ? (
         <>
           <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -720,6 +704,6 @@ function SubmitButton({
       ) : (
         text
       )}
-    </button>
+    </Button>
   )
 }

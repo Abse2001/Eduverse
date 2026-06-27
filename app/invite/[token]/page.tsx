@@ -2,12 +2,45 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { CheckCircle2, LoaderCircle, LogOut, XCircle } from "lucide-react"
+import {
+  BookOpen,
+  CheckCircle2,
+  Code2,
+  GraduationCap,
+  Globe2,
+  Home,
+  LoaderCircle,
+  LogOut,
+  MessageSquare,
+  Puzzle,
+  Trophy,
+  Video,
+  XCircle,
+} from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import type {
+  OrganizationFeatureIconKey,
+  OrganizationFeatureSummary,
+} from "@/lib/features/organization-feature-summary"
 import { createClient } from "@/lib/supabase/client"
 import { useApp } from "@/lib/store"
 import { toast } from "@/hooks/use-toast"
+
+type InviteDetails = {
+  organizationId: string
+  organizationName: string
+  organizationSlug: string | null
+  role: "org_admin" | "teacher" | "student"
+  features: OrganizationFeatureSummary[]
+}
 
 export default function InvitePage() {
   const params = useParams<{ token: string }>()
@@ -23,6 +56,7 @@ export default function InvitePage() {
   const [inviteState, setInviteState] = useState<"idle" | "accepted" | "error">(
     "idle",
   )
+  const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(null)
   const [isPending, startTransition] = useTransition()
   const token = params.token
 
@@ -31,6 +65,32 @@ export default function InvitePage() {
       router.replace(getInviteAuthPath(token))
     }
   }, [isAuthLoading, isAuthenticated, router, token])
+
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return
+
+    let cancelled = false
+
+    async function loadInviteDetails() {
+      const response = await fetch(`/api/invite/${encodeURIComponent(token)}`)
+      const payload = (await response.json().catch(() => null)) as
+        | InviteDetails
+        | { error?: string }
+        | null
+
+      if (cancelled) return
+
+      if (response.ok && isInviteDetails(payload)) {
+        setInviteDetails(payload)
+      }
+    }
+
+    void loadInviteDetails().catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthLoading, isAuthenticated, token])
 
   function acceptInvite() {
     setInviteState("idle")
@@ -74,8 +134,8 @@ export default function InvitePage() {
 
   if (isAuthLoading || !isAuthenticated) {
     return (
-      <main className="grid min-h-screen place-items-center bg-slate-950 text-white">
-        <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm shadow-2xl backdrop-blur">
+      <main className="grid min-h-screen place-items-center bg-background text-foreground">
+        <div className="flex items-center gap-3 rounded-full border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm">
           <LoaderCircle className="h-4 w-4 animate-spin" />
           Preparing invite...
         </div>
@@ -84,32 +144,49 @@ export default function InvitePage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_36%),linear-gradient(135deg,#020617_0%,#0f172a_100%)] px-6 text-white">
-      <section className="w-full max-w-lg rounded-[2rem] border border-white/15 bg-white/[0.08] p-2 shadow-2xl backdrop-blur-xl">
-        <div className="rounded-[1.5rem] bg-white p-8 text-slate-950">
-          <div className="mb-6 grid h-14 w-14 place-items-center rounded-2xl bg-sky-100 text-sky-600">
+    <main className="grid min-h-screen place-items-center bg-background px-6 py-8 text-foreground">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <div className="mb-2 grid h-12 w-12 place-items-center rounded-lg bg-primary text-primary-foreground">
             {inviteState === "accepted" ? (
-              <CheckCircle2 className="h-7 w-7" />
+              <CheckCircle2 className="h-5 w-5" />
             ) : inviteState === "error" ? (
-              <XCircle className="h-7 w-7" />
+              <XCircle className="h-5 w-5" />
             ) : (
-              <CheckCircle2 className="h-7 w-7" />
+              <CheckCircle2 className="h-5 w-5" />
             )}
           </div>
-          <h1 className="text-2xl font-black tracking-tight">
-            Accept organization invite
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            This invite can only be accepted by the email address it was sent
-            to. Make sure you are signed in with that account.
-          </p>
+          <CardTitle>
+            {inviteDetails
+              ? `Join ${inviteDetails.organizationName}`
+              : "Accept organization invite"}
+          </CardTitle>
+          <CardDescription>
+            {inviteDetails ? (
+              <>
+                This invite gives you access as{" "}
+                <span className="font-medium text-foreground">
+                  {roleLabel(inviteDetails.role)}
+                </span>
+                . Make sure you are signed in with the invited email address.
+              </>
+            ) : (
+              "This invite can only be accepted by the email address it was sent to. Make sure you are signed in with that account."
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
           {currentEmail ? (
-            <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+            <p className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
               Signed in as{" "}
-              <span className="font-semibold text-slate-950">
+              <span className="font-medium text-foreground">
                 {currentEmail}
               </span>
             </p>
+          ) : null}
+
+          {inviteDetails?.features.length ? (
+            <FeatureGrid features={inviteDetails.features} />
           ) : null}
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -148,9 +225,75 @@ export default function InvitePage() {
               Use another account
             </Button>
           ) : null}
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </main>
+  )
+}
+
+function FeatureGrid({ features }: { features: OrganizationFeatureSummary[] }) {
+  return (
+    <div className="mt-5">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Included tools
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {features.map((feature) => {
+          const FeatureIcon = FEATURE_ICONS[feature.icon] ?? Home
+
+          return (
+            <div
+              key={feature.key}
+              className="rounded-lg border bg-card p-3 text-card-foreground"
+            >
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <FeatureIcon className="h-4 w-4" />
+                </span>
+                <span className="text-sm font-medium text-foreground">
+                  {feature.label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {feature.description}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const FEATURE_ICONS: Record<OrganizationFeatureIconKey, typeof Home> = {
+  public: Globe2,
+  home: Home,
+  chat: MessageSquare,
+  materials: BookOpen,
+  assignments: CheckCircle2,
+  sessions: Video,
+  exam: GraduationCap,
+  leaderboard: Trophy,
+  extensions: Puzzle,
+  ide: Code2,
+}
+
+function roleLabel(role: InviteDetails["role"]) {
+  if (role === "org_admin") return "Admin"
+  if (role === "teacher") return "Teacher"
+
+  return "Student"
+}
+
+function isInviteDetails(value: unknown): value is InviteDetails {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "organizationId" in value &&
+    "organizationName" in value &&
+    "role" in value &&
+    "features" in value &&
+    Array.isArray((value as { features?: unknown }).features)
   )
 }
 

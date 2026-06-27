@@ -1,9 +1,7 @@
 "use client"
 
-import { ExternalLink } from "lucide-react"
 import { use } from "react"
 import { ClassPageHeader } from "@/components/shared/class-page-header"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ClassFeatureDisabledFallback,
@@ -52,51 +50,33 @@ export default function CustomExtensionPage({
   const extension = extensionFeature.customExtension
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-4 border-b px-6 py-4">
-        <ClassPageHeader
-          title={cls.name}
-          code={cls.code}
-          section="Extensions"
-          detail={
-            <p className="text-xs text-muted-foreground">
-              {extension.name}
-              {extension.description ? ` · ${extension.description}` : ""}
-            </p>
-          }
-          actions={
-            extension.launch_url ? (
-              <Button asChild size="sm" variant="outline" className="gap-2">
-                <a href={extension.launch_url} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  Open
-                </a>
-              </Button>
-            ) : null
-          }
-        />
-      </div>
+    <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      <ClassPageHeader
+        title={cls.name}
+        code={cls.code}
+        section={extension.name}
+      />
 
       {extension.launch_url ? (
-        <iframe
-          src={extension.launch_url}
-          title={extension.name}
-          className="min-h-0 flex-1 border-0 bg-background"
-          sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
-        />
+        <Card className="overflow-hidden p-0">
+          <iframe
+            src={extension.launch_url}
+            title={extension.name}
+            className="h-[calc(100vh-13rem)] min-h-[32rem] w-full border-0 bg-background"
+            sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
+          />
+        </Card>
       ) : (
-        <div className="p-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">{extension.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                This extension does not have a launch URL configured yet.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">{extension.name}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              This extension does not have a launch URL configured yet.
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

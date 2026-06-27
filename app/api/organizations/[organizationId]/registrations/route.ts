@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { sendOrganizationInviteEmail } from "@/lib/email/gmail"
 import { requireRouteUser } from "@/lib/api/supabase-route"
+import { loadEnabledOrganizationFeatureSummaries } from "@/lib/features/organization-feature-summary"
 import { createServerClient as createPrivilegedSupabaseClient } from "@/lib/supabase/server"
 
 type RouteContext = {
@@ -493,6 +494,10 @@ export async function POST(request: Request, context: RouteContext) {
     .select("token")
     .eq("id", resultData?.invite_id)
     .single()
+  const features = await loadEnabledOrganizationFeatureSummaries(
+    supabase,
+    organizationId,
+  ).catch(() => [])
 
   const inviteUrl = invite?.token ? getInviteUrl(request, invite.token) : null
 
@@ -513,6 +518,7 @@ export async function POST(request: Request, context: RouteContext) {
     organizationName: organization?.name ?? "Eduverse",
     roleLabel: ROLE_LABELS[role],
     inviteUrl,
+    features,
   })
 
   return NextResponse.json({

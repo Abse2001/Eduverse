@@ -126,6 +126,7 @@ export function toOrganizations(
         settings: settingsByOrganization.get(membership.organization_id) ?? {
           organization_id: membership.organization_id,
           public_features_enabled: false,
+          public_features_locked_disabled: false,
           all_teachers_can_create_classes: false,
           all_teachers_can_manage_own_classes: false,
           teacherClassPermissions: [],
