@@ -269,11 +269,14 @@ export function useClassMaterials({
   }
 }
 
-async function loadMaterialsWithThumbnails(
+export async function loadMaterialsWithThumbnails(
   classId: string,
-  { force = false }: { force?: boolean } = {},
+  {
+    cacheKey = classId,
+    force = false,
+  }: { cacheKey?: string; force?: boolean } = {},
 ) {
-  const cached = materialsCache.get(classId)
+  const cached = materialsCache.get(cacheKey)
 
   if (!force && cached?.materials) {
     return cached.materials
@@ -285,17 +288,17 @@ async function loadMaterialsWithThumbnails(
 
   const request = fetchMaterialsWithThumbnails(classId)
     .then((materials) => {
-      writeMaterialsCache(classId, materials)
+      writeMaterialsCache(cacheKey, materials)
       return materials
     })
     .finally(() => {
-      const latestCached = materialsCache.get(classId)
+      const latestCached = materialsCache.get(cacheKey)
       if (latestCached?.request === request) {
         latestCached.request = null
       }
     })
 
-  materialsCache.set(classId, {
+  materialsCache.set(cacheKey, {
     materials: cached?.materials ?? null,
     request,
   })
