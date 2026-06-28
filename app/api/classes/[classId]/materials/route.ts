@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { loadSelectedOrganizationRole } from "@/lib/api/selected-role"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 type RouteContext = {
@@ -37,6 +38,62 @@ export async function GET(request: Request, context: RouteContext) {
 
   if (authError || !user || !supabase) {
     return NextResponse.json({ error: authError }, { status: 401 })
+  }
+
+  const { data: classRow, error: classError } = await supabase
+    .from("classes")
+    .select("id, organization_id, teacher_user_id")
+    .eq("id", classId)
+    .maybeSingle()
+
+  if (classError) {
+    return NextResponse.json({ error: classError.message }, { status: 500 })
+  }
+
+  if (!classRow) {
+    return NextResponse.json({ error: "Class not found." }, { status: 404 })
+  }
+
+  const [selectedRoleResult, membershipResult] = await Promise.all([
+    loadSelectedOrganizationRole(supabase, classRow.organization_id, user.id),
+    supabase
+      .from("class_memberships")
+      .select("id, role")
+      .eq("organization_id", classRow.organization_id)
+      .eq("class_id", classRow.id)
+      .eq("user_id", user.id),
+  ])
+
+  if ("error" in selectedRoleResult) {
+    return NextResponse.json(
+      { error: selectedRoleResult.error },
+      { status: selectedRoleResult.status },
+    )
+  }
+
+  if (membershipResult.error) {
+    return NextResponse.json(
+      { error: membershipResult.error.message },
+      { status: 500 },
+    )
+  }
+
+  const memberships = (membershipResult.data ?? []) as Array<{
+    id: string
+    role: "teacher" | "ta" | "student"
+  }>
+  const canReadMaterials =
+    selectedRoleResult.role === "org_admin" ||
+    (selectedRoleResult.role === "teacher" &&
+      (classRow.teacher_user_id === user.id ||
+        memberships.some((membership) =>
+          ["teacher", "ta"].includes(membership.role),
+        ))) ||
+    (selectedRoleResult.role === "student" &&
+      memberships.some((membership) => membership.role === "student"))
+
+  if (!canReadMaterials) {
+    return NextResponse.json({ materials: [] })
   }
 
   const primaryResult = await supabase

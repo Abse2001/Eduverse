@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { TopBar } from "@/components/top-bar"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import {
   LiveSessionMiniBar,
   LiveSessionProvider,
@@ -14,6 +15,7 @@ import { useApp } from "@/lib/store"
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const { activeOrganization, isAuthLoading, isAuthenticated } = useApp()
@@ -74,9 +76,30 @@ function AppShell({ children }: { children: React.ReactNode }) {
     <LiveSessionProvider>
       <ExamLockProvider>
         <div className="flex h-screen overflow-hidden bg-background">
-          <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+          <Sidebar
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+            className="hidden md:flex"
+          />
+          <Sheet
+            open={isMobileSidebarOpen}
+            onOpenChange={setIsMobileSidebarOpen}
+          >
+            <SheetContent
+              side="left"
+              className="w-72 max-w-[88vw] gap-0 p-0 [&>button]:top-3.5"
+            >
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <Sidebar
+                collapsed={false}
+                setCollapsed={() => {}}
+                className="w-full border-r-0"
+                onNavigate={() => setIsMobileSidebarOpen(false)}
+              />
+            </SheetContent>
+          </Sheet>
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <TopBar />
+            <TopBar onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)} />
             <main className="flex-1 overflow-y-auto">{children}</main>
           </div>
           <LiveSessionMiniBar />

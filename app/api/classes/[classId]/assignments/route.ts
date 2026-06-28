@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { notificationHref, sendNotification } from "@/lib/api/notifications"
+import { loadSelectedOrganizationRole } from "@/lib/api/selected-role"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -71,7 +72,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   const { data: classRow, error: classError } = await supabase
     .from("classes")
-    .select("id, organization_id")
+    .select("id, organization_id, teacher_user_id")
     .eq("id", classId)
     .maybeSingle()
 
@@ -83,20 +84,78 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Class not found." }, { status: 404 })
   }
 
-  const { data: canManage, error: permissionError } = await supabase.rpc(
-    "can_manage_class",
-    {
+  const [
+    selectedRoleResult,
+    canManageResult,
+    teacherMembershipResult,
+    studentMembershipResult,
+  ] = await Promise.all([
+    loadSelectedOrganizationRole(supabase, classRow.organization_id, user.id),
+    supabase.rpc("can_manage_class", {
       target_org_id: classRow.organization_id,
       target_class_id: classRow.id,
-    },
-  )
+    }),
+    supabase
+      .from("class_memberships")
+      .select("id")
+      .eq("organization_id", classRow.organization_id)
+      .eq("class_id", classRow.id)
+      .eq("user_id", user.id)
+      .in("role", ["teacher", "ta"])
+      .maybeSingle(),
+    supabase
+      .from("class_memberships")
+      .select("id")
+      .eq("organization_id", classRow.organization_id)
+      .eq("class_id", classRow.id)
+      .eq("user_id", user.id)
+      .eq("role", "student")
+      .maybeSingle(),
+  ])
 
-  if (permissionError) {
+  if ("error" in selectedRoleResult) {
     return NextResponse.json(
-      { error: permissionError.message },
+      { error: selectedRoleResult.error },
+      { status: selectedRoleResult.status },
+    )
+  }
+
+  if (canManageResult.error) {
+    return NextResponse.json(
+      { error: canManageResult.error.message },
       { status: 500 },
     )
   }
+
+  if (teacherMembershipResult.error) {
+    return NextResponse.json(
+      { error: teacherMembershipResult.error.message },
+      { status: 500 },
+    )
+  }
+
+  if (studentMembershipResult.error) {
+    return NextResponse.json(
+      { error: studentMembershipResult.error.message },
+      { status: 500 },
+    )
+  }
+
+  const canManage =
+    Boolean(canManageResult.data) &&
+    (selectedRoleResult.role === "org_admin" ||
+      (selectedRoleResult.role === "teacher" &&
+        (classRow.teacher_user_id === user.id ||
+          Boolean(teacherMembershipResult.data))))
+  const canReadAssignments =
+    canManage ||
+    (selectedRoleResult.role === "student" &&
+      Boolean(studentMembershipResult.data))
+
+  if (!canReadAssignments) {
+    return NextResponse.json({ assignments: [] })
+  }
+
   let assignmentQuery = supabase
     .from("class_assignments")
     .select(

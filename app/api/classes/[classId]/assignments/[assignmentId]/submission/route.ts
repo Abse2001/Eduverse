@@ -5,6 +5,7 @@ import {
   validateAssignmentFileUpload,
 } from "@/lib/api/s3-assignments"
 import { notificationHref, sendNotification } from "@/lib/api/notifications"
+import { loadSelectedOrganizationRole } from "@/lib/api/selected-role"
 import { requireRouteUser } from "@/lib/api/supabase-route"
 
 export const runtime = "nodejs"
@@ -85,7 +86,12 @@ export async function POST(request: Request, context: RouteContext) {
     assignment.organization_id,
     user.id,
   )
-  if ("response" in selectedRole) return selectedRole.response
+  if ("error" in selectedRole) {
+    return NextResponse.json(
+      { error: selectedRole.error },
+      { status: selectedRole.status },
+    )
+  }
 
   if (selectedRole.role !== "student") {
     return NextResponse.json(
@@ -315,69 +321,6 @@ function toSubmissionResponse(row: SubmissionRow) {
     gradedByUserId: row.graded_by_user_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }
-}
-
-async function loadSelectedOrganizationRole(
-  supabase: NonNullable<
-    Awaited<ReturnType<typeof requireRouteUser>>["supabase"]
-  >,
-  organizationId: string,
-  userId: string,
-) {
-  const { data: membership, error: membershipError } = await supabase
-    .from("organization_memberships")
-    .select("id, role, selected_role_id")
-    .eq("organization_id", organizationId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .maybeSingle()
-
-  if (membershipError) {
-    return {
-      response: NextResponse.json(
-        { error: membershipError.message },
-        { status: 500 },
-      ),
-    }
-  }
-
-  if (!membership) {
-    return {
-      response: NextResponse.json(
-        { error: "Active organization membership required." },
-        { status: 403 },
-      ),
-    }
-  }
-
-  if (membership.selected_role_id) {
-    const { data: selectedRole, error: selectedRoleError } = await supabase
-      .from("organization_membership_roles")
-      .select("role")
-      .eq("id", membership.selected_role_id)
-      .eq("organization_membership_id", membership.id)
-      .eq("status", "active")
-      .maybeSingle()
-
-    if (selectedRoleError) {
-      return {
-        response: NextResponse.json(
-          { error: selectedRoleError.message },
-          { status: 500 },
-        ),
-      }
-    }
-
-    if (selectedRole?.role) {
-      return {
-        role: selectedRole.role as "org_admin" | "teacher" | "student",
-      }
-    }
-  }
-
-  return {
-    role: membership.role as "org_admin" | "teacher" | "student",
   }
 }
 

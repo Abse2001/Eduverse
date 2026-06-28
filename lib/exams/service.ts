@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { z } from "zod"
 import { notificationHref, sendNotification } from "@/lib/api/notifications"
+import { loadSelectedOrganizationRole } from "@/lib/api/selected-role"
 import { writeExamAuditLog } from "@/lib/exams/audit"
 import {
   canTeacherGradeQuestion,
@@ -1562,7 +1563,7 @@ async function loadClassContext(input: {
         target_org_id: classRow.organization_id,
         target_class_id: input.classId,
       }),
-      loadSelectedOrganizationRole(
+      loadSelectedExamOrganizationRole(
         input.authSupabase,
         classRow.organization_id,
         input.userId,
@@ -1603,36 +1604,21 @@ async function loadClassContext(input: {
   } satisfies ClassContext & { classId: string }
 }
 
-async function loadSelectedOrganizationRole(
+async function loadSelectedExamOrganizationRole(
   supabase: SupabaseClient,
   organizationId: string,
   userId: string,
 ) {
-  const { data: membership, error } = await supabase
-    .from("organization_memberships")
-    .select("id, role, selected_role_id")
-    .eq("organization_id", organizationId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .maybeSingle()
+  const result = await loadSelectedOrganizationRole(
+    supabase,
+    organizationId,
+    userId,
+  )
 
-  if (error) throw new Error(error.message)
-  if (!membership) return null
+  if ("role" in result) return result.role as AppRole
+  if (result.status === 403) return null
 
-  if (membership.selected_role_id) {
-    const { data: selectedRole, error: selectedRoleError } = await supabase
-      .from("organization_membership_roles")
-      .select("role")
-      .eq("id", membership.selected_role_id)
-      .eq("organization_membership_id", membership.id)
-      .eq("status", "active")
-      .maybeSingle()
-
-    if (selectedRoleError) throw new Error(selectedRoleError.message)
-    if (selectedRole?.role) return selectedRole.role as AppRole
-  }
-
-  return membership.role as AppRole
+  throw new Error(result.error)
 }
 
 async function loadManagerExamSummaries(classId: string) {

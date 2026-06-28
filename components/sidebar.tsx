@@ -46,9 +46,16 @@ const NAV_ITEMS_ADMIN: Array<{
 interface SidebarProps {
   collapsed: boolean
   setCollapsed: (v: boolean) => void
+  className?: string
+  onNavigate?: () => void
 }
 
-export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  setCollapsed,
+  className,
+  onNavigate,
+}: SidebarProps) {
   const pathname = usePathname()
   const {
     activeOrganization,
@@ -90,6 +97,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         className={cn(
           "flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300 shrink-0",
           isCollapsed ? "w-16" : "w-60",
+          className,
         )}
       >
         {/* Dashboard link */}
@@ -114,6 +122,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               <NavItemContent
                 href="/dashboard"
                 disabled={isLocked}
+                onNavigate={onNavigate}
                 className={cn(
                   "flex items-center gap-2.5 py-2 rounded-lg text-sm font-medium transition-colors min-w-0 flex-1 h-9",
                   isLocked
@@ -198,6 +207,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                       colorDot={cls.color ?? undefined}
                       live={liveClassIds.has(cls.id)}
                       disabled={classDisabled}
+                      onNavigate={onNavigate}
                     />
                     {isActiveClass && !isCollapsed && (
                       <div className="ml-6 pl-3 border-l border-sidebar-border mt-0.5 space-y-0.5 mb-1 overflow-hidden">
@@ -215,6 +225,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                                   : `/classes/${cls.id}/exam`,
                               )
                             }
+                            onNavigate={onNavigate}
                           />
                         ))}
                       </div>
@@ -235,11 +246,13 @@ function ClassFeatureNavItem({
   feature,
   activeSegment,
   disabled,
+  onNavigate,
 }: {
   classId: string
   feature: ResolvedClassFeature
   activeSegment?: string
   disabled?: boolean
+  onNavigate?: () => void
 }) {
   const isActive =
     isFeatureRouteActive(feature.routeSegment, activeSegment) ||
@@ -269,6 +282,7 @@ function ClassFeatureNavItem({
               feature={child}
               active={isFeatureRouteActive(child.routeSegment, activeSegment)}
               disabled={disabled}
+              onNavigate={onNavigate}
             />
           ))}
         </div>
@@ -282,6 +296,7 @@ function ClassFeatureNavItem({
       feature={feature}
       active={isFeatureRouteActive(feature.routeSegment, activeSegment)}
       disabled={disabled}
+      onNavigate={onNavigate}
     />
   )
 }
@@ -291,17 +306,20 @@ function ClassFeatureNavLink({
   feature,
   active,
   disabled = false,
+  onNavigate,
 }: {
   classId: string
   feature: ResolvedClassFeature
   active: boolean
   disabled?: boolean
+  onNavigate?: () => void
 }) {
   if (!feature.routeSegment) return null
 
   return (
     <NavItemContent
       href={`/classes/${classId}/${feature.routeSegment}`}
+      onNavigate={onNavigate}
       className={cn(
         "flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-xs font-medium whitespace-nowrap transition-colors",
         disabled
@@ -353,6 +371,7 @@ interface NavItemProps {
   colorDot?: string
   live?: boolean
   disabled?: boolean
+  onNavigate?: () => void
 }
 
 const DOT_COLOR_MAP: Record<string, string> = {
@@ -373,11 +392,13 @@ function NavItem({
   colorDot,
   live = false,
   disabled = false,
+  onNavigate,
 }: NavItemProps) {
   const content = (
     <NavItemContent
       href={href}
       disabled={disabled}
+      onNavigate={onNavigate}
       className={cn(
         "flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
         disabled
@@ -435,11 +456,13 @@ function NavItemContent({
   disabled,
   className,
   children,
+  onNavigate,
 }: {
   href: string
   disabled: boolean
   className: string
   children: ReactNode
+  onNavigate?: () => void
 }) {
   if (disabled) {
     return (
@@ -450,7 +473,7 @@ function NavItemContent({
   }
 
   return (
-    <Link href={href} className={className}>
+    <Link href={href} className={className} onClick={onNavigate}>
       {children}
     </Link>
   )

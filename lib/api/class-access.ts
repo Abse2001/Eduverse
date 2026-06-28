@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { loadSelectedOrganizationRole } from "@/lib/api/selected-role"
 import type { OrganizationClass } from "@/lib/supabase/classes"
 import type { OrganizationUserRole } from "@/lib/supabase/app-user"
 import { loadOrganizationSettings } from "@/lib/supabase/organization-settings"
@@ -10,19 +11,13 @@ type ClassAccessContext = {
   userId: string
 }
 
-type OrganizationMembershipRow = {
-  id: string
-  role: OrganizationUserRole
-  selected_role_id: string | null
-}
-
 export async function loadClassAccessContext(
   supabase: SupabaseClient,
   organizationId: string,
   userId: string,
 ): Promise<ClassAccessContext> {
   const [selectedRole, settingsByOrganization] = await Promise.all([
-    loadSelectedOrganizationRole(supabase, organizationId, userId),
+    loadSelectedOrganizationRoleOrNull(supabase, organizationId, userId),
     loadOrganizationSettings([organizationId], supabase, {
       missingRelationFallback: { public_features_enabled: true },
     }),
@@ -70,39 +65,19 @@ export function filterClassesForContext(
   )
 }
 
-async function loadSelectedOrganizationRole(
+async function loadSelectedOrganizationRoleOrNull(
   supabase: SupabaseClient,
   organizationId: string,
   userId: string,
 ): Promise<OrganizationUserRole | null> {
-  const { data: membership, error: membershipError } = await supabase
-    .from("organization_memberships")
-    .select("id, role, selected_role_id")
-    .eq("organization_id", organizationId)
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .maybeSingle()
+  const result = await loadSelectedOrganizationRole(
+    supabase,
+    organizationId,
+    userId,
+  )
 
-  if (membershipError) throw membershipError
-  if (!membership) return null
+  if ("role" in result) return result.role
+  if (result.status === 403) return null
 
-  const membershipRow = membership as OrganizationMembershipRow
-
-  if (membershipRow.selected_role_id) {
-    const { data: selectedRole, error: selectedRoleError } = await supabase
-      .from("organization_membership_roles")
-      .select("role")
-      .eq("id", membershipRow.selected_role_id)
-      .eq("organization_membership_id", membershipRow.id)
-      .eq("status", "active")
-      .maybeSingle()
-
-    if (selectedRoleError) throw selectedRoleError
-
-    if (selectedRole?.role) {
-      return selectedRole.role as OrganizationUserRole
-    }
-  }
-
-  return membershipRow.role
+  throw new Error(result.error)
 }

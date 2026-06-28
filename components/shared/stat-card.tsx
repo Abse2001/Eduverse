@@ -31,11 +31,15 @@ export function StatCard({
         >
           <Icon className="w-4 h-4" />
         </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground leading-none">{label}</p>
-          <p className="text-xl font-bold text-foreground mt-0.5">{value}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs text-muted-foreground leading-none">
+            {label}
+          </p>
+          <p className="truncate text-xl font-bold text-foreground mt-0.5">
+            {value}
+          </p>
           {sublabel ? (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="truncate text-[10px] text-muted-foreground mt-0.5">
               {sublabel}
             </p>
           ) : null}

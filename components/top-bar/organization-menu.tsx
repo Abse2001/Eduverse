@@ -60,7 +60,7 @@ export function OrganizationMenu() {
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
-        <button className="flex min-w-0 max-w-[12rem] items-center gap-2 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent sm:max-w-[16rem]">
+        <button className="flex min-w-0 max-w-[8.5rem] items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent sm:max-w-[16rem]">
           <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate">
             {activeOrganization?.name ?? "No organization"}
