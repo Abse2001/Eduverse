@@ -89,30 +89,41 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    const classContext = await loadClassAiContext({ classId, supabase })
+    const classContext = await loadClassAiContext({
+      classId,
+      supabase,
+      ensureMaterialContent: true,
+    })
+    const classContextText = formatClassContext({
+      classRow: access.classRow,
+      context: classContext,
+    })
+    const existingQuestionsText = formatExistingQuestions(
+      body?.existingQuestions,
+    )
     const rawDraft = await generateAiText({
       temperature: mode === "full_exam" ? 0.45 : 0.5,
-      maxTokens: 1400,
+      maxTokens: 2200,
       messages: [
         {
           role: "system",
           content: [
             "You help teachers create exam drafts.",
-            "Return only a JSON object with optional title, optional durationMinutes, and questions.",
-            "Questions must be an array of objects with type, prompt, points, options, and correctAnswer.",
+            "Return only valid JSON. Do not include markdown fences or commentary.",
+            "The JSON object must have title, durationMinutes, and questions.",
+            "Questions must be a non-empty array of complete objects with type, prompt, points, options, and correctAnswer.",
             "Allowed question types are mcq and short.",
-            "For mcq questions, include 3-5 options and correctAnswer as the 1-based option number.",
+            "For mcq questions, include 3-5 real answer options and correctAnswer as the 1-based option number.",
+            "Do not use placeholder options such as Option A, Option B, or generic choices.",
             "For short questions, include correctAnswer as a concise model answer string or null for manual grading.",
-            "Do not include markdown fences or extra commentary.",
+            "Each prompt must be a student-facing exam question, not a summary of the teacher request.",
+            "Follow the teacher's requested format and question intent.",
           ].join(" "),
         },
         {
           role: "user",
           content: [
-            formatClassContext({
-              classRow: access.classRow,
-              context: classContext,
-            }),
+            classContextText,
             "",
             `Mode: ${mode}`,
             `Teacher request: ${prompt || "Generate useful exam questions for the current draft."}`,
@@ -121,18 +132,97 @@ export async function POST(request: Request, context: RouteContext) {
               Number.isFinite(durationMinutes) ? durationMinutes : "Not set"
             }`,
             "Existing questions:",
-            formatExistingQuestions(body?.existingQuestions),
+            existingQuestionsText,
+            "",
+            "Required JSON shape:",
+            JSON.stringify({
+              title: "Student-facing exam title",
+              durationMinutes: 60,
+              questions: [
+                {
+                  type: "mcq",
+                  prompt: "Student-facing question text",
+                  points: 10,
+                  options: ["Answer choice 1", "Answer choice 2"],
+                  correctAnswer: 1,
+                },
+                {
+                  type: "short",
+                  prompt: "Student-facing question text",
+                  points: 10,
+                  options: [],
+                  correctAnswer: "Concise model answer",
+                },
+              ],
+            }),
           ].join("\n"),
         },
       ],
     })
     const parsed = parseJsonObject<AiExamDraft>(rawDraft)
-    const draft = normalizeExamDraft(parsed, {
+    let draft = normalizeExamDraft(parsed, {
       fallbackTitle: title || prompt || "AI generated exam",
       fallbackDurationMinutes: Number.isFinite(durationMinutes)
         ? durationMinutes
         : 60,
     })
+
+    if (shouldRepairExamDraft({ draft, prompt })) {
+      const repairedText = await generateAiText({
+        temperature: 0.25,
+        maxTokens: 2400,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "Repair an exam draft JSON object.",
+              "Return only valid JSON with title, durationMinutes, and questions.",
+              "Questions must be complete student-facing exam questions.",
+              "Do not echo the teacher request.",
+              "Do not include placeholder options.",
+              "Preserve the teacher's requested format and question intent.",
+            ].join(" "),
+          },
+          {
+            role: "user",
+            content: [
+              classContextText,
+              "",
+              `Mode: ${mode}`,
+              `Teacher request: ${prompt || "Generate useful exam questions for the current draft."}`,
+              `Current title: ${title || "Untitled"}`,
+              `Current duration minutes: ${
+                Number.isFinite(durationMinutes) ? durationMinutes : "Not set"
+              }`,
+              "Existing questions:",
+              existingQuestionsText,
+              "",
+              "Previous invalid draft:",
+              JSON.stringify(draft),
+            ].join("\n"),
+          },
+        ],
+      })
+      const repairedDraft = normalizeExamDraft(parseJsonObject(repairedText), {
+        fallbackTitle: title || prompt || "AI generated exam",
+        fallbackDurationMinutes: Number.isFinite(durationMinutes)
+          ? durationMinutes
+          : 60,
+      })
+
+      if (
+        !shouldRepairExamDraft({
+          draft: repairedDraft,
+          prompt,
+        })
+      ) {
+        draft = repairedDraft
+      }
+    }
+
+    if (shouldRepairExamDraft({ draft, prompt })) {
+      throw new Error("AI did not return a usable exam draft.")
+    }
 
     return NextResponse.json({ draft })
   } catch (error) {
@@ -141,6 +231,31 @@ export async function POST(request: Request, context: RouteContext) {
       { status: 500 },
     )
   }
+}
+
+function shouldRepairExamDraft({
+  draft,
+  prompt,
+}: {
+  draft: ReturnType<typeof normalizeExamDraft>
+  prompt: string
+}) {
+  if (draft.questions.length === 0) return true
+
+  return draft.questions.some((question) => {
+    if (!question.prompt.trim()) return true
+    if (isPromptEcho(prompt, question.prompt)) return true
+
+    if (question.type === "mcq") {
+      return (
+        question.options.length < 2 ||
+        question.options.some((option) => /^option\s+[a-z]$/i.test(option)) ||
+        typeof question.correctAnswer !== "number"
+      )
+    }
+
+    return false
+  })
 }
 
 function parseMode(value: unknown): ExamDraftMode | null {
@@ -172,6 +287,21 @@ function formatExistingQuestions(value: unknown) {
     .join("\n")
 }
 
+function isPromptEcho(prompt: string, output: string) {
+  const normalizedPrompt = normalizeComparableText(prompt)
+  const normalizedOutput = normalizeComparableText(output)
+
+  return (
+    normalizedPrompt.length > 20 &&
+    (normalizedOutput === normalizedPrompt ||
+      normalizedOutput.includes(normalizedPrompt))
+  )
+}
+
+function normalizeComparableText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim()
+}
+
 function normalizeExamDraft(
   draft: AiExamDraft | null,
   fallback: {
@@ -192,7 +322,7 @@ function normalizeExamDraft(
       typeof draft?.durationMinutes === "number" && draft.durationMinutes > 0
         ? Math.round(draft.durationMinutes)
         : fallback.fallbackDurationMinutes,
-    questions: questions.length > 0 ? questions : [fallbackQuestion()],
+    questions,
   }
 }
 
@@ -231,8 +361,7 @@ function normalizeQuestion(question: AiExamQuestion): NormalizedExamQuestion[] {
         .filter(Boolean)
         .slice(0, 5)
     : []
-  const safeOptions =
-    options.length >= 2 ? options : ["Option A", "Option B", "Option C"]
+  const safeOptions = options.length >= 2 ? options : []
   const correctAnswer =
     typeof question.correctAnswer === "number" &&
     question.correctAnswer >= 1 &&
@@ -249,14 +378,4 @@ function normalizeQuestion(question: AiExamQuestion): NormalizedExamQuestion[] {
       correctAnswer,
     },
   ]
-}
-
-function fallbackQuestion() {
-  return {
-    type: "short" as const,
-    prompt: "Explain one key idea from the current class material.",
-    points: 10,
-    options: [],
-    correctAnswer: null,
-  }
 }

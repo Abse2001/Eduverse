@@ -27,6 +27,8 @@ import {
 } from "./organization-menu-helpers"
 import { toast } from "@/hooks/use-toast"
 
+const ROLE_SWITCH_CLASS_REDIRECT_KEY = "eduverse:role-switch-class-redirect"
+
 const ROLE_ICONS: Record<OrganizationUserRole, typeof UserRound> = {
   org_admin: ShieldCheck,
   teacher: GraduationCap,
@@ -75,15 +77,27 @@ export function RoleMenu() {
     if (!activeOrganization || role === activeOrganizationRole) return
 
     setSwitchingRole(role)
+    let didStartClassRedirect = false
 
     try {
+      const shouldRedirectToDashboard = isRoleSensitiveRoute(pathname)
+
+      if (shouldRedirectToDashboard) {
+        didStartClassRedirect = true
+        window.sessionStorage.setItem(ROLE_SWITCH_CLASS_REDIRECT_KEY, "true")
+      }
+
       await setActiveOrganizationRole(role)
-      if (isRoleSensitiveRoute(pathname)) {
+      if (shouldRedirectToDashboard) {
         router.replace("/dashboard")
       }
       router.refresh()
       setIsOpen(false)
     } catch (error) {
+      if (didStartClassRedirect) {
+        window.sessionStorage.removeItem(ROLE_SWITCH_CLASS_REDIRECT_KEY)
+      }
+
       toast({
         title: "Could not switch role",
         description: error instanceof Error ? error.message : "Action failed",
@@ -91,6 +105,9 @@ export function RoleMenu() {
       })
     } finally {
       setSwitchingRole(null)
+      window.setTimeout(() => {
+        window.sessionStorage.removeItem(ROLE_SWITCH_CLASS_REDIRECT_KEY)
+      }, 1000)
     }
   }
 

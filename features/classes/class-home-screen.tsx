@@ -68,6 +68,8 @@ import { cn } from "@/lib/utils"
 import { CLASS_HEADER_GRADIENT_MAP } from "@/lib/view-config"
 import { toast } from "@/hooks/use-toast"
 
+const ROLE_SWITCH_CLASS_REDIRECT_KEY = "eduverse:role-switch-class-redirect"
+
 function initials(profile: ClassProfile | null) {
   const name = profile?.display_name || profile?.email || "User"
 
@@ -416,6 +418,10 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
   useEffect(() => {
     if (classItem || isLoading || organizationClassesStatus === "loading")
       return
+
+    if (window.sessionStorage.getItem(ROLE_SWITCH_CLASS_REDIRECT_KEY)) {
+      return
+    }
 
     toast({
       title: "Class not found",
