@@ -1061,57 +1061,64 @@ export default function AssignmentsPage({
         }}
       >
         {selectedAssignment && (
-          <DialogContent className="max-w-2xl">
-            <form onSubmit={submitStudentWork} className="space-y-4">
-              <AssignmentDialogHeader assignment={selectedAssignment} />
-              <AssignmentFiles
-                assignment={selectedAssignment}
-                onOpen={openAssignmentFile}
-              />
-              {selectedAssignment.allowTextSubmission && (
-                <div className="space-y-2">
-                  <Label htmlFor="submission-text">Response</Label>
-                  <Textarea
-                    id="submission-text"
-                    value={submissionText}
-                    onChange={(event) => setSubmissionText(event.target.value)}
-                    rows={6}
-                    disabled={isMutating}
-                  />
-                </div>
-              )}
-              {selectedAssignment.allowFileSubmission && (
-                <div className="space-y-2">
-                  <Label htmlFor="submission-file">File</Label>
-                  <AssignmentFilePicker
-                    id="submission-file"
-                    disabled={isMutating}
-                    selectedText={submissionFile?.name ?? ""}
-                    description="Attach your assignment file"
-                    onFiles={(files) => setSubmissionFile(files[0] ?? null)}
-                  />
-                  {selectedAssignment.mySubmission?.fileOriginalFilename && (
-                    <p className="text-xs text-muted-foreground">
-                      Current file:{" "}
-                      {selectedAssignment.mySubmission.fileOriginalFilename}
+          <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden p-0">
+            <form
+              onSubmit={submitStudentWork}
+              className="grid max-h-[calc(100vh-2rem)] grid-rows-[minmax(0,1fr)_auto]"
+            >
+              <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-6">
+                <AssignmentDialogHeader assignment={selectedAssignment} />
+                <AssignmentFiles
+                  assignment={selectedAssignment}
+                  onOpen={openAssignmentFile}
+                />
+                {selectedAssignment.allowTextSubmission && (
+                  <div className="space-y-2">
+                    <Label htmlFor="submission-text">Response</Label>
+                    <Textarea
+                      id="submission-text"
+                      value={submissionText}
+                      onChange={(event) =>
+                        setSubmissionText(event.target.value)
+                      }
+                      rows={6}
+                      disabled={isMutating}
+                    />
+                  </div>
+                )}
+                {selectedAssignment.allowFileSubmission && (
+                  <div className="space-y-2">
+                    <Label htmlFor="submission-file">File</Label>
+                    <AssignmentFilePicker
+                      id="submission-file"
+                      disabled={isMutating}
+                      selectedText={submissionFile?.name ?? ""}
+                      description="Attach your assignment file"
+                      onFiles={(files) => setSubmissionFile(files[0] ?? null)}
+                    />
+                    {selectedAssignment.mySubmission?.fileOriginalFilename && (
+                      <p className="text-xs text-muted-foreground">
+                        Current file:{" "}
+                        {selectedAssignment.mySubmission.fileOriginalFilename}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {selectedAssignment.mySubmission?.gradedAt && (
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-sm font-semibold">
+                      Score: {selectedAssignment.mySubmission.score}/
+                      {selectedAssignment.maxScore}
                     </p>
-                  )}
-                </div>
-              )}
-              {selectedAssignment.mySubmission?.gradedAt && (
-                <div className="rounded-lg border bg-muted/40 p-3">
-                  <p className="text-sm font-semibold">
-                    Score: {selectedAssignment.mySubmission.score}/
-                    {selectedAssignment.maxScore}
-                  </p>
-                  {selectedAssignment.mySubmission.feedback && (
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {selectedAssignment.mySubmission.feedback}
-                    </p>
-                  )}
-                </div>
-              )}
-              <DialogFooter>
+                    {selectedAssignment.mySubmission.feedback && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {selectedAssignment.mySubmission.feedback}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="border-t bg-background px-6 py-4">
                 <Button
                   type="button"
                   variant="outline"
