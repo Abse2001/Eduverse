@@ -46,7 +46,15 @@ type ExamSearchCacheEntry = {
   updatedAt: number
 }
 
+type AssignmentSearchCacheEntry = {
+  assignments: ClassAssignment[] | null
+  request: Promise<ClassAssignment[]> | null
+  updatedAt: number
+}
+
+const ASSIGNMENT_SEARCH_CACHE_TTL_MS = 60_000
 const EXAM_SEARCH_CACHE_TTL_MS = 60_000
+const assignmentSearchCache = new Map<string, AssignmentSearchCacheEntry>()
 const examSearchCache = new Map<string, ExamSearchCacheEntry>()
 
 export function TopBar({
@@ -440,10 +448,11 @@ async function searchClassContent({
 }) {
   const results: SearchResult[] = []
   const [assignments, materials, exams] = await Promise.all([
-    loadClassAssignments({
+    fetchCachedClassAssignments({
       classId: classItem.id,
       currentUserId,
       canManage,
+      selectedRole,
     }).catch(() => [] as ClassAssignment[]),
     loadMaterialsWithThumbnails(classItem.id, {
       cacheKey: getMaterialSearchCacheKey({
@@ -520,6 +529,63 @@ async function searchClassContent({
   return results
 }
 
+async function fetchCachedClassAssignments({
+  classId,
+  currentUserId,
+  canManage,
+  selectedRole,
+}: {
+  classId: string
+  currentUserId: string | null
+  canManage: boolean
+  selectedRole: OrganizationUserRole | null
+}) {
+  const cacheKey = getAssignmentSearchCacheKey({
+    classId,
+    currentUserId,
+    canManage,
+    selectedRole,
+  })
+  const cached = assignmentSearchCache.get(cacheKey)
+
+  if (cached?.assignments && isFreshAssignmentCacheEntry(cached)) {
+    return cached.assignments
+  }
+
+  if (cached?.request) {
+    return cached.request
+  }
+
+  const request = loadClassAssignments({
+    classId,
+    currentUserId,
+    canManage,
+  })
+    .then((assignments) => {
+      assignmentSearchCache.set(cacheKey, {
+        assignments,
+        request: null,
+        updatedAt: Date.now(),
+      })
+      return assignments
+    })
+    .finally(() => {
+      const latestCached = assignmentSearchCache.get(cacheKey)
+
+      if (latestCached?.request === request) {
+        latestCached.request = null
+      }
+    })
+
+  assignmentSearchCache.set(cacheKey, {
+    assignments: cached?.assignments ?? null,
+    request,
+    updatedAt: cached?.updatedAt ?? 0,
+  })
+
+  return request
+}
+
 async function fetchCachedClassExams({
   classId,
   currentUserId,
@@ -589,6 +655,25 @@ function canManageClassContent(
   )
 }
 
+function getAssignmentSearchCacheKey({
+  classId,
+  currentUserId,
+  canManage,
+  selectedRole,
+}: {
+  classId: string
+  currentUserId: string | null
+  canManage: boolean
+  selectedRole: OrganizationUserRole | null
+}) {
+  return [
+    classId,
+    selectedRole ?? "none",
+    canManage ? "manager" : "student",
+    currentUserId ?? "anonymous",
+  ].join(":")
+}
+
 function getExamSearchCacheKey({
   classId,
   currentUserId,
@@ -626,6 +711,10 @@ function getMaterialSearchCacheKey({
     canManage ? "manager" : "student",
     currentUserId ?? "anonymous",
   ].join(":")
+}
+
+function isFreshAssignmentCacheEntry(entry: AssignmentSearchCacheEntry) {
+  return Date.now() - entry.updatedAt < ASSIGNMENT_SEARCH_CACHE_TTL_MS
 }
 
 function isFreshExamCacheEntry(entry: ExamSearchCacheEntry) {
