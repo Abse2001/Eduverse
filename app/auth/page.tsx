@@ -13,7 +13,12 @@ import type {
   AuthError,
   User as SupabaseAuthUser,
 } from "@supabase/supabase-js"
-import { GraduationCap, LoaderCircle } from "lucide-react"
+import {
+  BookOpen,
+  GraduationCap,
+  LoaderCircle,
+  ShieldCheck,
+} from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
@@ -471,6 +476,11 @@ function AuthPageContent() {
               workspace.
             </p>
           </div>
+          <div className="grid max-w-md gap-2 sm:grid-cols-3">
+            <AuthRoleCue icon={ShieldCheck} label="Admins" />
+            <AuthRoleCue icon={BookOpen} label="Teachers" />
+            <AuthRoleCue icon={GraduationCap} label="Students" />
+          </div>
         </section>
 
         <Card className="min-h-[31rem] w-full max-w-md justify-self-center">
@@ -652,6 +662,21 @@ function AuthLoading({ message }: { message: string }) {
         {message}
       </div>
     </main>
+  )
+}
+
+function AuthRoleCue({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof GraduationCap
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs font-medium text-muted-foreground">
+      <Icon className="h-3.5 w-3.5 text-primary" />
+      {label}
+    </div>
   )
 }
 

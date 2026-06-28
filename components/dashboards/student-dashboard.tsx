@@ -557,7 +557,7 @@ export function StudentDashboard() {
                           </Button>
                         ) : null}
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                      <div className="grid gap-2 mt-3 pt-3 border-t border-border sm:grid-cols-2">
                         <Link href={`/classes/${cls.id}/session`}>
                           <Button
                             size="sm"

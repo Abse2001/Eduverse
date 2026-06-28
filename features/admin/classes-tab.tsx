@@ -808,7 +808,7 @@ export function ClassesTab() {
                 <Input
                   id="class-semester"
                   value={classForm.semester}
-                  placeholder="Current term"
+                  placeholder="Spring 2026"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,
@@ -823,7 +823,7 @@ export function ClassesTab() {
                 <Input
                   id="class-stage"
                   value={classForm.stage}
-                  placeholder="5th Semester"
+                  placeholder="5th semester"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,

@@ -529,7 +529,7 @@ export function TeacherDashboard() {
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-border">
+                <div className="grid gap-2 mt-3 pt-3 border-t border-border sm:grid-cols-2">
                   {canManageOwnClasses && classItem ? (
                     <Button
                       variant="outline"
@@ -755,7 +755,7 @@ export function TeacherDashboard() {
                 <Input
                   id="teacher-class-semester"
                   value={classForm.semester}
-                  placeholder="Current term"
+                  placeholder="Spring 2026"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,
@@ -770,7 +770,7 @@ export function TeacherDashboard() {
                 <Input
                   id="teacher-class-stage"
                   value={classForm.stage}
-                  placeholder="5th Semester"
+                  placeholder="5th semester"
                   onChange={(event) =>
                     setClassForm((value) => ({
                       ...value,

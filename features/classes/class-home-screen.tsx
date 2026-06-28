@@ -1191,6 +1191,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                       <Input
                         id="home-class-semester"
                         value={classForm.semester}
+                        placeholder="Spring 2026"
                         onChange={(event) =>
                           setClassForm((value) => ({
                             ...value,
@@ -1204,7 +1205,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                       <Input
                         id="home-class-stage"
                         value={classForm.stage}
-                        placeholder="5th Semester"
+                        placeholder="5th semester"
                         onChange={(event) =>
                           setClassForm((value) => ({
                             ...value,
