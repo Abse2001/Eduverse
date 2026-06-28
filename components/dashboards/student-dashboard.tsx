@@ -44,8 +44,12 @@ import {
   getHiddenClassesForUser,
 } from "@/lib/education/classes"
 import type { ClassExamApiDto } from "@/lib/exams/types"
+import {
+  getClassNavFeatures,
+  resolveClassFeatures,
+} from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
-import { toLegacyClass } from "@/lib/supabase/classes"
+import { type OrganizationClass, toLegacyClass } from "@/lib/supabase/classes"
 import { cn } from "@/lib/utils"
 import { CLASS_COLOR_MAP } from "@/lib/view-config"
 
@@ -76,6 +80,7 @@ export function StudentDashboard() {
     authUser,
     classLiveSessions,
     currentUser,
+    featureDefinitions,
     organizationClasses,
     refreshOrganizationClasses,
   } = useApp()
@@ -483,6 +488,11 @@ export function StudentDashboard() {
                 const assignments = assignmentsByClass[cls.id] ?? []
                 const progress = getStudentAssignmentProgress(assignments)
                 const isLive = liveClassIds.has(cls.id)
+                const featureRoutes = getDashboardFeatureRoutes({
+                  activeOrganization,
+                  classItem: classRow,
+                  featureDefinitions,
+                })
 
                 return (
                   <Card
@@ -558,16 +568,18 @@ export function StudentDashboard() {
                         ) : null}
                       </div>
                       <div className="grid gap-2 mt-3 pt-3 border-t border-border sm:grid-cols-2">
-                        <Link href={`/classes/${cls.id}/session`}>
-                          <Button
-                            size="sm"
-                            variant={isLive ? "default" : "outline"}
-                            className="w-full text-xs gap-1.5"
-                          >
-                            <Radio className="w-3 h-3" />{" "}
-                            {isLive ? "Join Live" : "Session"}
-                          </Button>
-                        </Link>
+                        {featureRoutes.has("session") ? (
+                          <Link href={`/classes/${cls.id}/session`}>
+                            <Button
+                              size="sm"
+                              variant={isLive ? "default" : "outline"}
+                              className="w-full text-xs gap-1.5"
+                            >
+                              <Radio className="w-3 h-3" />{" "}
+                              {isLive ? "Join Live" : "Session"}
+                            </Button>
+                          </Link>
+                        ) : null}
                         <Link href={`/classes/${cls.id}/home`}>
                           <Button
                             variant="outline"
@@ -577,24 +589,28 @@ export function StudentDashboard() {
                             <BookOpen className="w-3 h-3" /> Class Home
                           </Button>
                         </Link>
-                        <Link href={`/classes/${cls.id}/chat`}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-xs gap-1.5"
-                          >
-                            <MessageSquare className="w-3 h-3" /> Chat
-                          </Button>
-                        </Link>
-                        <Link href={`/classes/${cls.id}/materials`}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-xs gap-1.5"
-                          >
-                            <FileText className="w-3 h-3" /> Materials
-                          </Button>
-                        </Link>
+                        {featureRoutes.has("chat") ? (
+                          <Link href={`/classes/${cls.id}/chat`}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs gap-1.5"
+                            >
+                              <MessageSquare className="w-3 h-3" /> Chat
+                            </Button>
+                          </Link>
+                        ) : null}
+                        {featureRoutes.has("materials") ? (
+                          <Link href={`/classes/${cls.id}/materials`}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs gap-1.5"
+                            >
+                              <FileText className="w-3 h-3" /> Materials
+                            </Button>
+                          </Link>
+                        ) : null}
                       </div>
                     </CardContent>
                   </Card>
@@ -1096,4 +1112,33 @@ function isFutureDate(value: string | null | undefined): value is string {
   if (!value) return false
   const timestamp = Date.parse(value)
   return Number.isFinite(timestamp) && timestamp > Date.now()
+}
+
+function getDashboardFeatureRoutes({
+  activeOrganization,
+  classItem,
+  featureDefinitions,
+}: {
+  activeOrganization: ReturnType<typeof useApp>["activeOrganization"]
+  classItem: OrganizationClass | undefined
+  featureDefinitions: ReturnType<typeof useApp>["featureDefinitions"]
+}) {
+  if (!activeOrganization || !classItem) return new Set<string>()
+
+  return new Set(
+    getClassNavFeatures(
+      resolveClassFeatures({
+        definitions: featureDefinitions,
+        organizationSettings: activeOrganization.featureSettings,
+        classSettings: classItem.featureSettings,
+        organizationExtensions: activeOrganization.extensions,
+        classExtensionSettings: classItem.extensionSettings,
+      }),
+    )
+      .flatMap((feature) => [
+        feature.routeSegment,
+        ...feature.children.map((child) => child.routeSegment),
+      ])
+      .filter((routeSegment): routeSegment is string => Boolean(routeSegment)),
+  )
 }

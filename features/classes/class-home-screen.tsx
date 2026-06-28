@@ -730,7 +730,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
 
   return (
     <>
-      <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      <div className="space-y-5 p-4 sm:p-6 max-w-6xl mx-auto">
         <div
           className={cn(
             "rounded-2xl p-6 text-white bg-gradient-to-br",
@@ -738,7 +738,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
               "from-primary to-primary/70",
           )}
         >
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <ClassPageHeader
                 title={classItem.name}
@@ -752,7 +752,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                 }
               />
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               {canEditClassSettings ? (
                 <Button
                   variant="secondary"
@@ -780,7 +780,7 @@ export function ClassHomeScreen({ classId }: { classId: string }) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="w-44 justify-center gap-2 shrink-0 border-0 bg-white/20 hover:bg-white/30 text-white"
+                    className="w-full justify-center gap-2 shrink-0 border-0 bg-white/20 hover:bg-white/30 text-white sm:w-44"
                   >
                     {isLive ? (
                       <Radio className="w-4 h-4 text-emerald-300" />

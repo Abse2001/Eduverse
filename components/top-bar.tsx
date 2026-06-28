@@ -1,6 +1,6 @@
 "use client"
 
-import { Menu, Search } from "lucide-react"
+import { Menu, Search, X } from "lucide-react"
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import { useExamLock } from "@/features/exam/exam-lock"
@@ -13,6 +13,7 @@ import {
   getClassNavFeatures,
   resolveClassFeatures,
 } from "@/lib/features/feature-registry"
+import { getClassesForUser } from "@/lib/education/classes"
 import { useApp } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -31,15 +32,28 @@ export function TopBar({
   const { isLocked } = useExamLock()
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearchFocused, setIsSearchFocused] = useState(false)
-  const { activeOrganization, featureDefinitions, organizationClasses } =
-    useApp()
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
+  const {
+    activeOrganization,
+    currentUser,
+    featureDefinitions,
+    organizationClasses,
+  } = useApp()
+  const searchableClasses = useMemo(() => {
+    if (!activeOrganization) return []
+
+    return getClassesForUser(organizationClasses, currentUser, {
+      publicOrganizationFeaturesEnabled:
+        activeOrganization.settings.public_features_enabled,
+    })
+  }, [activeOrganization, currentUser, organizationClasses])
   const normalizedSearch = searchQuery.trim().toLowerCase()
   const searchResults = useMemo(() => {
     if (!activeOrganization || !normalizedSearch) return []
 
     const results: SearchResult[] = []
 
-    for (const classItem of organizationClasses) {
+    for (const classItem of searchableClasses) {
       const classText = [
         classItem.name,
         classItem.code,
@@ -94,12 +108,17 @@ export function TopBar({
     activeOrganization,
     featureDefinitions,
     normalizedSearch,
-    organizationClasses,
+    searchableClasses,
   ])
   const showSearchResults = isSearchFocused && normalizedSearch.length > 0
+  const closeSearch = () => {
+    setSearchQuery("")
+    setIsSearchFocused(false)
+    setIsMobileSearchOpen(false)
+  }
 
   return (
-    <header className="h-14 border-b border-border flex items-center px-3 sm:px-4 gap-2 sm:gap-3 bg-card/80 backdrop-blur-sm">
+    <header className="relative h-14 border-b border-border flex items-center px-3 sm:px-4 gap-2 sm:gap-3 bg-card/80 backdrop-blur-sm">
       {!isLocked ? (
         <Button
           aria-label="Open navigation"
@@ -112,54 +131,15 @@ export function TopBar({
         </Button>
       ) : null}
       {!isLocked ? (
-        <div className="relative flex-1 max-w-sm hidden md:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() =>
-              window.setTimeout(() => setIsSearchFocused(false), 120)
-            }
-            placeholder="Search classes, materials, exams..."
-            className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg border border-input bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+        <div className="relative hidden flex-1 md:block md:max-w-sm">
+          <SearchInput
+            query={searchQuery}
+            results={searchResults}
+            setFocused={setIsSearchFocused}
+            setQuery={setSearchQuery}
+            showResults={showSearchResults}
+            onSelect={closeSearch}
           />
-          {showSearchResults ? (
-            <div className="absolute left-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md">
-              {searchResults.length > 0 ? (
-                <div className="max-h-80 overflow-y-auto p-1">
-                  {searchResults.map((result) => (
-                    <Link
-                      key={result.key}
-                      href={result.href}
-                      className="block rounded-md px-3 py-2 hover:bg-accent"
-                      onClick={() => {
-                        setSearchQuery("")
-                        setIsSearchFocused(false)
-                      }}
-                    >
-                      <span className="block truncate text-sm font-medium">
-                        {result.title}
-                      </span>
-                      <span
-                        className={cn(
-                          "block truncate text-xs text-muted-foreground",
-                          !result.eyebrow && "sr-only",
-                        )}
-                      >
-                        {result.eyebrow || "Search result"}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="px-3 py-4 text-sm text-muted-foreground">
-                  No matching classes or tools.
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
       ) : (
         <div className="flex-1">
@@ -172,13 +152,108 @@ export function TopBar({
       {/* Right side */}
       {!isLocked && (
         <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+          <Button
+            aria-label={isMobileSearchOpen ? "Close search" : "Open search"}
+            className="md:hidden"
+            size="icon"
+            variant="ghost"
+            onClick={() => {
+              setIsMobileSearchOpen((open) => !open)
+              setIsSearchFocused(true)
+            }}
+          >
+            {isMobileSearchOpen ? (
+              <X className="h-4 w-4" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+          </Button>
           <RoleMenu />
           <OrganizationMenu />
           <NotificationsMenu />
           <AccountMenu />
         </div>
       )}
+      {!isLocked && isMobileSearchOpen ? (
+        <div className="absolute inset-x-0 top-full z-50 border-b bg-card p-2 shadow-sm md:hidden">
+          <SearchInput
+            query={searchQuery}
+            results={searchResults}
+            setFocused={setIsSearchFocused}
+            setQuery={setSearchQuery}
+            showResults={normalizedSearch.length > 0}
+            onSelect={closeSearch}
+            autoFocus
+          />
+        </div>
+      ) : null}
     </header>
+  )
+}
+
+function SearchInput({
+  autoFocus,
+  onSelect,
+  query,
+  results,
+  setFocused,
+  setQuery,
+  showResults,
+}: {
+  autoFocus?: boolean
+  onSelect: () => void
+  query: string
+  results: SearchResult[]
+  setFocused: (focused: boolean) => void
+  setQuery: (query: string) => void
+  showResults: boolean
+}) {
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+      <input
+        autoFocus={autoFocus}
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+        placeholder="Search classes, materials, exams..."
+        className="w-full rounded-lg border border-input bg-background py-1.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+      />
+      {showResults ? (
+        <div className="absolute left-0 top-full z-50 mt-2 w-full overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-md">
+          {results.length > 0 ? (
+            <div className="max-h-80 overflow-y-auto p-1">
+              {results.map((result) => (
+                <Link
+                  key={result.key}
+                  href={result.href}
+                  className="block rounded-md px-3 py-2 hover:bg-accent"
+                  onClick={onSelect}
+                >
+                  <span className="block truncate text-sm font-medium">
+                    {result.title}
+                  </span>
+                  <span
+                    className={cn(
+                      "block truncate text-xs text-muted-foreground",
+                      !result.eyebrow && "sr-only",
+                    )}
+                  >
+                    {result.eyebrow || "Search result"}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="px-3 py-4 text-sm text-muted-foreground">
+              No matching classes or tools.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

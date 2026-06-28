@@ -143,7 +143,7 @@ export function AdminDashboard() {
           )
         }
       >
-        <TabsList className="h-9">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="classes" className="text-xs gap-1.5">
             <BookOpen className="w-3.5 h-3.5" />
             Classes

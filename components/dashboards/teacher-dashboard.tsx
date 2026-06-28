@@ -55,6 +55,10 @@ import {
 } from "@/features/classes/use-archived-classes"
 import { useToast } from "@/hooks/use-toast"
 import { getClassesForUser } from "@/lib/education/classes"
+import {
+  getClassNavFeatures,
+  resolveClassFeatures,
+} from "@/lib/features/feature-registry"
 import { useApp } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { type OrganizationClass, toLegacyClass } from "@/lib/supabase/classes"
@@ -96,6 +100,7 @@ export function TeacherDashboard() {
     authUser,
     activeOrganization,
     currentUser,
+    featureDefinitions,
     organizationClasses,
     refreshOrganizationClasses,
   } = useApp()
@@ -440,6 +445,11 @@ export function TeacherDashboard() {
             0,
           )
           const progress = getTeacherGradingProgress(assignments)
+          const featureRoutes = getDashboardFeatureRoutes({
+            activeOrganization,
+            classItem,
+            featureDefinitions,
+          })
 
           return (
             <Card key={cls.id} className="hover:shadow-md transition-shadow">
@@ -540,38 +550,46 @@ export function TeacherDashboard() {
                       <Edit3 className="w-3 h-3" /> Edit Class
                     </Button>
                   ) : null}
-                  <Link href={`/classes/${cls.id}/chat`}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs gap-1.5"
-                    >
-                      <MessageSquare className="w-3 h-3" /> Chat
-                    </Button>
-                  </Link>
-                  <Link href={`/classes/${cls.id}/session`}>
-                    <Button size="sm" className="w-full text-xs gap-1.5">
-                      <Video className="w-3 h-3" /> Start Session
-                    </Button>
-                  </Link>
-                  <Link href={`/classes/${cls.id}/assignments`}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs gap-1.5"
-                    >
-                      <PlusCircle className="w-3 h-3" /> Create Assignment
-                    </Button>
-                  </Link>
-                  <Link href={`/classes/${cls.id}/materials`}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs gap-1.5"
-                    >
-                      <Upload className="w-3 h-3" /> Upload Material
-                    </Button>
-                  </Link>
+                  {featureRoutes.has("chat") ? (
+                    <Link href={`/classes/${cls.id}/chat`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <MessageSquare className="w-3 h-3" /> Chat
+                      </Button>
+                    </Link>
+                  ) : null}
+                  {featureRoutes.has("session") ? (
+                    <Link href={`/classes/${cls.id}/session`}>
+                      <Button size="sm" className="w-full text-xs gap-1.5">
+                        <Video className="w-3 h-3" /> Start Session
+                      </Button>
+                    </Link>
+                  ) : null}
+                  {featureRoutes.has("assignments") ? (
+                    <Link href={`/classes/${cls.id}/assignments`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <PlusCircle className="w-3 h-3" /> Create Assignment
+                      </Button>
+                    </Link>
+                  ) : null}
+                  {featureRoutes.has("materials") ? (
+                    <Link href={`/classes/${cls.id}/materials`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <Upload className="w-3 h-3" /> Upload Material
+                      </Button>
+                    </Link>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
@@ -939,4 +957,33 @@ function getInitials(name: string) {
     .map((part) => part[0]?.toUpperCase() ?? "")
     .slice(0, 2)
     .join("")
+}
+
+function getDashboardFeatureRoutes({
+  activeOrganization,
+  classItem,
+  featureDefinitions,
+}: {
+  activeOrganization: ReturnType<typeof useApp>["activeOrganization"]
+  classItem: OrganizationClass | undefined
+  featureDefinitions: ReturnType<typeof useApp>["featureDefinitions"]
+}) {
+  if (!activeOrganization || !classItem) return new Set<string>()
+
+  return new Set(
+    getClassNavFeatures(
+      resolveClassFeatures({
+        definitions: featureDefinitions,
+        organizationSettings: activeOrganization.featureSettings,
+        classSettings: classItem.featureSettings,
+        organizationExtensions: activeOrganization.extensions,
+        classExtensionSettings: classItem.extensionSettings,
+      }),
+    )
+      .flatMap((feature) => [
+        feature.routeSegment,
+        ...feature.children.map((child) => child.routeSegment),
+      ])
+      .filter((routeSegment): routeSegment is string => Boolean(routeSegment)),
+  )
 }
